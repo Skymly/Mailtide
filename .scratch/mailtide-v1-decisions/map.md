@@ -23,6 +23,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - [Candidate dependency AOT surface (IMAP, OAuth, local store, secrets)](issues/03-dependency-aot-surface.md) — MailKitLite/MimeKitLite + Duende OidcClient usable; full MailKit/MimeKit and several ORMs avoid/caution; secrets prefer thin P/Invoke over unannotated wrappers.
 - [Platform secret storage on Windows / Linux / Android](issues/04-platform-secret-storage.md) — Win Credential Locker/CredMan/DPAPI; Linux Secret Service (+ XDG portal); Android Keystore preferred; abstract secure-store seam; Android Native AOT vs Java Keystore is a hard tension.
 - [Offline store responsibilities and partitioning](issues/05-offline-store-responsibilities.md) — One install-wide store partitioned by Account; metadata+bodies in structured store, attachments in blob area; store is local-only — sync engine owns network.
+- [Sync engine external contract](issues/06-sync-engine-contract.md) — Per-Account pipeline, Accounts in parallel; self-drive + SyncNow/SendNow; drafts→Outbox→engine; UI sees idle/syncing/error and Outbox queued/sending/failed.
 
 ## Not yet specified
 

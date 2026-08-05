@@ -19,3 +19,7 @@ _Avoid_: Mail, email, item
 **Mailbox**:
 An IMAP mailbox (folder) under an Account that holds Messages.
 _Avoid_: Folder (unless speaking UI copy), label, directory
+
+**Outbox**:
+The per-Account queue of Messages the Person has asked to send that are not yet successfully submitted via SMTP. Held in the local store; consumed only by the sync engine.
+_Avoid_: Send queue (as a synonym in domain prose), pending send, draft
