@@ -17,8 +17,12 @@ A single email as the person sees and stores it locally (headers, body, sync sta
 _Avoid_: Mail, email, item
 
 **Mailbox**:
-An IMAP mailbox (folder) under an Account that holds Messages.
-_Avoid_: Folder (unless speaking UI copy), label, directory
+An IMAP mailbox under an Account that holds Messages. The only domain navigation/containment type — provider label/folder views are mapped to Mailboxes. May carry an optional role (Inbox, Sent, Drafts, Trash, Junk, …).
+_Avoid_: Label (as a domain type), directory, folder (unless UI copy)
+
+**Unified Inbox**:
+A UI view that aggregates Messages from each Account’s Inbox-role Mailbox. Not a domain container.
+_Avoid_: Combined mailbox, global inbox (as a stored entity)
 
 **Outbox**:
 The per-Account queue of Messages the Person has asked to send that are not yet successfully submitted via SMTP. Held in the local store; consumed only by the sync engine.
