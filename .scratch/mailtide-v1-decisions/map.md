@@ -26,6 +26,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - [Sync engine external contract](issues/06-sync-engine-contract.md) — Per-Account pipeline, Accounts in parallel; self-drive + SyncNow/SendNow; drafts→Outbox→engine; UI sees idle/syncing/error and Outbox queued/sending/failed.
 - [Credential model for Accounts](issues/07-credential-model.md) — One primary credential per Account (OAuth or password); Auth module owns token lifecycle; secrets device-bound via platform secure storage.
 - [v1 OAuth identity-provider set](issues/08-v1-oauth-idp-set.md) — OAuth: Google + Microsoft consumer; preset: QQ Mail (授权码); manual IMAP always available; no Entra work/school.
+- [Solution and module seams](issues/09-module-seams.md) — Core (no UI) + thin Avalonia UI + Desktop/Android hosts; protocol/store/sync/Auth in Core; secure-storage in hosts; in-process sync; Core kept hostable by future CLI/TUI.
 
 ## Not yet specified
 
@@ -38,6 +39,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - Deep Gmail label interaction design
 - Code signing and store-account provisioning (future `task` tickets)
 - Nuke / test project skeleton tables (implementation phase)
+- Non-GUI hosts (CLI / TUI) — seam reserved in Core; not a v1 product surface
 
 ## Out of scope
 
