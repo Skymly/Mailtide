@@ -3,7 +3,7 @@
 Part of: [Mailtide v1 — decision map](../map.md)
 
 Type: grilling  
-Status: open  
+Status: claimed  
 Blocked by: 01, 02, 03, 05, 06
 
 ## Question
