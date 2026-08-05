@@ -35,8 +35,6 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - Full-text / search model
 - Notifications (especially Android)
 - Theme and visual-system detail
-- Concrete local DB engine (after AOT dependency inventory)
-- Final per-platform secret-store API choice (after secret-storage research + credential-model grilling)
 - Sync rate-limits / incremental algorithm detail
 - Deep Gmail label interaction design
 - Code signing and store-account provisioning (future `task` tickets)
