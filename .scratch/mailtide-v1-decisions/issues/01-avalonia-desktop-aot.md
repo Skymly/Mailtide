@@ -3,7 +3,7 @@
 Part of: [Mailtide v1 — decision map](../map.md)
 
 Type: research  
-Status: open
+Status: claimed
 
 ## Question
 
