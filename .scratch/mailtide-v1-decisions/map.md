@@ -22,6 +22,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - [Avalonia 12 + .NET 10 on Android (AOT / trimming)](issues/02-avalonia-android-aot.md) — Same stack can serve Android via a separate head; official publish path is trimmed APK/AAB + Mono AOT, not desktop-style Native AOT (`PublishAot` experimental on Android).
 - [Candidate dependency AOT surface (IMAP, OAuth, local store, secrets)](issues/03-dependency-aot-surface.md) — MailKitLite/MimeKitLite + Duende OidcClient usable; full MailKit/MimeKit and several ORMs avoid/caution; secrets prefer thin P/Invoke over unannotated wrappers.
 - [Platform secret storage on Windows / Linux / Android](issues/04-platform-secret-storage.md) — Win Credential Locker/CredMan/DPAPI; Linux Secret Service (+ XDG portal); Android Keystore preferred; abstract secure-store seam; Android Native AOT vs Java Keystore is a hard tension.
+- [Offline store responsibilities and partitioning](issues/05-offline-store-responsibilities.md) — One install-wide store partitioned by Account; metadata+bodies in structured store, attachments in blob area; store is local-only — sync engine owns network.
 
 ## Not yet specified
 
