@@ -18,7 +18,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 
 ## Decisions so far
 
-<!-- empty — charting session -->
+- [Avalonia 12 + .NET 10 on Android (AOT / trimming)](issues/02-avalonia-android-aot.md) — Same stack can serve Android via a separate head; official publish path is trimmed APK/AAB + Mono AOT, not desktop-style Native AOT (`PublishAot` experimental on Android).
 
 ## Not yet specified
 
