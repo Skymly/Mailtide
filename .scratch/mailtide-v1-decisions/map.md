@@ -11,7 +11,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 
 - **Domain docs**: root `CONTEXT.md`; ADRs under `docs/adr/` when a hard-to-reverse trade-off lands.
 - **Skills**: `/grilling`, `/domain-modeling`, `/research`; hand off to `/to-spec` when the frontier is clear.
-- **Working hypothesis stack** (not yet ADR): Avalonia 12, .NET 10 LTS, C# 14, Nuke Build, MSTest v4 + MTP. Reopen only if AOT research proves it unworkable.
+- **Working hypothesis stack** (not yet fully ADR’d): Avalonia 12, .NET 10 LTS, C# 14, Nuke Build, MSTest v4 + MTP, **EF Core + SQLite** for the offline store. **AOT is best-effort, not a ship gate:** prefer Native AOT on Desktop when it works; until mature, non-AOT (e.g. trimmed self-contained) publishes are allowed. Android uses trimmed/Mono AOT and is not blocked on Desktop Native AOT.
 - **Product**: personal multi-account; offline-first local store; not enterprise IT / shared mailboxes / compliance archive.
 - **Platforms**: Windows, Linux, Android. Apple (macOS / iOS) out of scope.
 - **Protocols**: IMAP + SMTP first-class; Gmail / Outlook.com OAuth2 on IMAP/SMTP; QQ Mail as preset + 授权码. JMAP / vendor-only APIs / EAS are not v1 primary paths.
@@ -29,6 +29,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - [Solution and module seams](issues/09-module-seams.md) — Core (no UI) + thin Avalonia UI + Desktop/Android hosts; protocol/store/sync/Auth in Core; secure-storage in hosts; in-process sync; Core kept hostable by future CLI/TUI.
 - [Mailbox vs Label in the domain and navigation](issues/10-mailbox-vs-label.md) — Mailbox-only domain; optional roles; unified inbox is a UI view; no Label entity; deep multi-label UX in fog.
 - [v1 distribution channels](issues/11-v1-distribution-channels.md) — Win installer + Linux AppImage (Ubuntu 24.04 x64) + Android sideload APK via GitHub Releases; desktop self-update yes; Android in-app update no; stores not v1.
+- [Concrete local DB engine for the offline store](issues/12-local-db-engine.md) — EF Core + SQLite; blobs on filesystem; AOT best-effort with non-AOT publish allowed until mature.
 
 ## Not yet specified
 
