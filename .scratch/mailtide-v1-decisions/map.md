@@ -30,6 +30,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - [Mailbox vs Label in the domain and navigation](issues/10-mailbox-vs-label.md) — Mailbox-only domain; optional roles; unified inbox is a UI view; no Label entity; deep multi-label UX in fog.
 - [v1 distribution channels](issues/11-v1-distribution-channels.md) — Win installer + Linux AppImage (Ubuntu 24.04 x64) + Android sideload APK via GitHub Releases; desktop self-update yes; Android in-app update no; stores not v1.
 - [Concrete local DB engine for the offline store](issues/12-local-db-engine.md) — EF Core + SQLite; blobs on filesystem; AOT best-effort with non-AOT publish allowed until mature.
+- [Per-platform secure-storage API choice](issues/13-secure-storage-apis.md) — Win DPAPI; Linux Secret Service/libsecret; Android Keystore; host adapters; no plaintext fallback.
 
 ## Not yet specified
 
