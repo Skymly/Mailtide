@@ -11,6 +11,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 
 - **Domain docs**: root `CONTEXT.md`; ADRs under `docs/adr/` when a hard-to-reverse trade-off lands.
 - **Skills**: `/grilling`, `/domain-modeling`, `/research`; hand off to `/to-spec` when the frontier is clear.
+- **Spec (published)**: [`.scratch/mailtide-v1/spec.md`](../mailtide-v1/spec.md) — Status `ready-for-agent` (local publish; GitHub Issues write still 403 for the agent token).
 - **Working hypothesis stack** (not yet fully ADR’d): Avalonia 12, .NET 10 LTS, C# 14, Nuke Build, MSTest v4 + MTP, **EF Core + SQLite** for the offline store. **AOT is best-effort, not a ship gate:** prefer Native AOT on Desktop when it works; until mature, non-AOT (e.g. trimmed self-contained) publishes are allowed. Android uses trimmed/Mono AOT and is not blocked on Desktop Native AOT.
 - **Product**: personal multi-account; offline-first local store; not enterprise IT / shared mailboxes / compliance archive.
 - **Platforms**: Windows, Linux, Android. Apple (macOS / iOS) out of scope.
