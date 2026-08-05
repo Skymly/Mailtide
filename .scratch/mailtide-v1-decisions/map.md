@@ -14,7 +14,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - **Working hypothesis stack** (not yet ADR): Avalonia 12, .NET 10 LTS, C# 14, Nuke Build, MSTest v4 + MTP. Reopen only if AOT research proves it unworkable.
 - **Product**: personal multi-account; offline-first local store; not enterprise IT / shared mailboxes / compliance archive.
 - **Platforms**: Windows, Linux, Android. Apple (macOS / iOS) out of scope.
-- **Protocols**: IMAP + SMTP first-class; Gmail / Outlook.com OAuth2 on IMAP/SMTP. JMAP / vendor-only APIs / EAS are not v1 primary paths.
+- **Protocols**: IMAP + SMTP first-class; Gmail / Outlook.com OAuth2 on IMAP/SMTP; QQ Mail as preset + 授权码. JMAP / vendor-only APIs / EAS are not v1 primary paths.
 
 ## Decisions so far
 
@@ -25,6 +25,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - [Offline store responsibilities and partitioning](issues/05-offline-store-responsibilities.md) — One install-wide store partitioned by Account; metadata+bodies in structured store, attachments in blob area; store is local-only — sync engine owns network.
 - [Sync engine external contract](issues/06-sync-engine-contract.md) — Per-Account pipeline, Accounts in parallel; self-drive + SyncNow/SendNow; drafts→Outbox→engine; UI sees idle/syncing/error and Outbox queued/sending/failed.
 - [Credential model for Accounts](issues/07-credential-model.md) — One primary credential per Account (OAuth or password); Auth module owns token lifecycle; secrets device-bound via platform secure storage.
+- [v1 OAuth identity-provider set](issues/08-v1-oauth-idp-set.md) — OAuth: Google + Microsoft consumer; preset: QQ Mail (授权码); manual IMAP always available; no Entra work/school.
 
 ## Not yet specified
 
