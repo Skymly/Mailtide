@@ -23,3 +23,7 @@ _Avoid_: Folder (unless speaking UI copy), label, directory
 **Outbox**:
 The per-Account queue of Messages the Person has asked to send that are not yet successfully submitted via SMTP. Held in the local store; consumed only by the sync engine.
 _Avoid_: Send queue (as a synonym in domain prose), pending send, draft
+
+**Credential**:
+The single primary secret that authenticates an Account — either an OAuth refresh (with non-secret OAuth metadata) or a password / app password. Bound to this install; never both kinds on one Account.
+_Avoid_: Auth (as the name of the secret itself), token (when meaning the Credential), login

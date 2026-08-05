@@ -24,6 +24,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - [Platform secret storage on Windows / Linux / Android](issues/04-platform-secret-storage.md) — Win Credential Locker/CredMan/DPAPI; Linux Secret Service (+ XDG portal); Android Keystore preferred; abstract secure-store seam; Android Native AOT vs Java Keystore is a hard tension.
 - [Offline store responsibilities and partitioning](issues/05-offline-store-responsibilities.md) — One install-wide store partitioned by Account; metadata+bodies in structured store, attachments in blob area; store is local-only — sync engine owns network.
 - [Sync engine external contract](issues/06-sync-engine-contract.md) — Per-Account pipeline, Accounts in parallel; self-drive + SyncNow/SendNow; drafts→Outbox→engine; UI sees idle/syncing/error and Outbox queued/sending/failed.
+- [Credential model for Accounts](issues/07-credential-model.md) — One primary credential per Account (OAuth or password); Auth module owns token lifecycle; secrets device-bound via platform secure storage.
 
 ## Not yet specified
 
