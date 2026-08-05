@@ -28,6 +28,7 @@ A locked decision set ready for `/to-spec` covering v1 of a personal multi-accou
 - [v1 OAuth identity-provider set](issues/08-v1-oauth-idp-set.md) — OAuth: Google + Microsoft consumer; preset: QQ Mail (授权码); manual IMAP always available; no Entra work/school.
 - [Solution and module seams](issues/09-module-seams.md) — Core (no UI) + thin Avalonia UI + Desktop/Android hosts; protocol/store/sync/Auth in Core; secure-storage in hosts; in-process sync; Core kept hostable by future CLI/TUI.
 - [Mailbox vs Label in the domain and navigation](issues/10-mailbox-vs-label.md) — Mailbox-only domain; optional roles; unified inbox is a UI view; no Label entity; deep multi-label UX in fog.
+- [v1 distribution channels](issues/11-v1-distribution-channels.md) — Win installer + Linux AppImage (Ubuntu 24.04 x64) + Android sideload APK via GitHub Releases; desktop self-update yes; Android in-app update no; stores not v1.
 
 ## Not yet specified
 
