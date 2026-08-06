@@ -47,7 +47,7 @@ sealed class Build : NukeBuild
         .Executes(() =>
         {
             DotNetTest(s => s
-                .SetProjectFile(TestsDirectory / "Mailtide.Core.Tests" / "Mailtide.Core.Tests.csproj")
+                .SetProjectFile(Solution)
                 .SetConfiguration(Configuration)
                 .EnableNoRestore()
                 .EnableNoBuild());
