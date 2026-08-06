@@ -114,14 +114,13 @@ public sealed class MailtideApp : IAsyncDisposable
             return;
         }
 
-        var credentialHandle = record.CredentialHandle;
+        // Clear the Credential first so a later store failure cannot leave an orphaned secret.
+        await _secureStorage
+            .DeleteSecretAsync(record.CredentialHandle, cancellationToken)
+            .ConfigureAwait(false);
 
         _db.Accounts.Remove(record);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        await _secureStorage
-            .DeleteSecretAsync(credentialHandle, cancellationToken)
-            .ConfigureAwait(false);
 
         var accountPartition = AccountPartitionPath(accountId);
         if (Directory.Exists(accountPartition))
