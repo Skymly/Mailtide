@@ -1,4 +1,5 @@
 using Mailtide.Core;
+using Mailtide.Core.Imap;
 using Mailtide.Core.Security;
 
 namespace Mailtide.Core.Tests;
@@ -10,10 +11,12 @@ internal sealed class CoreAppFixture : IDisposable
 
     public FakeSecureStorage SecureStorage { get; } = new();
 
+    public FakeImapClientFactory Imap { get; } = new();
+
     public string AppDataDirectory => _appDataDirectory;
 
     public Task<MailtideApp> OpenAppAsync() =>
-        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage);
+        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage, Imap);
 
     public void Dispose()
     {
@@ -44,5 +47,96 @@ internal sealed class FakeSecureStorage : ISecureStorage
     {
         _secrets.Remove(key);
         return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeImapClientFactory : IImapClientFactory
+{
+    private readonly List<RemoteMailbox> _mailboxes = [];
+    private readonly Dictionary<string, List<RemoteMessage>> _messagesByPath =
+        new(StringComparer.Ordinal);
+
+    public Exception? FailWith { get; set; }
+
+    public TaskCompletionSource? BlockConnectUntil { get; set; }
+
+    public void SeedMailboxes(params RemoteMailbox[] mailboxes)
+    {
+        _mailboxes.Clear();
+        _mailboxes.AddRange(mailboxes);
+    }
+
+    public void SeedMessages(string mailboxPath, params RemoteMessage[] messages)
+    {
+        _messagesByPath[mailboxPath] = messages.ToList();
+    }
+
+    public void ClearMessages() => _messagesByPath.Clear();
+
+    public IImapClient Create() => new FakeImapClient(this);
+
+    private sealed class FakeImapClient : IImapClient
+    {
+        private readonly FakeImapClientFactory _factory;
+        private bool _authenticated;
+
+        public FakeImapClient(FakeImapClientFactory factory)
+        {
+            _factory = factory;
+        }
+
+        public async Task ConnectAndAuthenticateAsync(
+            string host,
+            int port,
+            string username,
+            string password,
+            CancellationToken cancellationToken = default)
+        {
+            if (_factory.BlockConnectUntil is not null)
+            {
+                await _factory.BlockConnectUntil.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (_factory.FailWith is not null)
+            {
+                throw _factory.FailWith;
+            }
+
+            _ = host;
+            _ = port;
+            _ = username;
+            _ = password;
+            _authenticated = true;
+        }
+
+        public Task<IReadOnlyList<RemoteMailbox>> ListMailboxesAsync(
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            return Task.FromResult<IReadOnlyList<RemoteMailbox>>(_factory._mailboxes.ToList());
+        }
+
+        public Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                messages = [];
+            }
+
+            return Task.FromResult<IReadOnlyList<RemoteMessage>>(messages.ToList());
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private void EnsureAuthenticated()
+        {
+            if (!_authenticated)
+            {
+                throw new InvalidOperationException("IMAP client is not authenticated.");
+            }
+        }
     }
 }
