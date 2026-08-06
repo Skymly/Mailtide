@@ -9,7 +9,10 @@ public sealed class ApplicationSurfaceTests
     public async Task Application_surface_is_available_to_hosts()
     {
         using var fixture = new CoreAppFixture();
-        await using var app = await MailtideApp.OpenAsync(fixture.AppDataDirectory, fixture.SecureStorage);
+        await using var app = await MailtideApp.OpenAsync(
+            fixture.AppDataDirectory,
+            fixture.SecureStorage,
+            fixture.Imap);
 
         Assert.IsNotNull(app);
     }

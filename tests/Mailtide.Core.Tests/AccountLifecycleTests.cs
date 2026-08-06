@@ -117,8 +117,13 @@ public sealed class AccountLifecycleTests
     {
         foreach (var file in Directory.EnumerateFiles(appDataDirectory, "*", SearchOption.AllDirectories))
         {
-            var bytes = File.ReadAllBytes(file);
-            var text = System.Text.Encoding.UTF8.GetString(bytes);
+            using var stream = new FileStream(
+                file,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var text = reader.ReadToEnd();
             Assert.DoesNotContain(secret, text, StringComparison.Ordinal);
         }
     }
