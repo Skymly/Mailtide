@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Mailtide.Core/Mailtide.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Mailtide.Core.Tests/Mailtide.Core.Tests.csproj" />
+  </Folder>
+</Solution>
