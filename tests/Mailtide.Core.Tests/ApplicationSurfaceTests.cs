@@ -12,7 +12,8 @@ public sealed class ApplicationSurfaceTests
         await using var app = await MailtideApp.OpenAsync(
             fixture.AppDataDirectory,
             fixture.SecureStorage,
-            fixture.Imap);
+            fixture.Imap,
+            fixture.Smtp);
 
         Assert.IsNotNull(app);
     }

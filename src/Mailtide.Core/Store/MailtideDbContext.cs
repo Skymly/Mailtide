@@ -17,6 +17,10 @@ internal sealed class MailtideDbContext : DbContext
 
     public DbSet<AttachmentRecord> Attachments => Set<AttachmentRecord>();
 
+    public DbSet<DraftRecord> Drafts => Set<DraftRecord>();
+
+    public DbSet<OutboxItemRecord> OutboxItems => Set<OutboxItemRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var account = modelBuilder.Entity<AccountRecord>();
@@ -53,5 +57,22 @@ internal sealed class MailtideDbContext : DbContext
         attachment.Property(a => a.ContentType).IsRequired();
         attachment.Property(a => a.BlobRelativePath).IsRequired();
         attachment.HasIndex(a => new { a.AccountId, a.MessageId });
+
+        var draft = modelBuilder.Entity<DraftRecord>();
+        draft.ToTable("Drafts");
+        draft.HasKey(d => d.Id);
+        draft.Property(d => d.ToAddresses).IsRequired();
+        draft.Property(d => d.Subject).IsRequired();
+        draft.Property(d => d.BodyText).IsRequired();
+        draft.HasIndex(d => d.AccountId);
+
+        var outbox = modelBuilder.Entity<OutboxItemRecord>();
+        outbox.ToTable("OutboxItems");
+        outbox.HasKey(o => o.Id);
+        outbox.Property(o => o.ToAddresses).IsRequired();
+        outbox.Property(o => o.Subject).IsRequired();
+        outbox.Property(o => o.BodyText).IsRequired();
+        outbox.Property(o => o.State).HasConversion<string>();
+        outbox.HasIndex(o => o.AccountId);
     }
 }

@@ -1,6 +1,7 @@
 using Mailtide.Core;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Security;
+using Mailtide.Core.Smtp;
 
 namespace Mailtide.Core.Tests;
 
@@ -13,10 +14,12 @@ internal sealed class CoreAppFixture : IDisposable
 
     public FakeImapClientFactory Imap { get; } = new();
 
+    public FakeSmtpClientFactory Smtp { get; } = new();
+
     public string AppDataDirectory => _appDataDirectory;
 
     public Task<MailtideApp> OpenAppAsync() =>
-        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage, Imap);
+        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage, Imap, Smtp);
 
     public void Dispose()
     {
@@ -136,6 +139,77 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             if (!_authenticated)
             {
                 throw new InvalidOperationException("IMAP client is not authenticated.");
+            }
+        }
+    }
+}
+
+internal sealed class FakeSmtpClientFactory : ISmtpClientFactory
+{
+    private readonly List<OutboundMessage> _submitted = [];
+
+    public Exception? FailWith { get; set; }
+
+    public TaskCompletionSource? BlockSubmitUntil { get; set; }
+
+    public IReadOnlyList<OutboundMessage> Submitted => _submitted;
+
+    public ISmtpClient Create() => new FakeSmtpClient(this);
+
+    private sealed class FakeSmtpClient : ISmtpClient
+    {
+        private readonly FakeSmtpClientFactory _factory;
+        private bool _authenticated;
+
+        public FakeSmtpClient(FakeSmtpClientFactory factory)
+        {
+            _factory = factory;
+        }
+
+        public Task ConnectAndAuthenticateAsync(
+            string host,
+            int port,
+            string username,
+            string password,
+            CancellationToken cancellationToken = default)
+        {
+            if (_factory.FailWith is SmtpAuthenticationException)
+            {
+                throw _factory.FailWith;
+            }
+
+            _ = host;
+            _ = port;
+            _ = username;
+            _ = password;
+            _authenticated = true;
+            return Task.CompletedTask;
+        }
+
+        public async Task SubmitAsync(OutboundMessage message, CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+
+            if (_factory.BlockSubmitUntil is not null)
+            {
+                await _factory.BlockSubmitUntil.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (_factory.FailWith is not null)
+            {
+                throw _factory.FailWith;
+            }
+
+            _factory._submitted.Add(message);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private void EnsureAuthenticated()
+        {
+            if (!_authenticated)
+            {
+                throw new InvalidOperationException("SMTP client is not authenticated.");
             }
         }
     }

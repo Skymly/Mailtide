@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Security;
+using Mailtide.Core.Smtp;
 using Mailtide.Core.Store;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,6 +15,7 @@ public sealed class MailtideApp : IAsyncDisposable
     private readonly string _appDataDirectory;
     private readonly ISecureStorage _secureStorage;
     private readonly IImapClientFactory _imapClientFactory;
+    private readonly ISmtpClientFactory _smtpClientFactory;
     private readonly MailtideDbContext _db;
     private readonly Dictionary<Guid, AccountStatus> _accountStatuses = new();
     private readonly object _statusGate = new();
@@ -23,11 +26,13 @@ public sealed class MailtideApp : IAsyncDisposable
         string appDataDirectory,
         ISecureStorage secureStorage,
         IImapClientFactory imapClientFactory,
+        ISmtpClientFactory smtpClientFactory,
         MailtideDbContext db)
     {
         _appDataDirectory = appDataDirectory;
         _secureStorage = secureStorage;
         _imapClientFactory = imapClientFactory;
+        _smtpClientFactory = smtpClientFactory;
         _db = db;
     }
 
@@ -35,11 +40,13 @@ public sealed class MailtideApp : IAsyncDisposable
         string appDataDirectory,
         ISecureStorage secureStorage,
         IImapClientFactory imapClientFactory,
+        ISmtpClientFactory smtpClientFactory,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
         ArgumentNullException.ThrowIfNull(secureStorage);
         ArgumentNullException.ThrowIfNull(imapClientFactory);
+        ArgumentNullException.ThrowIfNull(smtpClientFactory);
 
         Directory.CreateDirectory(appDataDirectory);
 
@@ -51,7 +58,7 @@ public sealed class MailtideApp : IAsyncDisposable
         var db = new MailtideDbContext(options);
         await EnsureStoreSchemaAsync(db, cancellationToken).ConfigureAwait(false);
 
-        return new MailtideApp(appDataDirectory, secureStorage, imapClientFactory, db);
+        return new MailtideApp(appDataDirectory, secureStorage, imapClientFactory, smtpClientFactory, db);
     }
 
     public async Task<AccountInfo> AddManualAccountAsync(
@@ -162,9 +169,19 @@ public sealed class MailtideApp : IAsyncDisposable
                 .Where(a => a.AccountId == accountId)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var drafts = await _db.Drafts
+                .Where(d => d.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var outboxItems = await _db.OutboxItems
+                .Where(o => o.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
             _db.Attachments.RemoveRange(attachments);
             _db.Messages.RemoveRange(messages);
             _db.Mailboxes.RemoveRange(mailboxes);
+            _db.Drafts.RemoveRange(drafts);
+            _db.OutboxItems.RemoveRange(outboxItems);
 
             _db.Accounts.Remove(record);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -413,6 +430,377 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<DraftInfo> SaveDraftAsync(
+        Guid accountId,
+        DraftContent content,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentNullException.ThrowIfNull(content.ToAddresses);
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var accountExists = await _db.Accounts
+                .AsNoTracking()
+                .AnyAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!accountExists)
+            {
+                throw new InvalidOperationException($"Account '{accountId}' was not found.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var record = new DraftRecord
+            {
+                Id = Guid.NewGuid(),
+                AccountId = accountId,
+                ToAddresses = EncodeAddresses(content.ToAddresses),
+                Subject = content.Subject,
+                BodyText = content.BodyText,
+                UpdatedAt = now,
+            };
+
+            _db.Drafts.Add(record);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            return ToDraftInfo(record);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<DraftInfo>> ListDraftsAsync(
+        Guid accountId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.Drafts
+                .AsNoTracking()
+                .Where(d => d.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return records
+                .OrderByDescending(d => d.UpdatedAt)
+                .ThenBy(d => d.Subject)
+                .Select(ToDraftInfo)
+                .ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public async Task SendAsync(
+        Guid accountId,
+        Guid draftId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var draft = await _db.Drafts
+                .SingleOrDefaultAsync(d => d.AccountId == accountId && d.Id == draftId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (draft is null)
+            {
+                throw new InvalidOperationException($"Draft '{draftId}' was not found.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            _db.OutboxItems.Add(new OutboxItemRecord
+            {
+                Id = Guid.NewGuid(),
+                AccountId = accountId,
+                ToAddresses = draft.ToAddresses,
+                Subject = draft.Subject,
+                BodyText = draft.BodyText,
+                State = OutboxItemState.Queued,
+                ErrorMessage = null,
+                UpdatedAt = now,
+            });
+            _db.Drafts.Remove(draft);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<OutboxItemInfo>> ListOutboxAsync(
+        Guid accountId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.OutboxItems
+                .AsNoTracking()
+                .Where(o => o.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return records
+                .OrderByDescending(o => o.UpdatedAt)
+                .ThenBy(o => o.Subject)
+                .Select(ToOutboxItemInfo)
+                .ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public async Task SendNowAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        AccountInfo account;
+        string password;
+        List<Guid> itemIds;
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var accountRecord = await _db.Accounts
+                .AsNoTracking()
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (accountRecord is null)
+            {
+                throw new InvalidOperationException($"Account '{accountId}' was not found.");
+            }
+
+            account = ToInfo(accountRecord);
+
+            var items = await _db.OutboxItems
+                .Where(o => o.AccountId == accountId && o.State == OutboxItemState.Queued)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            items = items
+                .OrderBy(o => o.UpdatedAt)
+                .ToList();
+
+            if (items.Count == 0)
+            {
+                return;
+            }
+
+            var secret = await _secureStorage
+                .RetrieveSecretAsync(account.CredentialHandle, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (secret is null)
+            {
+                var now = DateTimeOffset.UtcNow;
+                foreach (var item in items)
+                {
+                    item.State = OutboxItemState.Failed;
+                    item.ErrorMessage = AuthenticationFailedMessage;
+                    item.UpdatedAt = now;
+                }
+
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            password = secret;
+            itemIds = items.Select(i => i.Id).ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        ISmtpClient? client = null;
+        try
+        {
+            client = _smtpClientFactory.Create();
+            await client
+                .ConnectAndAuthenticateAsync(
+                    account.SmtpHost,
+                    account.SmtpPort,
+                    account.EmailAddress,
+                    password,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var itemId in itemIds)
+            {
+                OutboundMessage? outbound = null;
+
+                await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    var item = await _db.OutboxItems
+                        .SingleOrDefaultAsync(
+                            o => o.AccountId == accountId && o.Id == itemId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (item is null || item.State != OutboxItemState.Queued)
+                    {
+                        continue;
+                    }
+
+                    item.State = OutboxItemState.Sending;
+                    item.ErrorMessage = null;
+                    item.UpdatedAt = DateTimeOffset.UtcNow;
+                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                    outbound = new OutboundMessage(
+                        account.EmailAddress,
+                        DecodeAddresses(item.ToAddresses),
+                        item.Subject,
+                        item.BodyText);
+                }
+                finally
+                {
+                    _dbGate.Release();
+                }
+
+                if (outbound is null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await client.SubmitAsync(outbound, cancellationToken).ConfigureAwait(false);
+
+                    await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        var item = await _db.OutboxItems
+                            .SingleOrDefaultAsync(
+                                o => o.AccountId == accountId && o.Id == itemId,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+
+                        if (item is not null)
+                        {
+                            _db.OutboxItems.Remove(item);
+                            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                    }
+                    finally
+                    {
+                        _dbGate.Release();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    await RequeueSendingOutboxItemAsync(accountId, itemId, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    await MarkOutboxItemFailedAsync(
+                            accountId,
+                            itemId,
+                            MapSendFailure(ex),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var message = MapSendFailure(ex);
+            foreach (var itemId in itemIds)
+            {
+                await MarkOutboxItemFailedAsync(accountId, itemId, message, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (client is not null)
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    public async Task RetryOutboxItemAsync(
+        Guid accountId,
+        Guid outboxItemId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var item = await _db.OutboxItems
+                .SingleOrDefaultAsync(
+                    o => o.AccountId == accountId && o.Id == outboxItemId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (item is null)
+            {
+                throw new InvalidOperationException($"Outbox item '{outboxItemId}' was not found.");
+            }
+
+            if (item.State != OutboxItemState.Failed)
+            {
+                throw new InvalidOperationException(
+                    $"Outbox item '{outboxItemId}' cannot be retried from state '{item.State}'.");
+            }
+
+            item.State = OutboxItemState.Queued;
+            item.ErrorMessage = null;
+            item.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public async Task DiscardOutboxItemAsync(
+        Guid accountId,
+        Guid outboxItemId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var item = await _db.OutboxItems
+                .SingleOrDefaultAsync(
+                    o => o.AccountId == accountId && o.Id == outboxItemId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (item is null)
+            {
+                return;
+            }
+
+            _db.OutboxItems.Remove(item);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _dbGate.WaitAsync().ConfigureAwait(false);
@@ -501,6 +889,52 @@ public sealed class MailtideApp : IAsyncDisposable
                 """
                 CREATE INDEX IF NOT EXISTS "IX_Attachments_AccountId_MessageId"
                 ON "Attachments" ("AccountId", "MessageId")
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "Drafts" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_Drafts" PRIMARY KEY,
+                    "AccountId" TEXT NOT NULL,
+                    "ToAddresses" TEXT NOT NULL,
+                    "Subject" TEXT NOT NULL,
+                    "BodyText" TEXT NOT NULL,
+                    "UpdatedAt" TEXT NOT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE INDEX IF NOT EXISTS "IX_Drafts_AccountId"
+                ON "Drafts" ("AccountId")
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "OutboxItems" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_OutboxItems" PRIMARY KEY,
+                    "AccountId" TEXT NOT NULL,
+                    "ToAddresses" TEXT NOT NULL,
+                    "Subject" TEXT NOT NULL,
+                    "BodyText" TEXT NOT NULL,
+                    "State" TEXT NOT NULL,
+                    "ErrorMessage" TEXT NULL,
+                    "UpdatedAt" TEXT NOT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE INDEX IF NOT EXISTS "IX_OutboxItems_AccountId"
+                ON "OutboxItems" ("AccountId")
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -616,6 +1050,72 @@ public sealed class MailtideApp : IAsyncDisposable
         Directory.CreateDirectory(blobsDirectory);
     }
 
+    private async Task RequeueSendingOutboxItemAsync(
+        Guid accountId,
+        Guid outboxItemId,
+        CancellationToken cancellationToken)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var item = await _db.OutboxItems
+                .SingleOrDefaultAsync(
+                    o => o.AccountId == accountId && o.Id == outboxItemId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (item is null || item.State != OutboxItemState.Sending)
+            {
+                return;
+            }
+
+            item.State = OutboxItemState.Queued;
+            item.ErrorMessage = null;
+            item.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    private async Task MarkOutboxItemFailedAsync(
+        Guid accountId,
+        Guid outboxItemId,
+        string errorMessage,
+        CancellationToken cancellationToken)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var item = await _db.OutboxItems
+                .SingleOrDefaultAsync(
+                    o => o.AccountId == accountId && o.Id == outboxItemId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (item is null)
+            {
+                return;
+            }
+
+            if (item.State is not (OutboxItemState.Queued or OutboxItemState.Sending))
+            {
+                return;
+            }
+
+            item.State = OutboxItemState.Failed;
+            item.ErrorMessage = errorMessage;
+            item.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     private void SetStatus(Guid accountId, AccountStatus status)
     {
         lock (_statusGate)
@@ -626,11 +1126,41 @@ public sealed class MailtideApp : IAsyncDisposable
 
     private const string AuthenticationFailedMessage = "Authentication failed. Sign in again.";
     private const string SyncFailedMessage = "Could not sync this Account. Try again later.";
+    private const string SendFailedMessage = "Could not send this Message. Try again later.";
 
     private static string MapSyncFailure(Exception ex) =>
         ex is ImapAuthenticationException
             ? AuthenticationFailedMessage
             : SyncFailedMessage;
+
+    private static string MapSendFailure(Exception ex) =>
+        ex is SmtpAuthenticationException
+            ? AuthenticationFailedMessage
+            : SendFailedMessage;
+
+    private static string EncodeAddresses(IReadOnlyList<string> addresses) =>
+        JsonSerializer.Serialize(addresses);
+
+    private static IReadOnlyList<string> DecodeAddresses(string encoded) =>
+        JsonSerializer.Deserialize<string[]>(encoded) ?? [];
+
+    private static DraftInfo ToDraftInfo(DraftRecord record) =>
+        new(
+            record.Id,
+            record.AccountId,
+            DecodeAddresses(record.ToAddresses),
+            record.Subject,
+            record.BodyText,
+            record.UpdatedAt);
+
+    private static OutboxItemInfo ToOutboxItemInfo(OutboxItemRecord record) =>
+        new(
+            record.Id,
+            record.AccountId,
+            record.State,
+            record.Subject,
+            record.ErrorMessage,
+            record.UpdatedAt);
 
     private string AccountPartitionPath(Guid accountId) =>
         Path.Combine(_appDataDirectory, "accounts", accountId.ToString("D"));
