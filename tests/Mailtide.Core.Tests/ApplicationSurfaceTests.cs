@@ -6,9 +6,10 @@ namespace Mailtide.Core.Tests;
 public sealed class ApplicationSurfaceTests
 {
     [TestMethod]
-    public void Application_surface_is_available_to_hosts()
+    public async Task Application_surface_is_available_to_hosts()
     {
-        var app = new MailtideApp();
+        using var fixture = new CoreAppFixture();
+        await using var app = await MailtideApp.OpenAsync(fixture.AppDataDirectory, fixture.SecureStorage);
 
         Assert.IsNotNull(app);
     }
