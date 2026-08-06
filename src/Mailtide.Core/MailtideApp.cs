@@ -731,10 +731,12 @@ public sealed class MailtideApp : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            // Connect (or pre-submit) failure: only Queued items. Do not Fail Sending —
+            // that state may mean SMTP already accepted and local cleanup lagged.
             var message = MapSendFailure(ex);
             foreach (var itemId in itemIds)
             {
-                await MarkOutboxItemFailedAsync(accountId, itemId, message, cancellationToken)
+                await MarkQueuedOutboxItemFailedAsync(accountId, itemId, message, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -1081,6 +1083,37 @@ public sealed class MailtideApp : IAsyncDisposable
 
             item.State = OutboxItemState.Queued;
             item.ErrorMessage = null;
+            item.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    private async Task MarkQueuedOutboxItemFailedAsync(
+        Guid accountId,
+        Guid outboxItemId,
+        string errorMessage,
+        CancellationToken cancellationToken)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var item = await _db.OutboxItems
+                .SingleOrDefaultAsync(
+                    o => o.AccountId == accountId && o.Id == outboxItemId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (item is null || item.State != OutboxItemState.Queued)
+            {
+                return;
+            }
+
+            item.State = OutboxItemState.Failed;
+            item.ErrorMessage = errorMessage;
             item.UpdatedAt = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
