@@ -15,6 +15,8 @@ internal sealed class MailtideDbContext : DbContext
 
     public DbSet<MessageRecord> Messages => Set<MessageRecord>();
 
+    public DbSet<AttachmentRecord> Attachments => Set<AttachmentRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var account = modelBuilder.Entity<AccountRecord>();
@@ -43,5 +45,13 @@ internal sealed class MailtideDbContext : DbContext
         message.Property(m => m.FromAddress).IsRequired();
         message.Property(m => m.BodyText).IsRequired();
         message.HasIndex(m => new { m.AccountId, m.MailboxId, m.RemoteId }).IsUnique();
+
+        var attachment = modelBuilder.Entity<AttachmentRecord>();
+        attachment.ToTable("Attachments");
+        attachment.HasKey(a => a.Id);
+        attachment.Property(a => a.FileName).IsRequired();
+        attachment.Property(a => a.ContentType).IsRequired();
+        attachment.Property(a => a.BlobRelativePath).IsRequired();
+        attachment.HasIndex(a => new { a.AccountId, a.MessageId });
     }
 }

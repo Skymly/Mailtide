@@ -158,6 +158,11 @@ public sealed class MailtideApp : IAsyncDisposable
                 .Where(m => m.AccountId == accountId)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var attachments = await _db.Attachments
+                .Where(a => a.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            _db.Attachments.RemoveRange(attachments);
             _db.Messages.RemoveRange(messages);
             _db.Mailboxes.RemoveRange(mailboxes);
 
@@ -336,6 +341,78 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<IReadOnlyList<AttachmentInfo>> ListAttachmentsAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.Attachments
+                .AsNoTracking()
+                .Where(a => a.AccountId == accountId && a.MessageId == messageId)
+                .OrderBy(a => a.FileName)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return records
+                .Select(a => new AttachmentInfo(
+                    a.Id,
+                    a.MessageId,
+                    a.AccountId,
+                    a.FileName,
+                    a.ContentType))
+                .ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public async Task<AttachmentContent?> OpenAttachmentAsync(
+        Guid accountId,
+        Guid attachmentId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var record = await _db.Attachments
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    a => a.AccountId == accountId && a.Id == attachmentId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (record is null)
+            {
+                return null;
+            }
+
+            var blobPath = Path.Combine(_appDataDirectory, record.BlobRelativePath);
+            if (!File.Exists(blobPath))
+            {
+                return null;
+            }
+
+            var content = await File
+                .ReadAllBytesAsync(blobPath, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new AttachmentContent(
+                record.Id,
+                record.FileName,
+                record.ContentType,
+                content);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _dbGate.WaitAsync().ConfigureAwait(false);
@@ -405,6 +482,28 @@ public sealed class MailtideApp : IAsyncDisposable
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "Attachments" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_Attachments" PRIMARY KEY,
+                    "AccountId" TEXT NOT NULL,
+                    "MessageId" TEXT NOT NULL,
+                    "FileName" TEXT NOT NULL,
+                    "ContentType" TEXT NOT NULL,
+                    "BlobRelativePath" TEXT NOT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE INDEX IF NOT EXISTS "IX_Attachments_AccountId_MessageId"
+                ON "Attachments" ("AccountId", "MessageId")
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<RemoteMailboxSnapshot>> FetchRemoteSnapshotAsync(
@@ -432,6 +531,12 @@ public sealed class MailtideApp : IAsyncDisposable
         IReadOnlyList<RemoteMailboxSnapshot> snapshot,
         CancellationToken cancellationToken)
     {
+        var existingAttachments = await _db.Attachments
+            .Where(a => a.AccountId == accountId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        _db.Attachments.RemoveRange(existingAttachments);
+
         var existingMessages = await _db.Messages
             .Where(m => m.AccountId == accountId)
             .ToListAsync(cancellationToken)
@@ -443,6 +548,8 @@ public sealed class MailtideApp : IAsyncDisposable
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         _db.Mailboxes.RemoveRange(existingMailboxes);
+
+        ResetBlobArea(accountId);
 
         foreach (var entry in snapshot)
         {
@@ -458,9 +565,10 @@ public sealed class MailtideApp : IAsyncDisposable
 
             foreach (var remoteMessage in entry.Messages)
             {
+                var messageId = Guid.NewGuid();
                 _db.Messages.Add(new MessageRecord
                 {
-                    Id = Guid.NewGuid(),
+                    Id = messageId,
                     AccountId = accountId,
                     MailboxId = mailboxId,
                     RemoteId = remoteMessage.RemoteId,
@@ -470,10 +578,42 @@ public sealed class MailtideApp : IAsyncDisposable
                     IsRead = remoteMessage.IsRead,
                     BodyText = remoteMessage.BodyText,
                 });
+
+                foreach (var remoteAttachment in remoteMessage.Attachments)
+                {
+                    var attachmentId = Guid.NewGuid();
+                    var blobRelativePath = BlobRelativePath(accountId, attachmentId);
+                    var blobAbsolutePath = Path.Combine(_appDataDirectory, blobRelativePath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(blobAbsolutePath)!);
+                    await File
+                        .WriteAllBytesAsync(blobAbsolutePath, remoteAttachment.Content, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    _db.Attachments.Add(new AttachmentRecord
+                    {
+                        Id = attachmentId,
+                        AccountId = accountId,
+                        MessageId = messageId,
+                        FileName = remoteAttachment.FileName,
+                        ContentType = remoteAttachment.ContentType,
+                        BlobRelativePath = blobRelativePath,
+                    });
+                }
             }
         }
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private void ResetBlobArea(Guid accountId)
+    {
+        var blobsDirectory = BlobAreaPath(accountId);
+        if (Directory.Exists(blobsDirectory))
+        {
+            Directory.Delete(blobsDirectory, recursive: true);
+        }
+
+        Directory.CreateDirectory(blobsDirectory);
     }
 
     private void SetStatus(Guid accountId, AccountStatus status)
@@ -494,6 +634,12 @@ public sealed class MailtideApp : IAsyncDisposable
 
     private string AccountPartitionPath(Guid accountId) =>
         Path.Combine(_appDataDirectory, "accounts", accountId.ToString("D"));
+
+    private string BlobAreaPath(Guid accountId) =>
+        Path.Combine(AccountPartitionPath(accountId), "blobs");
+
+    private static string BlobRelativePath(Guid accountId, Guid attachmentId) =>
+        Path.Combine("accounts", accountId.ToString("D"), "blobs", attachmentId.ToString("D"));
 
     private static AccountInfo ToInfo(AccountRecord record) =>
         new(
