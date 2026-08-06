@@ -33,10 +33,19 @@ public sealed record RemoteMailbox(
     string Path,
     MailboxRole? Role);
 
+public sealed record RemoteAttachment(
+    string FileName,
+    string ContentType,
+    byte[] Content);
+
 public sealed record RemoteMessage(
     string RemoteId,
     string Subject,
     string FromAddress,
     DateTimeOffset ReceivedAt,
     bool IsRead,
-    string BodyText);
+    string BodyText)
+{
+    public IReadOnlyList<RemoteAttachment> Attachments { get; init; } =
+        Array.Empty<RemoteAttachment>();
+}
