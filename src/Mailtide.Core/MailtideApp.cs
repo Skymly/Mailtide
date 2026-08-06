@@ -677,26 +677,6 @@ public sealed class MailtideApp : IAsyncDisposable
                 try
                 {
                     await client.SubmitAsync(outbound, cancellationToken).ConfigureAwait(false);
-
-                    await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    try
-                    {
-                        var item = await _db.OutboxItems
-                            .SingleOrDefaultAsync(
-                                o => o.AccountId == accountId && o.Id == itemId,
-                                cancellationToken)
-                            .ConfigureAwait(false);
-
-                        if (item is not null)
-                        {
-                            _db.OutboxItems.Remove(item);
-                            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                        }
-                    }
-                    finally
-                    {
-                        _dbGate.Release();
-                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -712,6 +692,36 @@ public sealed class MailtideApp : IAsyncDisposable
                             MapSendFailure(ex),
                             cancellationToken)
                         .ConfigureAwait(false);
+                    continue;
+                }
+
+                // SMTP accepted — clear the row with CancellationToken.None so cancel/DB
+                // errors here cannot requeue or Fail the item (duplicate send).
+                try
+                {
+                    await _dbGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                    try
+                    {
+                        var item = await _db.OutboxItems
+                            .SingleOrDefaultAsync(
+                                o => o.AccountId == accountId && o.Id == itemId,
+                                CancellationToken.None)
+                            .ConfigureAwait(false);
+
+                        if (item is not null)
+                        {
+                            _db.OutboxItems.Remove(item);
+                            await _db.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
+                        }
+                    }
+                    finally
+                    {
+                        _dbGate.Release();
+                    }
+                }
+                catch
+                {
+                    // Best-effort cleanup; Leaving Sending is safer than Queued/Failed.
                 }
             }
         }
