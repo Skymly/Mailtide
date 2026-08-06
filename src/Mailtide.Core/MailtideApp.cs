@@ -16,6 +16,8 @@ public sealed class MailtideApp : IAsyncDisposable
     private readonly MailtideDbContext _db;
     private readonly Dictionary<Guid, AccountStatus> _accountStatuses = new();
     private readonly object _statusGate = new();
+    // DbContext is not thread-safe; serialize all store access on this single-user desktop app.
+    private readonly SemaphoreSlim _dbGate = new(1, 1);
 
     private MailtideApp(
         string appDataDirectory,
@@ -47,7 +49,7 @@ public sealed class MailtideApp : IAsyncDisposable
             .Options;
 
         var db = new MailtideDbContext(options);
-        await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureStoreSchemaAsync(db, cancellationToken).ConfigureAwait(false);
 
         return new MailtideApp(appDataDirectory, secureStorage, imapClientFactory, db);
     }
@@ -66,92 +68,116 @@ public sealed class MailtideApp : IAsyncDisposable
             .StoreSecretAsync(credentialHandle, draft.Password, cancellationToken)
             .ConfigureAwait(false);
 
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var record = new AccountRecord
+            try
             {
-                Id = accountId,
-                DisplayName = draft.DisplayName,
-                EmailAddress = draft.EmailAddress,
-                ImapHost = draft.ImapHost,
-                ImapPort = draft.ImapPort,
-                SmtpHost = draft.SmtpHost,
-                SmtpPort = draft.SmtpPort,
-                CredentialKind = CredentialKind.Password,
-                CredentialHandle = credentialHandle,
-            };
+                var record = new AccountRecord
+                {
+                    Id = accountId,
+                    DisplayName = draft.DisplayName,
+                    EmailAddress = draft.EmailAddress,
+                    ImapHost = draft.ImapHost,
+                    ImapPort = draft.ImapPort,
+                    SmtpHost = draft.SmtpHost,
+                    SmtpPort = draft.SmtpPort,
+                    CredentialKind = CredentialKind.Password,
+                    CredentialHandle = credentialHandle,
+                };
 
-            _db.Accounts.Add(record);
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                _db.Accounts.Add(record);
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-            Directory.CreateDirectory(AccountPartitionPath(accountId));
-            SetStatus(accountId, AccountStatus.Idle());
+                Directory.CreateDirectory(AccountPartitionPath(accountId));
+                SetStatus(accountId, AccountStatus.Idle());
 
-            return ToInfo(record);
+                return ToInfo(record);
+            }
+            catch
+            {
+                await _secureStorage
+                    .DeleteSecretAsync(credentialHandle, CancellationToken.None)
+                    .ConfigureAwait(false);
+                throw;
+            }
         }
-        catch
+        finally
         {
-            await _secureStorage
-                .DeleteSecretAsync(credentialHandle, CancellationToken.None)
-                .ConfigureAwait(false);
-            throw;
+            _dbGate.Release();
         }
     }
 
     public async Task<IReadOnlyList<AccountInfo>> ListAccountsAsync(
         CancellationToken cancellationToken = default)
     {
-        var records = await _db.Accounts
-            .AsNoTracking()
-            .OrderBy(a => a.DisplayName)
-            .ThenBy(a => a.EmailAddress)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.Accounts
+                .AsNoTracking()
+                .OrderBy(a => a.DisplayName)
+                .ThenBy(a => a.EmailAddress)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-        return records.Select(ToInfo).ToList();
+            return records.Select(ToInfo).ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
     }
 
     public async Task RemoveAccountAsync(
         Guid accountId,
         CancellationToken cancellationToken = default)
     {
-        var record = await _db.Accounts
-            .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (record is null)
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return;
+            var record = await _db.Accounts
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (record is null)
+            {
+                return;
+            }
+
+            // Clear the Credential first so a later store failure cannot leave an orphaned secret.
+            await _secureStorage
+                .DeleteSecretAsync(record.CredentialHandle, cancellationToken)
+                .ConfigureAwait(false);
+
+            var mailboxes = await _db.Mailboxes
+                .Where(m => m.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var messages = await _db.Messages
+                .Where(m => m.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            _db.Messages.RemoveRange(messages);
+            _db.Mailboxes.RemoveRange(mailboxes);
+
+            _db.Accounts.Remove(record);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            lock (_statusGate)
+            {
+                _accountStatuses.Remove(accountId);
+            }
+
+            var accountPartition = AccountPartitionPath(accountId);
+            if (Directory.Exists(accountPartition))
+            {
+                Directory.Delete(accountPartition, recursive: true);
+            }
         }
-
-        // Clear the Credential first so a later store failure cannot leave an orphaned secret.
-        await _secureStorage
-            .DeleteSecretAsync(record.CredentialHandle, cancellationToken)
-            .ConfigureAwait(false);
-
-        var mailboxes = await _db.Mailboxes
-            .Where(m => m.AccountId == accountId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var messages = await _db.Messages
-            .Where(m => m.AccountId == accountId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        _db.Messages.RemoveRange(messages);
-        _db.Mailboxes.RemoveRange(mailboxes);
-
-        _db.Accounts.Remove(record);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        lock (_statusGate)
+        finally
         {
-            _accountStatuses.Remove(accountId);
-        }
-
-        var accountPartition = AccountPartitionPath(accountId);
-        if (Directory.Exists(accountPartition))
-        {
-            Directory.Delete(accountPartition, recursive: true);
+            _dbGate.Release();
         }
     }
 
@@ -167,57 +193,65 @@ public sealed class MailtideApp : IAsyncDisposable
 
     public async Task SyncNowAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
-        var account = await _db.Accounts
-            .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (account is null)
-        {
-            throw new InvalidOperationException($"Account '{accountId}' was not found.");
-        }
-
-        var password = await _secureStorage
-            .RetrieveSecretAsync(account.CredentialHandle, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (password is null)
-        {
-            SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
-            return;
-        }
-
-        SetStatus(accountId, AccountStatus.Syncing());
-
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await using var client = _imapClientFactory.Create();
-            await client
-                .ConnectAndAuthenticateAsync(
-                    account.ImapHost,
-                    account.ImapPort,
-                    account.EmailAddress,
-                    password,
-                    cancellationToken)
+            var account = await _db.Accounts
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
                 .ConfigureAwait(false);
 
-            var snapshot = await FetchRemoteSnapshotAsync(client, cancellationToken)
+            if (account is null)
+            {
+                throw new InvalidOperationException($"Account '{accountId}' was not found.");
+            }
+
+            var password = await _secureStorage
+                .RetrieveSecretAsync(account.CredentialHandle, cancellationToken)
                 .ConfigureAwait(false);
 
-            await PersistSnapshotAsync(accountId, snapshot, cancellationToken)
-                .ConfigureAwait(false);
+            if (password is null)
+            {
+                SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+                return;
+            }
 
-            SetStatus(accountId, AccountStatus.Idle());
+            SetStatus(accountId, AccountStatus.Syncing());
+
+            try
+            {
+                await using var client = _imapClientFactory.Create();
+                await client
+                    .ConnectAndAuthenticateAsync(
+                        account.ImapHost,
+                        account.ImapPort,
+                        account.EmailAddress,
+                        password,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                var snapshot = await FetchRemoteSnapshotAsync(client, cancellationToken)
+                    .ConfigureAwait(false);
+
+                await PersistSnapshotAsync(accountId, snapshot, cancellationToken)
+                    .ConfigureAwait(false);
+
+                SetStatus(accountId, AccountStatus.Idle());
+            }
+            catch (OperationCanceledException)
+            {
+                _db.ChangeTracker.Clear();
+                SetStatus(accountId, AccountStatus.Idle());
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _db.ChangeTracker.Clear();
+                SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+            }
         }
-        catch (OperationCanceledException)
+        finally
         {
-            _db.ChangeTracker.Clear();
-            SetStatus(accountId, AccountStatus.Idle());
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _db.ChangeTracker.Clear();
-            SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+            _dbGate.Release();
         }
     }
 
@@ -225,16 +259,24 @@ public sealed class MailtideApp : IAsyncDisposable
         Guid accountId,
         CancellationToken cancellationToken = default)
     {
-        var records = await _db.Mailboxes
-            .AsNoTracking()
-            .Where(m => m.AccountId == accountId)
-            .OrderBy(m => m.Name)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.Mailboxes
+                .AsNoTracking()
+                .Where(m => m.AccountId == accountId)
+                .OrderBy(m => m.Name)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-        return records
-            .Select(m => new MailboxInfo(m.Id, m.AccountId, m.Name, m.Path, m.Role))
-            .ToList();
+            return records
+                .Select(m => new MailboxInfo(m.Id, m.AccountId, m.Name, m.Path, m.Role))
+                .ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
     }
 
     public async Task<IReadOnlyList<MessageInfo>> ListMessagesAsync(
@@ -242,25 +284,33 @@ public sealed class MailtideApp : IAsyncDisposable
         Guid mailboxId,
         CancellationToken cancellationToken = default)
     {
-        var records = await _db.Messages
-            .AsNoTracking()
-            .Where(m => m.AccountId == accountId && m.MailboxId == mailboxId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.Messages
+                .AsNoTracking()
+                .Where(m => m.AccountId == accountId && m.MailboxId == mailboxId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-        return records
-            .OrderByDescending(m => m.ReceivedAt)
-            .ThenBy(m => m.Subject)
-            .Select(m => new MessageInfo(
-                m.Id,
-                m.AccountId,
-                m.MailboxId,
-                m.RemoteId,
-                m.Subject,
-                m.FromAddress,
-                m.ReceivedAt,
-                m.IsRead))
-            .ToList();
+            return records
+                .OrderByDescending(m => m.ReceivedAt)
+                .ThenBy(m => m.Subject)
+                .Select(m => new MessageInfo(
+                    m.Id,
+                    m.AccountId,
+                    m.MailboxId,
+                    m.RemoteId,
+                    m.Subject,
+                    m.FromAddress,
+                    m.ReceivedAt,
+                    m.IsRead))
+                .ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
     }
 
     public async Task<string?> GetMessageBodyAsync(
@@ -268,19 +318,93 @@ public sealed class MailtideApp : IAsyncDisposable
         Guid messageId,
         CancellationToken cancellationToken = default)
     {
-        var record = await _db.Messages
-            .AsNoTracking()
-            .SingleOrDefaultAsync(
-                m => m.AccountId == accountId && m.Id == messageId,
-                cancellationToken)
-            .ConfigureAwait(false);
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var record = await _db.Messages
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    m => m.AccountId == accountId && m.Id == messageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-        return record?.BodyText;
+            return record?.BodyText;
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _db.DisposeAsync().ConfigureAwait(false);
+        await _dbGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await _db.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+            _dbGate.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// EnsureCreated only creates a missing database; it does not add tables to an existing file.
+    /// Create any model tables that may be absent after upgrading from an Accounts-only schema.
+    /// </summary>
+    private static async Task EnsureStoreSchemaAsync(
+        MailtideDbContext db,
+        CancellationToken cancellationToken)
+    {
+        await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "Mailboxes" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_Mailboxes" PRIMARY KEY,
+                    "AccountId" TEXT NOT NULL,
+                    "Name" TEXT NOT NULL,
+                    "Path" TEXT NOT NULL,
+                    "Role" TEXT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Mailboxes_AccountId_Path"
+                ON "Mailboxes" ("AccountId", "Path")
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "Messages" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_Messages" PRIMARY KEY,
+                    "AccountId" TEXT NOT NULL,
+                    "MailboxId" TEXT NOT NULL,
+                    "RemoteId" TEXT NOT NULL,
+                    "Subject" TEXT NOT NULL,
+                    "FromAddress" TEXT NOT NULL,
+                    "ReceivedAt" TEXT NOT NULL,
+                    "IsRead" INTEGER NOT NULL,
+                    "BodyText" TEXT NOT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Messages_AccountId_MailboxId_RemoteId"
+                ON "Messages" ("AccountId", "MailboxId", "RemoteId")
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<RemoteMailboxSnapshot>> FetchRemoteSnapshotAsync(
