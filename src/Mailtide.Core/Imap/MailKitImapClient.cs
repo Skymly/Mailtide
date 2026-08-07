@@ -135,7 +135,11 @@ internal sealed class MailKitImapClient : IImapClient
                     FromAddress: mime.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
                     ReceivedAt: summary.InternalDate ?? mime.Date,
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
+<<<<<<< HEAD
                     BodyText: NormalizeBody(mime.TextBody ?? mime.HtmlBody))
+=======
+                    BodyText: ExtractBodyText(mime))
+>>>>>>> c493184 (Map mid-session auth failures and strip HTML-only bodies to plain text.)
                 {
                     Attachments = ExtractAttachments(mime),
                 };
@@ -230,6 +234,25 @@ internal sealed class MailKitImapClient : IImapClient
         }
 
         return null;
+    }
+
+    private static string ExtractBodyText(MimeMessage mime)
+    {
+        if (!string.IsNullOrWhiteSpace(mime.TextBody))
+        {
+            return NormalizeBody(mime.TextBody);
+        }
+
+        if (string.IsNullOrWhiteSpace(mime.HtmlBody))
+        {
+            return string.Empty;
+        }
+
+        // BodyText is plain text — strip markup rather than storing raw HTML.
+        var withoutTags = System.Text.RegularExpressions.Regex.Replace(mime.HtmlBody, "<[^>]+>", " ");
+        var decoded = System.Net.WebUtility.HtmlDecode(withoutTags);
+        return NormalizeBody(
+            System.Text.RegularExpressions.Regex.Replace(decoded, @"\s+", " ").Trim());
     }
 
     private static string NormalizeBody(string? body) =>

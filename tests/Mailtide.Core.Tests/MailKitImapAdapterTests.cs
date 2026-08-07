@@ -66,4 +66,40 @@ public sealed class MailKitImapAdapterTests
                 "alice@example.com",
                 "wrong-password"));
     }
+
+    [TestMethod]
+    public async Task Real_IMAP_adapter_extracts_plain_text_from_HTML_only_Messages()
+    {
+        await using var server = LoopbackImapServer.Start(
+        [
+            new SeededMailbox(
+                Path: "INBOX",
+                Attributes: ["Inbox"],
+                Messages:
+                [
+                    new SeededImapMessage(
+                        Uid: 2,
+                        Subject: "HTML only",
+                        From: "bob@example.com",
+                        InternalDate: new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero),
+                        IsRead: true,
+                        BodyText: string.Empty)
+                    {
+                        HtmlBody = "<p>Hello&nbsp;<b>world</b></p>",
+                    },
+                ]),
+        ]);
+
+        await using var client = new MailKitImapClientFactory().Create();
+        await client.ConnectAndAuthenticateAsync(
+            "127.0.0.1",
+            server.Port,
+            "alice@example.com",
+            "s3cret-password");
+
+        var messages = await client.FetchMessagesAsync("INBOX");
+        Assert.HasCount(1, messages);
+        Assert.AreEqual("Hello world", messages[0].BodyText);
+        Assert.DoesNotContain("<", messages[0].BodyText, StringComparison.Ordinal);
+    }
 }

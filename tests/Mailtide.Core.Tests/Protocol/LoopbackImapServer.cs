@@ -344,6 +344,8 @@ internal sealed record SeededImapMessage(
     string BodyText,
     IReadOnlyList<SeededImapAttachment>? Attachments = null)
 {
+    public string? HtmlBody { get; init; }
+
     public string Rfc822
     {
         get
@@ -374,6 +376,18 @@ internal sealed record SeededImapMessage(
 
                 sb.Append("--").Append(boundary).Append("--\r\n");
                 return sb.ToString();
+            }
+
+            if (!string.IsNullOrEmpty(HtmlBody) && string.IsNullOrEmpty(BodyText))
+            {
+                return
+                    $"From: {From}\r\n" +
+                    $"Subject: {Subject}\r\n" +
+                    $"Date: {InternalDate.UtcDateTime:r}\r\n" +
+                    "MIME-Version: 1.0\r\n" +
+                    "Content-Type: text/html; charset=utf-8\r\n" +
+                    "\r\n" +
+                    $"{HtmlBody}\r\n";
             }
 
             return
