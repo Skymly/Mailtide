@@ -19,8 +19,9 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             _core = DesktopComposition.OpenCoreAsync().GetAwaiter().GetResult();
-            var shell = new BrowseShell(_core);
-            var mainWindow = new MainWindow(shell);
+            var browse = new BrowseShell(_core);
+            var compose = new ComposeOutboxShell(_core);
+            var mainWindow = new MainWindow(browse, compose);
             desktop.MainWindow = mainWindow;
             desktop.Exit += OnExit;
 
