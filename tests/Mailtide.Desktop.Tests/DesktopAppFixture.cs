@@ -1,0 +1,151 @@
+using Mailtide.Core;
+using Mailtide.Core.Imap;
+using Mailtide.Core.Security;
+using Mailtide.Core.Smtp;
+
+namespace Mailtide.Desktop.Tests;
+
+internal sealed class DesktopAppFixture : IDisposable
+{
+    private readonly string _appDataDirectory =
+        Path.Combine(Path.GetTempPath(), "mailtide-desktop-tests", Guid.NewGuid().ToString("N"));
+
+    public FakeSecureStorage SecureStorage { get; } = new();
+
+    public FakeImapClientFactory Imap { get; } = new();
+
+    public FakeSmtpClientFactory Smtp { get; } = new();
+
+    public string AppDataDirectory => _appDataDirectory;
+
+    public Task<MailtideApp> OpenAppAsync() =>
+        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage, Imap, Smtp);
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_appDataDirectory))
+        {
+            Directory.Delete(_appDataDirectory, recursive: true);
+        }
+    }
+}
+
+internal sealed class FakeSecureStorage : ISecureStorage
+{
+    private readonly Dictionary<string, string> _secrets = new(StringComparer.Ordinal);
+
+    public Task StoreSecretAsync(string key, string secret, CancellationToken cancellationToken = default)
+    {
+        _secrets[key] = secret;
+        return Task.CompletedTask;
+    }
+
+    public Task<string?> RetrieveSecretAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _secrets.TryGetValue(key, out var secret);
+        return Task.FromResult<string?>(secret);
+    }
+
+    public Task DeleteSecretAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _secrets.Remove(key);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeImapClientFactory : IImapClientFactory
+{
+    private readonly List<RemoteMailbox> _mailboxes = [];
+    private readonly Dictionary<string, List<RemoteMessage>> _messagesByPath =
+        new(StringComparer.Ordinal);
+
+    public void SeedMailboxes(params RemoteMailbox[] mailboxes)
+    {
+        _mailboxes.Clear();
+        _mailboxes.AddRange(mailboxes);
+    }
+
+    public void SeedMessages(string mailboxPath, params RemoteMessage[] messages)
+    {
+        _messagesByPath[mailboxPath] = messages.ToList();
+    }
+
+    public IImapClient Create() => new FakeImapClient(this);
+
+    private sealed class FakeImapClient : IImapClient
+    {
+        private readonly FakeImapClientFactory _factory;
+        private bool _authenticated;
+
+        public FakeImapClient(FakeImapClientFactory factory)
+        {
+            _factory = factory;
+        }
+
+        public Task ConnectAndAuthenticateAsync(
+            string host,
+            int port,
+            string username,
+            string password,
+            CancellationToken cancellationToken = default)
+        {
+            _ = host;
+            _ = port;
+            _ = username;
+            _ = password;
+            _authenticated = true;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RemoteMailbox>> ListMailboxesAsync(
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            return Task.FromResult<IReadOnlyList<RemoteMailbox>>(_factory._mailboxes.ToList());
+        }
+
+        public Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                messages = [];
+            }
+
+            return Task.FromResult<IReadOnlyList<RemoteMessage>>(messages.ToList());
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private void EnsureAuthenticated()
+        {
+            if (!_authenticated)
+            {
+                throw new InvalidOperationException("IMAP client is not authenticated.");
+            }
+        }
+    }
+}
+
+internal sealed class FakeSmtpClientFactory : ISmtpClientFactory
+{
+    public ISmtpClient Create() => new FakeSmtpClient();
+
+    private sealed class FakeSmtpClient : ISmtpClient
+    {
+        public Task ConnectAndAuthenticateAsync(
+            string host,
+            int port,
+            string username,
+            string password,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task SubmitAsync(OutboundMessage message, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}

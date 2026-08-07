@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:core="using:Mailtide.Core"
+        mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="640"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        x:Class="Mailtide.Desktop.MainWindow"
+        Title="Mailtide"
+        Width="960"
+        Height="640">
+  <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+      <TextBlock Text="Mailtide" FontSize="20" VerticalAlignment="Center" />
+      <Button Name="UnifiedInboxButton" Content="Unified Inbox" Click="OnUnifiedInboxClick" />
+      <Button Name="RefreshButton" Content="Refresh" Click="OnRefreshClick" />
+    </StackPanel>
+
+    <Grid ColumnDefinitions="220,220,*" ColumnSpacing="12">
+      <DockPanel Grid.Column="0">
+        <TextBlock DockPanel.Dock="Top" Text="Accounts" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <ListBox Name="AccountsList"
+                 SelectionChanged="OnAccountSelectionChanged">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="core:AccountInfo">
+              <StackPanel>
+                <TextBlock Text="{Binding DisplayName}" />
+                <TextBlock Text="{Binding EmailAddress}" Opacity="0.7" FontSize="12" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <DockPanel Grid.Column="1">
+        <TextBlock DockPanel.Dock="Top" Text="Mailboxes" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <ListBox Name="MailboxesList"
+                 SelectionChanged="OnMailboxSelectionChanged">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="core:MailboxInfo">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <DockPanel Grid.Column="2">
+        <TextBlock Name="MessagesHeader"
+                   DockPanel.Dock="Top"
+                   Text="Messages"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,8" />
+        <ListBox Name="MessagesList">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="core:MessageInfo">
+              <StackPanel>
+                <TextBlock Text="{Binding Subject}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding FromAddress}" Opacity="0.7" FontSize="12" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</Window>

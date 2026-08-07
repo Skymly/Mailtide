@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Mailtide.Core/Mailtide.Core.csproj" />
+    <Project Path="src/Mailtide.Desktop/Mailtide.Desktop.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Mailtide.Core.Tests/Mailtide.Core.Tests.csproj" />
+    <Project Path="tests/Mailtide.Desktop.Tests/Mailtide.Desktop.Tests.csproj" />
   </Folder>
 </Solution>
