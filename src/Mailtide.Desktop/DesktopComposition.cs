@@ -1,4 +1,6 @@
 using Mailtide.Core;
+using Mailtide.Core.Imap;
+using Mailtide.Core.Smtp;
 using Mailtide.Desktop.Host;
 
 namespace Mailtide.Desktop;
@@ -15,8 +17,8 @@ internal static class DesktopComposition
             .OpenAsync(
                 appData,
                 new InMemorySecureStorage(),
-                new PlaceholderImapClientFactory(),
-                new PlaceholderSmtpClientFactory(),
+                new MailKitImapClientFactory(),
+                new MailKitSmtpClientFactory(),
                 cancellationToken)
             .ConfigureAwait(false);
     }

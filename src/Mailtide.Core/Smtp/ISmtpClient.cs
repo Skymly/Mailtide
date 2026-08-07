@@ -1,7 +1,8 @@
 namespace Mailtide.Core.Smtp;
 
 /// <summary>
-/// Host/test-provided factory for protocol clients. Core never constructs real SMTP sockets.
+/// Host/test-provided factory for protocol clients.
+/// Core ships <see cref="MailKitSmtpClientFactory"/>; hosts wire it (or a fake in tests).
 /// </summary>
 public interface ISmtpClientFactory
 {

@@ -1,7 +1,8 @@
 namespace Mailtide.Core.Imap;
 
 /// <summary>
-/// Host/test-provided factory for protocol clients. Core never constructs real IMAP sockets.
+/// Host/test-provided factory for protocol clients.
+/// Core ships <see cref="MailKitImapClientFactory"/>; hosts wire it (or a fake in tests).
 /// </summary>
 public interface IImapClientFactory
 {
