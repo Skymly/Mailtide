@@ -61,6 +61,25 @@ public sealed class MailtideApp : IAsyncDisposable
         return new MailtideApp(appDataDirectory, secureStorage, imapClientFactory, smtpClientFactory, db);
     }
 
+    public Task<AccountInfo> AddQqMailAccountAsync(
+        QqMailAccountDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        ArgumentException.ThrowIfNullOrWhiteSpace(draft.AuthorizationCode);
+
+        return AddManualAccountAsync(
+            new ManualAccountDraft(
+                DisplayName: draft.DisplayName,
+                EmailAddress: draft.EmailAddress,
+                ImapHost: QqMailPreset.ImapHost,
+                ImapPort: QqMailPreset.ImapPort,
+                SmtpHost: QqMailPreset.SmtpHost,
+                SmtpPort: QqMailPreset.SmtpPort,
+                Password: draft.AuthorizationCode),
+            cancellationToken);
+    }
+
     public async Task<AccountInfo> AddManualAccountAsync(
         ManualAccountDraft draft,
         CancellationToken cancellationToken = default)
