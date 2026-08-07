@@ -86,7 +86,11 @@ internal sealed class MailKitImapClient : IImapClient
                 .OrderBy(m => m.Path, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException)
         {
             throw new ImapProtocolException("IMAP protocol failure.", ex);
         }
@@ -131,7 +135,7 @@ internal sealed class MailKitImapClient : IImapClient
                     FromAddress: mime.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
                     ReceivedAt: summary.InternalDate ?? mime.Date,
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
-                    BodyText: NormalizeBody(mime.TextBody))
+                    BodyText: NormalizeBody(mime.TextBody ?? mime.HtmlBody))
                 {
                     Attachments = ExtractAttachments(mime),
                 };
@@ -140,7 +144,11 @@ internal sealed class MailKitImapClient : IImapClient
 
             return messages;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException)
         {
             throw new ImapProtocolException("IMAP protocol failure.", ex);
         }

@@ -73,7 +73,11 @@ internal sealed class MailKitSmtpClient : ISmtpClient
 
             await client.SendAsync(mime, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (AuthenticationException ex)
+        {
+            throw new SmtpAuthenticationException("SMTP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not SmtpAuthenticationException)
         {
             throw new SmtpProtocolException("SMTP protocol failure.", ex);
         }
