@@ -274,6 +274,22 @@ public sealed class MailtideApp : IAsyncDisposable
             await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // Account may have been removed while IMAP ran outside _dbGate.
+                var stillPresent = await _db.Accounts
+                    .AsNoTracking()
+                    .AnyAsync(a => a.Id == accountId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!stillPresent)
+                {
+                    lock (_statusGate)
+                    {
+                        _accountStatuses.Remove(accountId);
+                    }
+
+                    return;
+                }
+
                 await PersistSnapshotAsync(accountId, snapshot, cancellationToken)
                     .ConfigureAwait(false);
 
