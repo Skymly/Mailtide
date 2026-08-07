@@ -215,10 +215,16 @@ public sealed class MailtideApp : IAsyncDisposable
 
     public async Task SyncNowAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
+        string imapHost;
+        int imapPort;
+        string emailAddress;
+        string password;
+
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var account = await _db.Accounts
+                .AsNoTracking()
                 .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -227,49 +233,76 @@ public sealed class MailtideApp : IAsyncDisposable
                 throw new InvalidOperationException($"Account '{accountId}' was not found.");
             }
 
-            var password = await _secureStorage
+            var secret = await _secureStorage
                 .RetrieveSecretAsync(account.CredentialHandle, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (password is null)
+            if (secret is null)
             {
                 SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
                 return;
             }
 
-            SetStatus(accountId, AccountStatus.Syncing());
+            imapHost = account.ImapHost;
+            imapPort = account.ImapPort;
+            emailAddress = account.EmailAddress;
+            password = secret;
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
 
+        // Network I/O runs outside _dbGate so other Accounts can sync in parallel.
+        SetStatus(accountId, AccountStatus.Syncing());
+
+        try
+        {
+            await using var client = _imapClientFactory.Create();
+            await client
+                .ConnectAndAuthenticateAsync(
+                    imapHost,
+                    imapPort,
+                    emailAddress,
+                    password,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var snapshot = await FetchRemoteSnapshotAsync(client, cancellationToken)
+                .ConfigureAwait(false);
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await using var client = _imapClientFactory.Create();
-                await client
-                    .ConnectAndAuthenticateAsync(
-                        account.ImapHost,
-                        account.ImapPort,
-                        account.EmailAddress,
-                        password,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-
-                var snapshot = await FetchRemoteSnapshotAsync(client, cancellationToken)
-                    .ConfigureAwait(false);
-
                 await PersistSnapshotAsync(accountId, snapshot, cancellationToken)
                     .ConfigureAwait(false);
 
                 SetStatus(accountId, AccountStatus.Idle());
             }
-            catch (OperationCanceledException)
+            finally
             {
-                _db.ChangeTracker.Clear();
-                SetStatus(accountId, AccountStatus.Idle());
-                throw;
+                _dbGate.Release();
             }
-            catch (Exception ex)
-            {
-                _db.ChangeTracker.Clear();
-                SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            await ClearTrackerAsync(CancellationToken.None).ConfigureAwait(false);
+            SetStatus(accountId, AccountStatus.Idle());
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await ClearTrackerAsync(CancellationToken.None).ConfigureAwait(false);
+            SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+        }
+    }
+
+    private async Task ClearTrackerAsync(CancellationToken cancellationToken)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _db.ChangeTracker.Clear();
         }
         finally
         {
@@ -318,15 +351,47 @@ public sealed class MailtideApp : IAsyncDisposable
             return records
                 .OrderByDescending(m => m.ReceivedAt)
                 .ThenBy(m => m.Subject)
-                .Select(m => new MessageInfo(
-                    m.Id,
-                    m.AccountId,
-                    m.MailboxId,
-                    m.RemoteId,
-                    m.Subject,
-                    m.FromAddress,
-                    m.ReceivedAt,
-                    m.IsRead))
+                .Select(ToMessageInfo)
+                .ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Aggregates Messages from every Account's Inbox-role Mailbox as a query view —
+    /// not a stored Mailbox/container.
+    /// </summary>
+    public async Task<IReadOnlyList<MessageInfo>> ListUnifiedInboxAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var inboxMailboxIds = await _db.Mailboxes
+                .AsNoTracking()
+                .Where(m => m.Role == MailboxRole.Inbox)
+                .Select(m => m.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (inboxMailboxIds.Count == 0)
+            {
+                return [];
+            }
+
+            var records = await _db.Messages
+                .AsNoTracking()
+                .Where(m => inboxMailboxIds.Contains(m.MailboxId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return records
+                .OrderByDescending(m => m.ReceivedAt)
+                .ThenBy(m => m.Subject)
+                .Select(ToMessageInfo)
                 .ToList();
         }
         finally
@@ -1225,6 +1290,17 @@ public sealed class MailtideApp : IAsyncDisposable
             record.SmtpPort,
             record.CredentialKind,
             record.CredentialHandle);
+
+    private static MessageInfo ToMessageInfo(MessageRecord record) =>
+        new(
+            record.Id,
+            record.AccountId,
+            record.MailboxId,
+            record.RemoteId,
+            record.Subject,
+            record.FromAddress,
+            record.ReceivedAt,
+            record.IsRead);
 
     private sealed record RemoteMailboxSnapshot(
         RemoteMailbox Mailbox,
