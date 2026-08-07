@@ -108,10 +108,16 @@ public sealed class BrowseShellTests
             + (await app.ListMailboxesAsync(accountB.Id)).Count;
 
         var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(accountA.Id);
+        Assert.IsNotEmpty(shell.Mailboxes);
+        Assert.AreEqual(accountA.Id, shell.SelectedAccountId);
+
         await shell.ShowUnifiedInboxAsync();
 
         Assert.IsTrue(shell.ShowingUnifiedInbox);
+        Assert.IsNull(shell.SelectedAccountId);
         Assert.IsNull(shell.SelectedMailboxId);
+        Assert.IsEmpty(shell.Mailboxes);
         Assert.HasCount(2, shell.Messages);
         Assert.AreEqual("From Bob Inbox", shell.Messages[0].Subject);
         Assert.AreEqual("From Alice Inbox", shell.Messages[1].Subject);

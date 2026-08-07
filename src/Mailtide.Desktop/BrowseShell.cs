@@ -57,8 +57,10 @@ public sealed class BrowseShell
 
     public async Task ShowUnifiedInboxAsync(CancellationToken cancellationToken = default)
     {
+        SelectedAccountId = null;
         SelectedMailboxId = null;
         ShowingUnifiedInbox = true;
+        Mailboxes = [];
         Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
     }
 }
