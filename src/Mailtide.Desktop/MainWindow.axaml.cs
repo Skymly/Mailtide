@@ -6,7 +6,8 @@ namespace Mailtide.Desktop;
 
 public partial class MainWindow : Window
 {
-    private readonly BrowseShell? _shell;
+    private readonly BrowseShell? _browse;
+    private readonly ComposeOutboxShell? _compose;
     private bool _suppressSelectionHandlers;
 
     /// <summary>Designer / XAML loader entry point.</summary>
@@ -15,36 +16,35 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-    public MainWindow(BrowseShell shell)
+    public MainWindow(BrowseShell browse, ComposeOutboxShell compose)
     {
-        ArgumentNullException.ThrowIfNull(shell);
-        _shell = shell;
+        ArgumentNullException.ThrowIfNull(browse);
+        ArgumentNullException.ThrowIfNull(compose);
+        _browse = browse;
+        _compose = compose;
         InitializeComponent();
     }
 
     public async Task InitializeBrowseAsync()
     {
-        var shell = RequireShell();
-        await shell.LoadAccountsAsync().ConfigureAwait(true);
-        await shell.ShowUnifiedInboxAsync().ConfigureAwait(true);
+        var browse = RequireBrowse();
+        await browse.LoadAccountsAsync().ConfigureAwait(true);
+        await browse.ShowUnifiedInboxAsync().ConfigureAwait(true);
         BindLists();
     }
 
     private async void OnRefreshClick(object? sender, RoutedEventArgs e)
     {
-        var shell = RequireShell();
-        await shell.LoadAccountsAsync().ConfigureAwait(true);
-        if (shell.ShowingUnifiedInbox)
+        var browse = RequireBrowse();
+        await browse.LoadAccountsAsync().ConfigureAwait(true);
+        if (browse.ShowingUnifiedInbox)
         {
-            await shell.ShowUnifiedInboxAsync().ConfigureAwait(true);
+            await browse.ShowUnifiedInboxAsync().ConfigureAwait(true);
         }
-        else if (shell.SelectedAccountId is { } accountId)
+        else if (browse.SelectedAccountId is { } accountId)
         {
-            await shell.SelectAccountAsync(accountId).ConfigureAwait(true);
-            if (shell.SelectedMailboxId is { } mailboxId)
-            {
-                await shell.SelectMailboxAsync(mailboxId).ConfigureAwait(true);
-            }
+            await ReloadBrowseSelectionAsync(browse, accountId).ConfigureAwait(true);
+            await RequireCompose().SelectAccountAsync(accountId).ConfigureAwait(true);
         }
 
         BindLists();
@@ -52,13 +52,109 @@ public partial class MainWindow : Window
 
     private async void OnUnifiedInboxClick(object? sender, RoutedEventArgs e)
     {
-        await RequireShell().ShowUnifiedInboxAsync().ConfigureAwait(true);
+        await RequireBrowse().ShowUnifiedInboxAsync().ConfigureAwait(true);
+        BindLists();
+    }
+
+    private async void OnSyncNowClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (compose.SelectedAccountId is null)
+        {
+            return;
+        }
+
+        await compose.SyncNowAsync().ConfigureAwait(true);
+
+        var browse = RequireBrowse();
+        if (browse.SelectedAccountId is { } accountId)
+        {
+            await ReloadBrowseSelectionAsync(browse, accountId).ConfigureAwait(true);
+        }
+
+        BindLists();
+    }
+
+    private async void OnSendNowClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (compose.SelectedAccountId is null)
+        {
+            return;
+        }
+
+        await compose.SendNowAsync().ConfigureAwait(true);
+        BindLists();
+    }
+
+    private async void OnSaveDraftClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (compose.SelectedAccountId is null)
+        {
+            return;
+        }
+
+        await compose
+            .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty)
+            .ConfigureAwait(true);
+        BindLists();
+        DraftsList.SelectedItem = compose.Drafts.FirstOrDefault();
+    }
+
+    private async void OnSendDraftClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (compose.SelectedAccountId is null)
+        {
+            return;
+        }
+
+        var draft = DraftsList.SelectedItem as DraftInfo;
+        if (draft is null)
+        {
+            await compose
+                .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty)
+                .ConfigureAwait(true);
+            draft = compose.Drafts.FirstOrDefault();
+            if (draft is null)
+            {
+                return;
+            }
+        }
+
+        await compose.SendAsync(draft.Id).ConfigureAwait(true);
+        ClearComposeFields();
+        BindLists();
+    }
+
+    private async void OnRetryOutboxClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (OutboxList.SelectedItem is not OutboxItemInfo item || item.State != OutboxItemState.Failed)
+        {
+            return;
+        }
+
+        await compose.RetryOutboxItemAsync(item.Id).ConfigureAwait(true);
+        BindLists();
+    }
+
+    private async void OnDiscardOutboxClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (OutboxList.SelectedItem is not OutboxItemInfo item)
+        {
+            return;
+        }
+
+        await compose.DiscardOutboxItemAsync(item.Id).ConfigureAwait(true);
         BindLists();
     }
 
     private async void OnAccountSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_suppressSelectionHandlers || _shell is null)
+        if (_suppressSelectionHandlers || _browse is null)
         {
             return;
         }
@@ -68,13 +164,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _shell.SelectAccountAsync(account.Id).ConfigureAwait(true);
+        await _browse.SelectAccountAsync(account.Id).ConfigureAwait(true);
+        await RequireCompose().SelectAccountAsync(account.Id).ConfigureAwait(true);
         BindLists();
     }
 
     private async void OnMailboxSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_suppressSelectionHandlers || _shell is null)
+        if (_suppressSelectionHandlers || _browse is null)
         {
             return;
         }
@@ -84,29 +181,49 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _shell.SelectMailboxAsync(mailbox.Id).ConfigureAwait(true);
+        await _browse.SelectMailboxAsync(mailbox.Id).ConfigureAwait(true);
         BindLists();
+    }
+
+    private static async Task ReloadBrowseSelectionAsync(BrowseShell browse, Guid accountId)
+    {
+        var mailboxId = browse.SelectedMailboxId;
+        await browse.SelectAccountAsync(accountId).ConfigureAwait(true);
+        if (mailboxId is { } selectedMailboxId)
+        {
+            await browse.SelectMailboxAsync(selectedMailboxId).ConfigureAwait(true);
+        }
+    }
+
+    private void ClearComposeFields()
+    {
+        ComposeToBox.Text = string.Empty;
+        ComposeSubjectBox.Text = string.Empty;
+        ComposeBodyBox.Text = string.Empty;
     }
 
     private void BindLists()
     {
-        var shell = RequireShell();
+        var browse = RequireBrowse();
+        var compose = RequireCompose();
         _suppressSelectionHandlers = true;
         try
         {
-            AccountsList.ItemsSource = shell.Accounts;
-            MailboxesList.ItemsSource = shell.Mailboxes;
-            MessagesList.ItemsSource = shell.Messages;
+            AccountsList.ItemsSource = browse.Accounts;
+            MailboxesList.ItemsSource = browse.Mailboxes;
+            MessagesList.ItemsSource = browse.Messages;
+            DraftsList.ItemsSource = compose.Drafts;
+            OutboxList.ItemsSource = compose.OutboxItems;
 
-            AccountsList.SelectedItem = shell.SelectedAccountId is { } accountId
-                ? shell.Accounts.FirstOrDefault(a => a.Id == accountId)
+            AccountsList.SelectedItem = browse.SelectedAccountId is { } accountId
+                ? browse.Accounts.FirstOrDefault(a => a.Id == accountId)
                 : null;
 
-            MailboxesList.SelectedItem = shell.SelectedMailboxId is { } mailboxId
-                ? shell.Mailboxes.FirstOrDefault(m => m.Id == mailboxId)
+            MailboxesList.SelectedItem = browse.SelectedMailboxId is { } mailboxId
+                ? browse.Mailboxes.FirstOrDefault(m => m.Id == mailboxId)
                 : null;
 
-            MessagesHeader.Text = shell.ShowingUnifiedInbox ? "Unified Inbox" : "Messages";
+            MessagesHeader.Text = browse.ShowingUnifiedInbox ? "Unified Inbox" : "Messages";
         }
         finally
         {
@@ -114,6 +231,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private BrowseShell RequireShell() =>
-        _shell ?? throw new InvalidOperationException("BrowseShell was not attached to MainWindow.");
+    private BrowseShell RequireBrowse() =>
+        _browse ?? throw new InvalidOperationException("BrowseShell was not attached to MainWindow.");
+
+    private ComposeOutboxShell RequireCompose() =>
+        _compose ?? throw new InvalidOperationException("ComposeOutboxShell was not attached to MainWindow.");
 }

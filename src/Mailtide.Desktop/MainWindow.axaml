@@ -1,19 +1,63 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:core="using:Mailtide.Core"
-        mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="640"
+        mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="720"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         x:Class="Mailtide.Desktop.MainWindow"
         Title="Mailtide"
         Width="960"
-        Height="640">
+        Height="720">
   <DockPanel Margin="12">
     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
       <TextBlock Text="Mailtide" FontSize="20" VerticalAlignment="Center" />
       <Button Name="UnifiedInboxButton" Content="Unified Inbox" Click="OnUnifiedInboxClick" />
       <Button Name="RefreshButton" Content="Refresh" Click="OnRefreshClick" />
+      <Button Name="SyncNowButton" Content="Sync Now" Click="OnSyncNowClick" />
+      <Button Name="SendNowButton" Content="Send Now" Click="OnSendNowClick" />
     </StackPanel>
+
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,12,0,0" MinHeight="220">
+      <DockPanel Grid.Column="0">
+        <TextBlock DockPanel.Dock="Top" Text="Compose" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+          <Button Name="SaveDraftButton" Content="Save Draft" Click="OnSaveDraftClick" />
+          <Button Name="SendDraftButton" Content="Send" Click="OnSendDraftClick" />
+        </StackPanel>
+        <StackPanel Spacing="6">
+          <TextBox Name="ComposeToBox" PlaceholderText="To" />
+          <TextBox Name="ComposeSubjectBox" PlaceholderText="Subject" />
+          <TextBox Name="ComposeBodyBox" PlaceholderText="Body" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" />
+          <TextBlock Text="Drafts" FontWeight="SemiBold" Margin="0,8,0,0" />
+          <ListBox Name="DraftsList" MinHeight="60" MaxHeight="100">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="core:DraftInfo">
+                <TextBlock Text="{Binding Subject}" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </StackPanel>
+      </DockPanel>
+
+      <DockPanel Grid.Column="1">
+        <TextBlock DockPanel.Dock="Top" Text="Outbox" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+          <Button Name="RetryOutboxButton" Content="Retry" Click="OnRetryOutboxClick" />
+          <Button Name="DiscardOutboxButton" Content="Discard" Click="OnDiscardOutboxClick" />
+        </StackPanel>
+        <ListBox Name="OutboxList">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="core:OutboxItemInfo">
+              <StackPanel>
+                <TextBlock Text="{Binding Subject}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding State}" Opacity="0.7" FontSize="12" />
+                <TextBlock Text="{Binding ErrorMessage}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Grid>
 
     <Grid ColumnDefinitions="220,220,*" ColumnSpacing="12">
       <DockPanel Grid.Column="0">

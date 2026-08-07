@@ -135,11 +135,7 @@ internal sealed class MailKitImapClient : IImapClient
                     FromAddress: mime.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
                     ReceivedAt: summary.InternalDate ?? mime.Date,
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
-<<<<<<< HEAD
-                    BodyText: NormalizeBody(mime.TextBody ?? mime.HtmlBody))
-=======
                     BodyText: ExtractBodyText(mime))
->>>>>>> c493184 (Map mid-session auth failures and strip HTML-only bodies to plain text.)
                 {
                     Attachments = ExtractAttachments(mime),
                 };

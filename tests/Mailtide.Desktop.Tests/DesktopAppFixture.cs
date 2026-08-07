@@ -131,21 +131,65 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
 internal sealed class FakeSmtpClientFactory : ISmtpClientFactory
 {
-    public ISmtpClient Create() => new FakeSmtpClient();
+    private readonly List<OutboundMessage> _submitted = [];
+
+    public Exception? FailWith { get; set; }
+
+    public IReadOnlyList<OutboundMessage> Submitted => _submitted;
+
+    public ISmtpClient Create() => new FakeSmtpClient(this);
 
     private sealed class FakeSmtpClient : ISmtpClient
     {
+        private readonly FakeSmtpClientFactory _factory;
+        private bool _authenticated;
+
+        public FakeSmtpClient(FakeSmtpClientFactory factory)
+        {
+            _factory = factory;
+        }
+
         public Task ConnectAndAuthenticateAsync(
             string host,
             int port,
             string username,
             string password,
-            CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+            CancellationToken cancellationToken = default)
+        {
+            if (_factory.FailWith is SmtpAuthenticationException)
+            {
+                throw _factory.FailWith;
+            }
 
-        public Task SubmitAsync(OutboundMessage message, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+            _ = host;
+            _ = port;
+            _ = username;
+            _ = password;
+            _authenticated = true;
+            return Task.CompletedTask;
+        }
+
+        public Task SubmitAsync(OutboundMessage message, CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+
+            if (_factory.FailWith is not null)
+            {
+                throw _factory.FailWith;
+            }
+
+            _factory._submitted.Add(message);
+            return Task.CompletedTask;
+        }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private void EnsureAuthenticated()
+        {
+            if (!_authenticated)
+            {
+                throw new InvalidOperationException("SMTP client is not authenticated.");
+            }
+        }
     }
 }
