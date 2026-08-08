@@ -152,6 +152,33 @@ public partial class MainWindow : Window
         BindLists();
     }
 
+    private async void OnAddGoogleClick(object? sender, RoutedEventArgs e) =>
+        await AddOAuthAccountAsync(() => RequireBrowse().AddGoogleAccountAsync("Gmail")).ConfigureAwait(true);
+
+    private async void OnAddMicrosoftClick(object? sender, RoutedEventArgs e) =>
+        await AddOAuthAccountAsync(() => RequireBrowse().AddMicrosoftConsumerAccountAsync("Outlook"))
+            .ConfigureAwait(true);
+
+    private async Task AddOAuthAccountAsync(Func<Task<AccountInfo>> addAsync)
+    {
+        var browse = RequireBrowse();
+        AccountActionStatus.Text = string.Empty;
+        try
+        {
+            var account = await addAsync().ConfigureAwait(true);
+            await browse.LoadAccountsAsync().ConfigureAwait(true);
+            await browse.SelectAccountAsync(account.Id).ConfigureAwait(true);
+            await RequireCompose().SelectAccountAsync(account.Id).ConfigureAwait(true);
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            await browse.LoadAccountsAsync().ConfigureAwait(true);
+            BindLists();
+            AccountActionStatus.Text = ex.Message;
+        }
+    }
+
     private async void OnAccountSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_suppressSelectionHandlers || _browse is null)
@@ -159,13 +186,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (AccountsList.SelectedItem is not AccountInfo account)
+        if (AccountsList.SelectedItem is not AccountStatusRow row)
         {
             return;
         }
 
-        await _browse.SelectAccountAsync(account.Id).ConfigureAwait(true);
-        await RequireCompose().SelectAccountAsync(account.Id).ConfigureAwait(true);
+        await _browse.SelectAccountAsync(row.Account.Id).ConfigureAwait(true);
+        await RequireCompose().SelectAccountAsync(row.Account.Id).ConfigureAwait(true);
         BindLists();
     }
 
@@ -209,14 +236,14 @@ public partial class MainWindow : Window
         _suppressSelectionHandlers = true;
         try
         {
-            AccountsList.ItemsSource = browse.Accounts;
+            AccountsList.ItemsSource = browse.AccountStatuses;
             MailboxesList.ItemsSource = browse.Mailboxes;
             MessagesList.ItemsSource = browse.Messages;
             DraftsList.ItemsSource = compose.Drafts;
             OutboxList.ItemsSource = compose.OutboxItems;
 
             AccountsList.SelectedItem = browse.SelectedAccountId is { } accountId
-                ? browse.Accounts.FirstOrDefault(a => a.Id == accountId)
+                ? browse.AccountStatuses.FirstOrDefault(a => a.Account.Id == accountId)
                 : null;
 
             MailboxesList.SelectedItem = browse.SelectedMailboxId is { } mailboxId

@@ -13,7 +13,7 @@ internal sealed class DesktopAppFixture : IDisposable
 
     public FakeSecureStorage SecureStorage { get; } = new();
 
-    public IOAuthClient OAuth { get; } = new UnsupportedOAuthClient();
+    public ControllableOAuthClient OAuth { get; } = new();
 
     public FakeImapClientFactory Imap { get; } = new();
 
