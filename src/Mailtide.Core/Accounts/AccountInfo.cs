@@ -1,3 +1,5 @@
+using Mailtide.Core.Auth;
+
 namespace Mailtide.Core;
 
 public sealed record AccountInfo(
@@ -9,9 +11,12 @@ public sealed record AccountInfo(
     string SmtpHost,
     int SmtpPort,
     CredentialKind CredentialKind,
-    string CredentialHandle);
+    string CredentialHandle,
+    OAuthProvider? OAuthProvider = null,
+    string? OAuthAuthority = null);
 
 public enum CredentialKind
 {
     Password = 0,
+    OAuth = 1,
 }

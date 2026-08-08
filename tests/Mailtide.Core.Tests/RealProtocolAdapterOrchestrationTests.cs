@@ -32,6 +32,7 @@ public sealed class RealProtocolAdapterOrchestrationTests
         await using var app = await MailtideApp.OpenAsync(
             fixture.AppDataDirectory,
             fixture.SecureStorage,
+            fixture.OAuth,
             new MailKitImapClientFactory(),
             new MailKitSmtpClientFactory());
 
@@ -71,6 +72,7 @@ public sealed class RealProtocolAdapterOrchestrationTests
         await using var app = await MailtideApp.OpenAsync(
             fixture.AppDataDirectory,
             fixture.SecureStorage,
+            fixture.OAuth,
             new MailKitImapClientFactory(),
             new MailKitSmtpClientFactory());
 

@@ -1,3 +1,5 @@
+using Mailtide.Core.Auth;
+
 namespace Mailtide.Core.Store;
 
 internal sealed class AccountRecord
@@ -19,4 +21,10 @@ internal sealed class AccountRecord
     public CredentialKind CredentialKind { get; set; }
 
     public required string CredentialHandle { get; set; }
+
+    public OAuthProvider? OAuthProvider { get; set; }
+
+    public string? OAuthAuthority { get; set; }
+
+    public string? OAuthClientId { get; set; }
 }

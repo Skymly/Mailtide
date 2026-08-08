@@ -32,6 +32,7 @@ internal sealed class MailtideDbContext : DbContext
         account.Property(a => a.SmtpHost).IsRequired();
         account.Property(a => a.CredentialHandle).IsRequired();
         account.Property(a => a.CredentialKind).HasConversion<string>();
+        account.Property(a => a.OAuthProvider).HasConversion<string>();
 
         var mailbox = modelBuilder.Entity<MailboxRecord>();
         mailbox.ToTable("Mailboxes");
