@@ -1,0 +1,3 @@
+# Per-platform Credential secure storage
+
+Credentials are stored only through Host adapters behind Core’s secure-storage port, with **no plaintext fallback**. **Windows** uses DPAPI (`ProtectedData`, current user) and keeps ciphertext in app data. **Linux** (Ubuntu 24.04 AppImage) uses the Freedesktop Secret Service via libsecret. **Android** uses the Android Keystore to protect keys and encrypts blobs in app-private storage from the Android Host. This prefers OS credential/key facilities over abandoned helpers (e.g. deprecated Jetpack `EncryptedSharedPreferences`) and avoids WinRT Credential Locker’s per-app credential cap.
