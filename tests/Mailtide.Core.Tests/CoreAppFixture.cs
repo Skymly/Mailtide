@@ -1,4 +1,5 @@
 using Mailtide.Core;
+using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Security;
 using Mailtide.Core.Smtp;
@@ -12,6 +13,8 @@ internal sealed class CoreAppFixture : IDisposable
 
     public FakeSecureStorage SecureStorage { get; } = new();
 
+    public FakeOAuthClient OAuth { get; } = new();
+
     public FakeImapClientFactory Imap { get; } = new();
 
     public FakeSmtpClientFactory Smtp { get; } = new();
@@ -19,7 +22,7 @@ internal sealed class CoreAppFixture : IDisposable
     public string AppDataDirectory => _appDataDirectory;
 
     public Task<MailtideApp> OpenAppAsync() =>
-        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage, Imap, Smtp);
+        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage, OAuth, Imap, Smtp);
 
     public void Dispose()
     {
@@ -53,6 +56,62 @@ internal sealed class FakeSecureStorage : ISecureStorage
     }
 }
 
+internal sealed class FakeOAuthClient : IOAuthClient
+{
+    public OAuthAuthorizationResult? AuthorizeResult { get; set; }
+
+    public OAuthAccessTokenResult? RefreshResult { get; set; }
+
+    public Exception? AuthorizeFailWith { get; set; }
+
+    public Exception? RefreshFailWith { get; set; }
+
+    public OAuthAuthorizeRequest? LastAuthorizeRequest { get; private set; }
+
+    public OAuthRefreshRequest? LastRefreshRequest { get; private set; }
+
+    public int RefreshCallCount { get; private set; }
+
+    public Task<OAuthAuthorizationResult> AuthorizeAsync(
+        OAuthAuthorizeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        LastAuthorizeRequest = request;
+
+        if (AuthorizeFailWith is not null)
+        {
+            throw AuthorizeFailWith;
+        }
+
+        if (AuthorizeResult is null)
+        {
+            throw new InvalidOperationException("FakeOAuthClient.AuthorizeResult was not set.");
+        }
+
+        return Task.FromResult(AuthorizeResult);
+    }
+
+    public Task<OAuthAccessTokenResult> RefreshAsync(
+        OAuthRefreshRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        LastRefreshRequest = request;
+        RefreshCallCount++;
+
+        if (RefreshFailWith is not null)
+        {
+            throw RefreshFailWith;
+        }
+
+        if (RefreshResult is null)
+        {
+            throw new InvalidOperationException("FakeOAuthClient.RefreshResult was not set.");
+        }
+
+        return Task.FromResult(RefreshResult);
+    }
+}
+
 internal sealed class FakeImapClientFactory : IImapClientFactory
 {
     private readonly List<RemoteMailbox> _mailboxes = [];
@@ -62,6 +121,8 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
     public Exception? FailWith { get; set; }
 
     public TaskCompletionSource? BlockConnectUntil { get; set; }
+
+    public string? LastPassword { get; private set; }
 
     public void SeedMailboxes(params RemoteMailbox[] mailboxes)
     {
@@ -108,7 +169,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             _ = host;
             _ = port;
             _ = username;
-            _ = password;
+            _factory.LastPassword = password;
             _authenticated = true;
         }
 

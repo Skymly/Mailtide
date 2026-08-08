@@ -1,4 +1,5 @@
 using Mailtide.Core;
+using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Security;
 using Mailtide.Core.Smtp;
@@ -12,6 +13,8 @@ internal sealed class DesktopAppFixture : IDisposable
 
     public FakeSecureStorage SecureStorage { get; } = new();
 
+    public IOAuthClient OAuth { get; } = new UnsupportedOAuthClient();
+
     public FakeImapClientFactory Imap { get; } = new();
 
     public FakeSmtpClientFactory Smtp { get; } = new();
@@ -19,7 +22,7 @@ internal sealed class DesktopAppFixture : IDisposable
     public string AppDataDirectory => _appDataDirectory;
 
     public Task<MailtideApp> OpenAppAsync() =>
-        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage, Imap, Smtp);
+        MailtideApp.OpenAsync(_appDataDirectory, SecureStorage, OAuth, Imap, Smtp);
 
     public void Dispose()
     {

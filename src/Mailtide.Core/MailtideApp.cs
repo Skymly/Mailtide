@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Security;
 using Mailtide.Core.Smtp;
@@ -14,6 +15,7 @@ public sealed class MailtideApp : IAsyncDisposable
 {
     private readonly string _appDataDirectory;
     private readonly ISecureStorage _secureStorage;
+    private readonly AccountCredentialAuth _auth;
     private readonly IImapClientFactory _imapClientFactory;
     private readonly ISmtpClientFactory _smtpClientFactory;
     private readonly MailtideDbContext _db;
@@ -25,12 +27,14 @@ public sealed class MailtideApp : IAsyncDisposable
     private MailtideApp(
         string appDataDirectory,
         ISecureStorage secureStorage,
+        IOAuthClient oauthClient,
         IImapClientFactory imapClientFactory,
         ISmtpClientFactory smtpClientFactory,
         MailtideDbContext db)
     {
         _appDataDirectory = appDataDirectory;
         _secureStorage = secureStorage;
+        _auth = new AccountCredentialAuth(oauthClient, secureStorage);
         _imapClientFactory = imapClientFactory;
         _smtpClientFactory = smtpClientFactory;
         _db = db;
@@ -39,12 +43,14 @@ public sealed class MailtideApp : IAsyncDisposable
     public static async Task<MailtideApp> OpenAsync(
         string appDataDirectory,
         ISecureStorage secureStorage,
+        IOAuthClient oauthClient,
         IImapClientFactory imapClientFactory,
         ISmtpClientFactory smtpClientFactory,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
         ArgumentNullException.ThrowIfNull(secureStorage);
+        ArgumentNullException.ThrowIfNull(oauthClient);
         ArgumentNullException.ThrowIfNull(imapClientFactory);
         ArgumentNullException.ThrowIfNull(smtpClientFactory);
 
@@ -58,7 +64,13 @@ public sealed class MailtideApp : IAsyncDisposable
         var db = new MailtideDbContext(options);
         await EnsureStoreSchemaAsync(db, cancellationToken).ConfigureAwait(false);
 
-        return new MailtideApp(appDataDirectory, secureStorage, imapClientFactory, smtpClientFactory, db);
+        return new MailtideApp(
+            appDataDirectory,
+            secureStorage,
+            oauthClient,
+            imapClientFactory,
+            smtpClientFactory,
+            db);
     }
 
     public Task<AccountInfo> AddQqMailAccountAsync(
@@ -78,6 +90,121 @@ public sealed class MailtideApp : IAsyncDisposable
                 SmtpPort: QqMailPreset.SmtpPort,
                 Password: draft.AuthorizationCode),
             cancellationToken);
+    }
+
+    public Task<AccountInfo> AddGoogleAccountAsync(
+        string displayName,
+        CancellationToken cancellationToken = default) =>
+        AddOAuthAccountAsync(
+            displayName,
+            OAuthProvider.Google,
+            GoogleMailPreset.ImapHost,
+            GoogleMailPreset.ImapPort,
+            GoogleMailPreset.SmtpHost,
+            GoogleMailPreset.SmtpPort,
+            cancellationToken);
+
+    public Task<AccountInfo> AddMicrosoftConsumerAccountAsync(
+        string displayName,
+        CancellationToken cancellationToken = default) =>
+        AddOAuthAccountAsync(
+            displayName,
+            OAuthProvider.MicrosoftConsumer,
+            MicrosoftConsumerMailPreset.ImapHost,
+            MicrosoftConsumerMailPreset.ImapPort,
+            MicrosoftConsumerMailPreset.SmtpHost,
+            MicrosoftConsumerMailPreset.SmtpPort,
+            cancellationToken);
+
+    private async Task<AccountInfo> AddOAuthAccountAsync(
+        string displayName,
+        OAuthProvider provider,
+        string imapHost,
+        int imapPort,
+        string smtpHost,
+        int smtpPort,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+
+        var authorization = await _auth
+            .ObtainAsync(provider, cancellationToken)
+            .ConfigureAwait(false);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(authorization.EmailAddress);
+        ArgumentException.ThrowIfNullOrWhiteSpace(authorization.RefreshSecret);
+        ArgumentNullException.ThrowIfNull(authorization.Metadata);
+
+        if (authorization.Metadata.Provider != provider)
+        {
+            throw new InvalidOperationException(
+                $"OAuth provider mismatch: expected '{provider}', got '{authorization.Metadata.Provider}'.");
+        }
+
+        var expectedAuthority = provider switch
+        {
+            OAuthProvider.Google => GoogleMailPreset.Authority,
+            OAuthProvider.MicrosoftConsumer => MicrosoftConsumerMailPreset.Authority,
+            _ => throw new InvalidOperationException($"Unsupported OAuth provider '{provider}'."),
+        };
+
+        if (!string.Equals(
+                authorization.Metadata.Authority,
+                expectedAuthority,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"OAuth authority mismatch for '{provider}': expected '{expectedAuthority}'.");
+        }
+
+        var accountId = Guid.NewGuid();
+        var credentialHandle = $"account:{accountId:D}:credential";
+
+        await _auth
+            .StoreRefreshSecretAsync(credentialHandle, authorization.RefreshSecret, cancellationToken)
+            .ConfigureAwait(false);
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            try
+            {
+                var record = new AccountRecord
+                {
+                    Id = accountId,
+                    DisplayName = displayName,
+                    EmailAddress = authorization.EmailAddress,
+                    ImapHost = imapHost,
+                    ImapPort = imapPort,
+                    SmtpHost = smtpHost,
+                    SmtpPort = smtpPort,
+                    CredentialKind = CredentialKind.OAuth,
+                    CredentialHandle = credentialHandle,
+                    OAuthProvider = authorization.Metadata.Provider,
+                    OAuthAuthority = authorization.Metadata.Authority,
+                    OAuthClientId = authorization.Metadata.ClientId,
+                };
+
+                _db.Accounts.Add(record);
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                Directory.CreateDirectory(AccountPartitionPath(accountId));
+                SetStatus(accountId, AccountStatus.Idle());
+
+                return ToInfo(record);
+            }
+            catch
+            {
+                await _auth
+                    .DeleteCredentialSecretAsync(credentialHandle, CancellationToken.None)
+                    .ConfigureAwait(false);
+                throw;
+            }
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
     }
 
     public async Task<AccountInfo> AddManualAccountAsync(
@@ -237,7 +364,10 @@ public sealed class MailtideApp : IAsyncDisposable
         string imapHost;
         int imapPort;
         string emailAddress;
-        string password;
+        string credentialHandle;
+        CredentialKind credentialKind;
+        OAuthTokenMetadata? oauthMetadata = null;
+        string? secret;
 
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -252,24 +382,53 @@ public sealed class MailtideApp : IAsyncDisposable
                 throw new InvalidOperationException($"Account '{accountId}' was not found.");
             }
 
-            var secret = await _secureStorage
-                .RetrieveSecretAsync(account.CredentialHandle, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (secret is null)
-            {
-                SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
-                return;
-            }
-
             imapHost = account.ImapHost;
             imapPort = account.ImapPort;
             emailAddress = account.EmailAddress;
-            password = secret;
+            credentialHandle = account.CredentialHandle;
+            credentialKind = account.CredentialKind;
+            if (account.CredentialKind == CredentialKind.OAuth)
+            {
+                oauthMetadata = RequireOAuthMetadata(account);
+            }
+
+            secret = await _auth
+                .RetrieveCredentialSecretAsync(account.CredentialHandle, cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
             _dbGate.Release();
+        }
+
+        if (secret is null)
+        {
+            SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+            return;
+        }
+
+        string? protocolSecret;
+        try
+        {
+            protocolSecret = await ResolveProtocolSecretAsync(
+                    credentialKind,
+                    oauthMetadata,
+                    secret,
+                    credentialHandle,
+                    invalidateOnAuthFailure: true,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+            return;
+        }
+
+        if (protocolSecret is null)
+        {
+            SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+            return;
         }
 
         // Network I/O runs outside _dbGate so other Accounts can sync in parallel.
@@ -283,7 +442,7 @@ public sealed class MailtideApp : IAsyncDisposable
                     imapHost,
                     imapPort,
                     emailAddress,
-                    password,
+                    protocolSecret,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -664,7 +823,10 @@ public sealed class MailtideApp : IAsyncDisposable
     public async Task SendNowAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
         AccountInfo account;
-        string password;
+        string credentialHandle;
+        CredentialKind credentialKind;
+        OAuthTokenMetadata? oauthMetadata = null;
+        string? secret;
         List<Guid> itemIds;
 
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -681,6 +843,12 @@ public sealed class MailtideApp : IAsyncDisposable
             }
 
             account = ToInfo(accountRecord);
+            credentialHandle = accountRecord.CredentialHandle;
+            credentialKind = accountRecord.CredentialKind;
+            if (accountRecord.CredentialKind == CredentialKind.OAuth)
+            {
+                oauthMetadata = RequireOAuthMetadata(accountRecord);
+            }
 
             var items = await _db.OutboxItems
                 .Where(o => o.AccountId == accountId && o.State == OutboxItemState.Queued)
@@ -696,8 +864,8 @@ public sealed class MailtideApp : IAsyncDisposable
                 return;
             }
 
-            var secret = await _secureStorage
-                .RetrieveSecretAsync(account.CredentialHandle, cancellationToken)
+            secret = await _auth
+                .RetrieveCredentialSecretAsync(account.CredentialHandle, cancellationToken)
                 .ConfigureAwait(false);
 
             if (secret is null)
@@ -714,12 +882,41 @@ public sealed class MailtideApp : IAsyncDisposable
                 return;
             }
 
-            password = secret;
             itemIds = items.Select(i => i.Id).ToList();
         }
         finally
         {
             _dbGate.Release();
+        }
+
+        string? protocolSecret;
+        try
+        {
+            protocolSecret = await ResolveProtocolSecretAsync(
+                    credentialKind,
+                    oauthMetadata,
+                    secret!,
+                    credentialHandle,
+                    invalidateOnAuthFailure: true,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await FailQueuedOutboxItemsAsync(accountId, itemIds, MapSendFailure(ex), cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (protocolSecret is null)
+        {
+            await FailQueuedOutboxItemsAsync(
+                    accountId,
+                    itemIds,
+                    AuthenticationFailedMessage,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return;
         }
 
         ISmtpClient? client = null;
@@ -731,7 +928,7 @@ public sealed class MailtideApp : IAsyncDisposable
                     account.SmtpHost,
                     account.SmtpPort,
                     account.EmailAddress,
-                    password,
+                    protocolSecret,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -1050,6 +1247,76 @@ public sealed class MailtideApp : IAsyncDisposable
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        await EnsureAccountsOAuthColumnsAsync(db, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureAccountsOAuthColumnsAsync(
+        MailtideDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != System.Data.ConnectionState.Open;
+        if (shouldClose)
+        {
+            await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT name FROM pragma_table_info('Accounts')";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                existing.Add(reader.GetString(0));
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
+        }
+
+        if (!existing.Contains("OAuthProvider"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                    """ALTER TABLE "Accounts" ADD COLUMN "OAuthProvider" TEXT NULL""",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!existing.Contains("OAuthAuthority"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                    """ALTER TABLE "Accounts" ADD COLUMN "OAuthAuthority" TEXT NULL""",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!existing.Contains("OAuthClientId"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                    """ALTER TABLE "Accounts" ADD COLUMN "OAuthClientId" TEXT NULL""",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task FailQueuedOutboxItemsAsync(
+        Guid accountId,
+        IReadOnlyList<Guid> itemIds,
+        string errorMessage,
+        CancellationToken cancellationToken)
+    {
+        foreach (var itemId in itemIds)
+        {
+            await MarkQueuedOutboxItemFailedAsync(accountId, itemId, errorMessage, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     private static async Task<IReadOnlyList<RemoteMailboxSnapshot>> FetchRemoteSnapshotAsync(
@@ -1324,7 +1591,58 @@ public sealed class MailtideApp : IAsyncDisposable
             record.SmtpHost,
             record.SmtpPort,
             record.CredentialKind,
-            record.CredentialHandle);
+            record.CredentialHandle,
+            record.OAuthProvider,
+            record.OAuthAuthority);
+
+    private static OAuthTokenMetadata RequireOAuthMetadata(AccountRecord account)
+    {
+        if (account.OAuthProvider is null
+            || string.IsNullOrWhiteSpace(account.OAuthAuthority)
+            || string.IsNullOrWhiteSpace(account.OAuthClientId))
+        {
+            throw new InvalidOperationException(
+                $"Account '{account.Id}' is missing OAuth metadata.");
+        }
+
+        return new OAuthTokenMetadata(
+            account.OAuthProvider.Value,
+            account.OAuthAuthority,
+            account.OAuthClientId);
+    }
+
+    /// <summary>
+    /// Password Accounts return the stored secret; OAuth Accounts return a short-lived
+    /// access token from Auth. Null means the OAuth Credential was invalidated.
+    /// </summary>
+    private async Task<string?> ResolveProtocolSecretAsync(
+        CredentialKind credentialKind,
+        OAuthTokenMetadata? oauthMetadata,
+        string credentialSecret,
+        string credentialHandle,
+        bool invalidateOnAuthFailure,
+        CancellationToken cancellationToken)
+    {
+        if (credentialKind != CredentialKind.OAuth)
+        {
+            return credentialSecret;
+        }
+
+        ArgumentNullException.ThrowIfNull(oauthMetadata);
+
+        var accessToken = await _auth
+            .GetAccessTokenAsync(oauthMetadata, credentialSecret, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (accessToken is null && invalidateOnAuthFailure)
+        {
+            await _auth
+                .InvalidateAsync(credentialHandle, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return accessToken;
+    }
 
     private static MessageInfo ToMessageInfo(MessageRecord record) =>
         new(
