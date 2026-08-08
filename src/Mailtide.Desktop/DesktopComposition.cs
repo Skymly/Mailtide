@@ -17,7 +17,7 @@ internal static class DesktopComposition
         return await MailtideApp
             .OpenAsync(
                 appData,
-                new InMemorySecureStorage(),
+                DesktopSecureStorageFactory.Create(appData),
                 new UnsupportedOAuthClient(),
                 new MailKitImapClientFactory(),
                 new MailKitSmtpClientFactory(),
