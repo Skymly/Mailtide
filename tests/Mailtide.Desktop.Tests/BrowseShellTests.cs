@@ -1,6 +1,7 @@
 using Mailtide.Core;
 using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
+using Mailtide.UI;
 
 namespace Mailtide.Desktop.Tests;
 

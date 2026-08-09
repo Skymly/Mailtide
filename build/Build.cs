@@ -17,6 +17,11 @@ sealed class Build : NukeBuild
     AbsolutePath SourceDirectory => RootDirectory / "src";
     AbsolutePath TestsDirectory => RootDirectory / "tests";
 
+    AbsolutePath CoreTestsProject => TestsDirectory / "Mailtide.Core.Tests" / "Mailtide.Core.Tests.csproj";
+    AbsolutePath DesktopTestsProject => TestsDirectory / "Mailtide.Desktop.Tests" / "Mailtide.Desktop.Tests.csproj";
+    AbsolutePath AndroidTestsProject => TestsDirectory / "Mailtide.Android.Tests" / "Mailtide.Android.Tests.csproj";
+    AbsolutePath AndroidHostProject => SourceDirectory / "Mailtide.Android" / "Mailtide.Android.csproj";
+
     Target Clean => _ => _
         .Before(Restore)
         .Executes(() =>
@@ -46,10 +51,25 @@ sealed class Build : NukeBuild
         .DependsOn(Compile)
         .Executes(() =>
         {
-            DotNetTest(s => s
-                .SetProjectFile(Solution)
+            // Run net10.0 test projects explicitly. The Android host (net10.0-android) is
+            // compiled via Compile but is not itself a test assembly.
+            foreach (var project in new[] { CoreTestsProject, DesktopTestsProject, AndroidTestsProject })
+            {
+                DotNetTest(s => s
+                    .SetProjectFile(project)
+                    .SetConfiguration(Configuration)
+                    .EnableNoRestore()
+                    .EnableNoBuild());
+            }
+        });
+
+    Target CompileAndroid => _ => _
+        .DependsOn(Restore)
+        .Executes(() =>
+        {
+            DotNetBuild(s => s
+                .SetProjectFile(AndroidHostProject)
                 .SetConfiguration(Configuration)
-                .EnableNoRestore()
-                .EnableNoBuild());
+                .EnableNoRestore());
         });
 }

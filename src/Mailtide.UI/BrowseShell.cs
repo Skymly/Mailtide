@@ -1,6 +1,6 @@
 using Mailtide.Core;
 
-namespace Mailtide.Desktop;
+namespace Mailtide.UI;
 
 /// <summary>
 /// UI-framework-agnostic browse surface. Issues Core queries only.

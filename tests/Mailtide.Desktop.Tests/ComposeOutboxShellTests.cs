@@ -1,4 +1,5 @@
 using Mailtide.Core;
+using Mailtide.UI;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Smtp;
 

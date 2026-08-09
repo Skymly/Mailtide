@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ApplicationId>com.skymly.mailtide</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <!-- Trimmed APK / Mono AOT path — not Desktop Native AOT (PublishAot). -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <RunAOTCompilation Condition="'$(Configuration)' == 'Release'">true</RunAOTCompilation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AndroidResource Include="Icon.png">
+      <Link>Resources\drawable\Icon.png</Link>
+    </AndroidResource>
+  </ItemGroup>
+
+  <!-- Package build-time OAuth client IDs into the APK process environment (sideload / device). -->
+  <ItemGroup>
+    <RuntimeEnvironmentVariable
+      Include="MAILTIDE_GOOGLE_OAUTH_CLIENT_ID"
+      Value="$(MAILTIDE_GOOGLE_OAUTH_CLIENT_ID)"
+      Condition="'$(MAILTIDE_GOOGLE_OAUTH_CLIENT_ID)' != ''" />
+    <RuntimeEnvironmentVariable
+      Include="MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID"
+      Value="$(MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID)"
+      Condition="'$(MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID)' != ''" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mailtide.Core\Mailtide.Core.csproj" />
+    <ProjectReference Include="..\Mailtide.UI\Mailtide.UI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Android" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+    <PackageReference Include="Duende.IdentityModel.OidcClient" Version="7.1.0" />
+    <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.0.1.15" />
+  </ItemGroup>
+</Project>

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mailtide.Desktop\Mailtide.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\Mailtide.UI\Mailtide.UI.csproj" />
     <ProjectReference Include="..\..\src\Mailtide.Core\Mailtide.Core.csproj" />
   </ItemGroup>
 
