@@ -73,6 +73,72 @@ public sealed class HostSecureStorageAccountTests
         }
     }
 
+    [TestMethod]
+    public async Task Add_Google_Account_stores_refresh_Credential_via_Host_secure_storage()
+    {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsLinux())
+        {
+            Assert.Inconclusive("Host secure storage is Windows DPAPI or Linux libsecret only.");
+        }
+
+        var appData = Path.Combine(Path.GetTempPath(), "mailtide-host-oauth", Guid.NewGuid().ToString("N"));
+        try
+        {
+            ISecureStorage storage;
+            try
+            {
+                storage = DesktopSecureStorageFactory.Create(appData);
+            }
+            catch (SecureStorageException ex)
+            {
+                Assert.Inconclusive($"Host secure storage backend unavailable: {ex.Message}");
+                return;
+            }
+
+            var oauth = new ControllableOAuthClient
+            {
+                AuthorizeResult = new OAuthAuthorizationResult(
+                    EmailAddress: "oauth@gmail.com",
+                    RefreshSecret: "host-oauth-refresh-secret",
+                    Metadata: new OAuthTokenMetadata(
+                        OAuthProvider.Google,
+                        GoogleMailPreset.Authority,
+                        "test-google-client")),
+            };
+
+            await using var app = await MailtideApp.OpenAsync(
+                appData,
+                storage,
+                oauth,
+                new FakeImapClientFactory(),
+                new FakeSmtpClientFactory());
+
+            var account = await app.AddGoogleAccountAsync("Gmail");
+
+            Assert.AreEqual(CredentialKind.OAuth, account.CredentialKind);
+            Assert.AreEqual(
+                "host-oauth-refresh-secret",
+                await storage.RetrieveSecretAsync(account.CredentialHandle));
+            AssertAppFolderHasNoPlaintextSecret(appData, "host-oauth-refresh-secret");
+
+            if (storage is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
+        catch (SecureStorageException ex)
+        {
+            Assert.Inconclusive($"Host secure storage backend unavailable: {ex.Message}");
+        }
+        finally
+        {
+            if (Directory.Exists(appData))
+            {
+                Directory.Delete(appData, recursive: true);
+            }
+        }
+    }
+
     private static void AssertAppFolderHasNoPlaintextSecret(string appDataDirectory, string secret)
     {
         if (!Directory.Exists(appDataDirectory))
@@ -90,5 +156,41 @@ public sealed class HostSecureStorageAccountTests
             using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
             Assert.DoesNotContain(secret, reader.ReadToEnd(), StringComparison.Ordinal);
         }
+    }
+}
+
+internal sealed class ControllableOAuthClient : IOAuthClient
+{
+    public OAuthAuthorizationResult? AuthorizeResult { get; set; }
+
+    public OAuthAccessTokenResult? RefreshResult { get; set; }
+
+    public Exception? RefreshFailWith { get; set; }
+
+    public Task<OAuthAuthorizationResult> AuthorizeAsync(
+        OAuthAuthorizeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _ = request;
+        _ = cancellationToken;
+        return Task.FromResult(
+            AuthorizeResult
+            ?? throw new InvalidOperationException("AuthorizeResult was not set."));
+    }
+
+    public Task<OAuthAccessTokenResult> RefreshAsync(
+        OAuthRefreshRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _ = request;
+        _ = cancellationToken;
+        if (RefreshFailWith is not null)
+        {
+            throw RefreshFailWith;
+        }
+
+        return Task.FromResult(
+            RefreshResult
+            ?? throw new InvalidOperationException("RefreshResult was not set."));
     }
 }

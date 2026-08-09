@@ -1,7 +1,7 @@
 namespace Mailtide.Core.Auth;
 
 /// <summary>
-/// Placeholder until Desktop wires a real system-browser OAuth client (#16).
+/// Placeholder Host OAuth client for environments that have not wired system-browser OAuth yet.
 /// </summary>
 public sealed class UnsupportedOAuthClient : IOAuthClient
 {

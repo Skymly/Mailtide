@@ -1,4 +1,5 @@
 using Mailtide.Core;
+using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
 
 namespace Mailtide.Desktop.Tests;
@@ -125,6 +126,55 @@ public sealed class BrowseShellTests
         var mailboxCountAfter = (await app.ListMailboxesAsync(accountA.Id)).Count
             + (await app.ListMailboxesAsync(accountB.Id)).Count;
         Assert.AreEqual(mailboxCountBefore, mailboxCountAfter);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_adds_Google_Account_via_Core_OAuth()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "alice@gmail.com",
+            RefreshSecret: "shell-google-refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.Google,
+                GoogleMailPreset.Authority,
+                "test-google-client"));
+        await using var app = await fixture.OpenAppAsync();
+
+        var shell = new BrowseShell(app);
+        var account = await shell.AddGoogleAccountAsync("Gmail");
+        await shell.LoadAccountsAsync();
+
+        Assert.AreEqual(account.Id, shell.Accounts[0].Id);
+        Assert.AreEqual(CredentialKind.OAuth, shell.Accounts[0].CredentialKind);
+        Assert.AreEqual(OAuthProvider.Google, shell.Accounts[0].OAuthProvider);
+        Assert.AreEqual(AccountSyncState.Idle, shell.AccountStatuses[0].Status.State);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_exposes_Account_auth_error_status()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "dave@gmail.com",
+            RefreshSecret: "shell-refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.Google,
+                GoogleMailPreset.Authority,
+                "test-google-client"));
+        fixture.OAuth.RefreshFailWith = new OAuthAuthenticationException("invalid_grant");
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+
+        var shell = new BrowseShell(app);
+        var account = await shell.AddGoogleAccountAsync("Gmail");
+        await app.SyncNowAsync(account.Id);
+        await shell.LoadAccountsAsync();
+
+        Assert.AreEqual(AccountSyncState.Error, shell.GetAccountStatus(account.Id).State);
+        Assert.AreEqual(
+            "Authentication failed. Sign in again.",
+            shell.AccountStatuses.Single(row => row.Account.Id == account.Id).Status.ErrorMessage);
     }
 
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>

@@ -1,5 +1,4 @@
 using Mailtide.Core;
-using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Smtp;
 using Mailtide.Desktop.Host;
@@ -18,7 +17,7 @@ internal static class DesktopComposition
             .OpenAsync(
                 appData,
                 DesktopSecureStorageFactory.Create(appData),
-                new UnsupportedOAuthClient(),
+                new DesktopOidcOAuthClient(DesktopOAuthOptions.FromEnvironment()),
                 new MailKitImapClientFactory(),
                 new MailKitSmtpClientFactory(),
                 cancellationToken)

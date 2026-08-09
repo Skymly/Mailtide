@@ -17,6 +17,8 @@ public sealed class BrowseShell
 
     public IReadOnlyList<AccountInfo> Accounts { get; private set; } = [];
 
+    public IReadOnlyList<AccountStatusRow> AccountStatuses { get; private set; } = [];
+
     public IReadOnlyList<MailboxInfo> Mailboxes { get; private set; } = [];
 
     public IReadOnlyList<MessageInfo> Messages { get; private set; } = [];
@@ -30,7 +32,22 @@ public sealed class BrowseShell
     public async Task LoadAccountsAsync(CancellationToken cancellationToken = default)
     {
         Accounts = await _app.ListAccountsAsync(cancellationToken).ConfigureAwait(false);
+        AccountStatuses = Accounts
+            .Select(account => new AccountStatusRow(account, _app.GetAccountStatus(account.Id)))
+            .ToList();
     }
+
+    public Task<AccountInfo> AddGoogleAccountAsync(
+        string displayName,
+        CancellationToken cancellationToken = default) =>
+        _app.AddGoogleAccountAsync(displayName, cancellationToken);
+
+    public Task<AccountInfo> AddMicrosoftConsumerAccountAsync(
+        string displayName,
+        CancellationToken cancellationToken = default) =>
+        _app.AddMicrosoftConsumerAccountAsync(displayName, cancellationToken);
+
+    public AccountStatus GetAccountStatus(Guid accountId) => _app.GetAccountStatus(accountId);
 
     public async Task SelectAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
@@ -64,3 +81,5 @@ public sealed class BrowseShell
         Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
     }
 }
+
+public sealed record AccountStatusRow(AccountInfo Account, AccountStatus Status);
