@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mailtide
+Comment=Personal multi-account offline-first email client
+Exec=Mailtide.Desktop
+Icon=mailtide
+Categories=Network;Email;
+Terminal=false
+StartupNotify=true
+X-AppImage-Version=1

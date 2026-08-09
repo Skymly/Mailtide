@@ -5,9 +5,11 @@
     <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <ApplicationId>com.skymly.mailtide</ApplicationId>
-    <ApplicationVersion>1</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <!-- ApplicationVersion / ApplicationDisplayVersion overridden by Nuke PublishAndroidApk. -->
+    <ApplicationVersion Condition="'$(ApplicationVersion)' == ''">1</ApplicationVersion>
+    <ApplicationDisplayVersion Condition="'$(ApplicationDisplayVersion)' == ''">1.0</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AndroidKeyStore Condition="'$(AndroidSigningKeyStore)' != ''">true</AndroidKeyStore>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <!-- Trimmed APK / Mono AOT path — not Desktop Native AOT (PublishAot). -->
     <PublishTrimmed>true</PublishTrimmed>
