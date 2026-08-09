@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Claims;
+using Duende.IdentityModel.Client;
 using Duende.IdentityModel.OidcClient;
 using Duende.IdentityModel.OidcClient.Browser;
 using Mailtide.Core;
@@ -43,7 +44,7 @@ public sealed class DesktopOidcOAuthClient : IOAuthClient
             var clientId = _options.RequireClientId(request.Provider);
             var oidc = CreateOidcClient(request.Provider, clientId);
             var login = await oidc
-                .LoginAsync(new LoginRequest(), cancellationToken)
+                .LoginAsync(CreateLoginRequest(request.Provider), cancellationToken)
                 .ConfigureAwait(false);
 
             if (login.IsError)
@@ -190,6 +191,22 @@ public sealed class DesktopOidcOAuthClient : IOAuthClient
             OAuthProvider.MicrosoftConsumer => MicrosoftScope,
             _ => throw new OAuthAuthenticationException($"Unsupported OAuth provider '{provider}'."),
         };
+
+    private static LoginRequest CreateLoginRequest(OAuthProvider provider)
+    {
+        var login = new LoginRequest();
+        if (provider == OAuthProvider.Google)
+        {
+            // Google omits refresh tokens unless offline access is requested explicitly.
+            login.FrontChannelExtraParameters = new Parameters
+            {
+                { "access_type", "offline" },
+                { "prompt", "consent" },
+            };
+        }
+
+        return login;
+    }
 
     private static string? ResolveEmail(ClaimsPrincipal? user)
     {

@@ -67,6 +67,7 @@ public partial class MainWindow : Window
         await compose.SyncNowAsync().ConfigureAwait(true);
 
         var browse = RequireBrowse();
+        await browse.LoadAccountsAsync().ConfigureAwait(true);
         if (browse.SelectedAccountId is { } accountId)
         {
             await ReloadBrowseSelectionAsync(browse, accountId).ConfigureAwait(true);

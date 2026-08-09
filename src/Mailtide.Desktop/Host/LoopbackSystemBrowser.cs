@@ -13,15 +13,12 @@ namespace Mailtide.Desktop.Host;
 public sealed class LoopbackSystemBrowser : IBrowser, IAsyncDisposable
 {
     private readonly HttpListener _listener;
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
     public LoopbackSystemBrowser()
     {
-        var port = GetFreeTcpPort();
-        RedirectUri = $"http://127.0.0.1:{port}/";
-        _listener = new HttpListener();
-        _listener.Prefixes.Add(RedirectUri);
-        _listener.Start();
+        RedirectUri = StartListenerOnFreePort(out _listener);
     }
 
     public string RedirectUri { get; }
@@ -33,6 +30,7 @@ public sealed class LoopbackSystemBrowser : IBrowser, IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(options);
 
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             OpenSystemBrowser(options.StartUrl);
@@ -50,6 +48,9 @@ public sealed class LoopbackSystemBrowser : IBrowser, IAsyncDisposable
 
             if (completed != contextTask)
             {
+                // Abort the outstanding GetContextAsync so a late redirect cannot orphan the wait.
+                ObserveAbandoned(contextTask);
+                RestartListener();
                 return new BrowserResult
                 {
                     ResultType = BrowserResultType.Timeout,
@@ -75,6 +76,7 @@ public sealed class LoopbackSystemBrowser : IBrowser, IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
+            RestartListener();
             return new BrowserResult
             {
                 ResultType = BrowserResultType.UserCancel,
@@ -88,6 +90,10 @@ public sealed class LoopbackSystemBrowser : IBrowser, IAsyncDisposable
                 ResultType = BrowserResultType.UnknownError,
                 Error = ex.Message,
             };
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
@@ -105,7 +111,66 @@ public sealed class LoopbackSystemBrowser : IBrowser, IAsyncDisposable
         }
 
         _listener.Close();
+        _gate.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private void RestartListener()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_listener.IsListening)
+            {
+                _listener.Stop();
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        _listener.Start();
+    }
+
+    private static void ObserveAbandoned(Task contextTask) =>
+        _ = contextTask.ContinueWith(
+            static t => _ = t.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+    private static string StartListenerOnFreePort(out HttpListener listener)
+    {
+        const int maxAttempts = 5;
+        Exception? lastFailure = null;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var candidate = new HttpListener();
+            try
+            {
+                var port = GetFreeTcpPort();
+                var redirectUri = $"http://127.0.0.1:{port}/";
+                candidate.Prefixes.Add(redirectUri);
+                candidate.Start();
+                listener = candidate;
+                return redirectUri;
+            }
+            catch (Exception ex) when (ex is HttpListenerException or SocketException)
+            {
+                lastFailure = ex;
+                candidate.Close();
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Unable to bind a loopback HttpListener for OAuth redirects.",
+            lastFailure);
     }
 
     private static int GetFreeTcpPort()

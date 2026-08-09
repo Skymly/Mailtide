@@ -36,6 +36,9 @@ public sealed class DesktopOidcOAuthClientTests
         Assert.AreEqual(GoogleMailPreset.Authority, result.Metadata.Authority);
         Assert.AreEqual("test-google-client", result.Metadata.ClientId);
         Assert.IsTrue(browser.WasInvoked);
+        var authorizeQuery = ParseQuery(new Uri(browser.LastStartUrl!).Query);
+        Assert.AreEqual("offline", authorizeQuery.Get("access_type"));
+        Assert.AreEqual("consent", authorizeQuery.Get("prompt"));
     }
 
     [TestMethod]
@@ -138,11 +141,14 @@ public sealed class DesktopOidcOAuthClientTests
     {
         public bool WasInvoked { get; private set; }
 
+        public string? LastStartUrl { get; private set; }
+
         public Task<BrowserResult> InvokeAsync(
             BrowserOptions options,
             CancellationToken cancellationToken = default)
         {
             WasInvoked = true;
+            LastStartUrl = options.StartUrl;
             var start = new Uri(options.StartUrl);
             var state = ParseQuery(start.Query).Get("state")
                 ?? throw new InvalidOperationException("Authorize URL missing state.");
