@@ -20,6 +20,18 @@
     </AndroidResource>
   </ItemGroup>
 
+  <!-- Package build-time OAuth client IDs into the APK process environment (sideload / device). -->
+  <ItemGroup>
+    <RuntimeEnvironmentVariable
+      Include="MAILTIDE_GOOGLE_OAUTH_CLIENT_ID"
+      Value="$(MAILTIDE_GOOGLE_OAUTH_CLIENT_ID)"
+      Condition="'$(MAILTIDE_GOOGLE_OAUTH_CLIENT_ID)' != ''" />
+    <RuntimeEnvironmentVariable
+      Include="MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID"
+      Value="$(MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID)"
+      Condition="'$(MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID)' != ''" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Mailtide.Core\Mailtide.Core.csproj" />
     <ProjectReference Include="..\Mailtide.UI\Mailtide.UI.csproj" />

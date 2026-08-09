@@ -23,6 +23,7 @@ public sealed class IntentSystemBrowser : IBrowser
         var previous = Interlocked.Exchange(ref _pending, tcs);
         previous?.TrySetCanceled();
 
+        var timedOut = false;
         try
         {
             OpenSystemBrowser(options.StartUrl);
@@ -32,7 +33,15 @@ public sealed class IntentSystemBrowser : IBrowser
             {
                 using var timeout = new CancellationTokenSource(options.Timeout);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
-                using var timeoutRegistration = linked.Token.Register(() => tcs.TrySetCanceled(linked.Token));
+                using var timeoutRegistration = linked.Token.Register(() =>
+                {
+                    if (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        timedOut = true;
+                    }
+
+                    tcs.TrySetCanceled(linked.Token);
+                });
                 var responseUrl = await tcs.Task.ConfigureAwait(false);
                 return Success(responseUrl);
             }
@@ -42,14 +51,28 @@ public sealed class IntentSystemBrowser : IBrowser
         }
         catch (OperationCanceledException)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return new BrowserResult
+                {
+                    ResultType = BrowserResultType.UserCancel,
+                    Error = "OAuth authorization was cancelled.",
+                };
+            }
+
+            if (timedOut)
+            {
+                return new BrowserResult
+                {
+                    ResultType = BrowserResultType.Timeout,
+                    Error = "Timed out waiting for the OAuth redirect.",
+                };
+            }
+
             return new BrowserResult
             {
-                ResultType = cancellationToken.IsCancellationRequested
-                    ? BrowserResultType.UserCancel
-                    : BrowserResultType.Timeout,
-                Error = cancellationToken.IsCancellationRequested
-                    ? "OAuth authorization was cancelled."
-                    : "Timed out waiting for the OAuth redirect.",
+                ResultType = BrowserResultType.UserCancel,
+                Error = "OAuth authorization was superseded by a newer sign-in.",
             };
         }
         catch (Exception ex)

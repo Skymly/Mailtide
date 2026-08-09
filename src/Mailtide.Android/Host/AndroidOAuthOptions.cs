@@ -5,6 +5,7 @@ namespace Mailtide.Android.Host;
 /// <summary>
 /// Public OAuth client IDs for Android system-browser flows.
 /// Set via env: MAILTIDE_GOOGLE_OAUTH_CLIENT_ID, MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID.
+/// On Android, bake those into the APK via RuntimeEnvironmentVariable at build time.
 /// </summary>
 public sealed class AndroidOAuthOptions
 {

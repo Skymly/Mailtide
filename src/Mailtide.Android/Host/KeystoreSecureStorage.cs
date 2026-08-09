@@ -126,10 +126,13 @@ internal sealed class KeystoreSecureStorage : ISecureStorage
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var path = CredentialPath(key);
-        if (File.Exists(path))
+        lock (_gate)
         {
-            File.Delete(path);
+            var path = CredentialPath(key);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
 
         return Task.CompletedTask;
