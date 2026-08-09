@@ -1,6 +1,6 @@
 using Mailtide.Core;
 
-namespace Mailtide.Desktop;
+namespace Mailtide.UI;
 
 /// <summary>
 /// UI-framework-agnostic compose / Outbox surface. Issues Core intents only.

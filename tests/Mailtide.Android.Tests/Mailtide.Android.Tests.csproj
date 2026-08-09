@@ -1,0 +1,14 @@
+<Project Sdk="MSTest.Sdk/4.3.3">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Mailtide.Android.Tests</RootNamespace>
+    <AssemblyName>Mailtide.Android.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mailtide.Core\Mailtide.Core.csproj" />
+    <ProjectReference Include="..\..\src\Mailtide.UI\Mailtide.UI.csproj" />
+  </ItemGroup>
+
+</Project>

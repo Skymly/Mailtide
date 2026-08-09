@@ -2,21 +2,21 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Mailtide.Core;
 
-namespace Mailtide.Desktop;
+namespace Mailtide.UI;
 
-public partial class MainWindow : Window
+public partial class MailShellView : UserControl
 {
     private readonly BrowseShell? _browse;
     private readonly ComposeOutboxShell? _compose;
     private bool _suppressSelectionHandlers;
 
     /// <summary>Designer / XAML loader entry point.</summary>
-    public MainWindow()
+    public MailShellView()
     {
         InitializeComponent();
     }
 
-    public MainWindow(BrowseShell browse, ComposeOutboxShell compose)
+    public MailShellView(BrowseShell browse, ComposeOutboxShell compose)
     {
         ArgumentNullException.ThrowIfNull(browse);
         ArgumentNullException.ThrowIfNull(compose);
@@ -260,8 +260,8 @@ public partial class MainWindow : Window
     }
 
     private BrowseShell RequireBrowse() =>
-        _browse ?? throw new InvalidOperationException("BrowseShell was not attached to MainWindow.");
+        _browse ?? throw new InvalidOperationException("BrowseShell was not attached to MailShellView.");
 
     private ComposeOutboxShell RequireCompose() =>
-        _compose ?? throw new InvalidOperationException("ComposeOutboxShell was not attached to MainWindow.");
+        _compose ?? throw new InvalidOperationException("ComposeOutboxShell was not attached to MailShellView.");
 }

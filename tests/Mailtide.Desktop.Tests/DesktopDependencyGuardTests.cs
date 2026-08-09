@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using Mailtide.Core;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Smtp;
+using Mailtide.UI;
 
 namespace Mailtide.Desktop.Tests;
 

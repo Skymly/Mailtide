@@ -1,10 +1,13 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Mailtide.Core/Mailtide.Core.csproj" />
+    <Project Path="src/Mailtide.UI/Mailtide.UI.csproj" />
     <Project Path="src/Mailtide.Desktop/Mailtide.Desktop.csproj" />
+    <Project Path="src/Mailtide.Android/Mailtide.Android.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Mailtide.Core.Tests/Mailtide.Core.Tests.csproj" />
     <Project Path="tests/Mailtide.Desktop.Tests/Mailtide.Desktop.Tests.csproj" />
+    <Project Path="tests/Mailtide.Android.Tests/Mailtide.Android.Tests.csproj" />
   </Folder>
 </Solution>
