@@ -1,0 +1,13 @@
+<Project Sdk="MSTest.Sdk/4.3.3">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Mailtide.Build.Tests</RootNamespace>
+    <AssemblyName>Mailtide.Build.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\build\ReleaseArtifacts.cs" Link="ReleaseArtifacts.cs" />
+  </ItemGroup>
+
+</Project>

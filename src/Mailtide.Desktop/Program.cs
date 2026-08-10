@@ -1,4 +1,5 @@
 ﻿using Avalonia;
+using Mailtide.Desktop.Host;
 using Mailtide.UI;
 using System;
 
@@ -13,6 +14,13 @@ class Program
     public static void Main(string[] args)
     {
         HostBootstrap.OpenCoreAsync = DesktopComposition.OpenCoreAsync;
+
+        var updateSource = new GitHubReleasesUpdateSource(GitHubReleasesUpdateSource.DetectPlatform());
+        var updateCoordinator = new DesktopUpdateCoordinator(updateSource);
+        var updateLauncher = new DesktopUpdateLauncher();
+        HostBootstrap.CheckForDesktopUpdateAsync = updateCoordinator.CheckAsync;
+        HostBootstrap.OpenDesktopUpdateAsync = updateLauncher.OpenAsync;
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

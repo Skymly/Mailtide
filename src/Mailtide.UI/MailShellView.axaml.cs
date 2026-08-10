@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Mailtide.Core;
+using Mailtide.Core.Updates;
 
 namespace Mailtide.UI;
 
@@ -9,6 +10,7 @@ public partial class MailShellView : UserControl
     private readonly BrowseShell? _browse;
     private readonly ComposeOutboxShell? _compose;
     private bool _suppressSelectionHandlers;
+    private UpdateCheckResult? _pendingUpdate;
 
     /// <summary>Designer / XAML loader entry point.</summary>
     public MailShellView()
@@ -31,6 +33,76 @@ public partial class MailShellView : UserControl
         await browse.LoadAccountsAsync().ConfigureAwait(true);
         await browse.ShowUnifiedInboxAsync().ConfigureAwait(true);
         BindLists();
+    }
+
+    /// <summary>
+    /// Desktop hosts may wire <see cref="HostBootstrap.CheckForDesktopUpdateAsync"/>.
+    /// Failures stay silent so mail browsing is never blocked.
+    /// </summary>
+    public async Task CheckDesktopUpdateAsync()
+    {
+        var check = HostBootstrap.CheckForDesktopUpdateAsync;
+        if (check is null)
+        {
+            HideUpdateBanner();
+            return;
+        }
+
+        try
+        {
+            var result = await check(CancellationToken.None).ConfigureAwait(true);
+            if (result.Status == UpdateCheckStatus.UpdateAvailable && result.Remote is not null)
+            {
+                ShowUpdateAvailable(result);
+            }
+            else
+            {
+                HideUpdateBanner();
+            }
+        }
+        catch
+        {
+            HideUpdateBanner();
+        }
+    }
+
+    public void ShowUpdateAvailable(UpdateCheckResult result)
+    {
+        _pendingUpdate = result;
+        var remoteTag = result.Remote?.TagName ?? "a newer release";
+        UpdateBannerText.Text =
+            $"A newer Mailtide release ({remoteTag}) is available. Current install: {result.CurrentVersion}.";
+        UpdateBanner.IsVisible = true;
+    }
+
+    private async void OnUpdateNowClick(object? sender, RoutedEventArgs e)
+    {
+        var open = HostBootstrap.OpenDesktopUpdateAsync;
+        var update = _pendingUpdate;
+        if (open is null || update is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await open(update, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            AccountActionStatus.Text = ex.Message;
+        }
+    }
+
+    private void OnDismissUpdateClick(object? sender, RoutedEventArgs e) => HideUpdateBanner();
+
+    private void HideUpdateBanner()
+    {
+        _pendingUpdate = null;
+        if (UpdateBanner is not null)
+        {
+            UpdateBanner.IsVisible = false;
+        }
     }
 
     private async void OnRefreshClick(object? sender, RoutedEventArgs e)

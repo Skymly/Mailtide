@@ -6,6 +6,7 @@
     <Project Path="src/Mailtide.Android/Mailtide.Android.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Mailtide.Build.Tests/Mailtide.Build.Tests.csproj" />
     <Project Path="tests/Mailtide.Core.Tests/Mailtide.Core.Tests.csproj" />
     <Project Path="tests/Mailtide.Desktop.Tests/Mailtide.Desktop.Tests.csproj" />
     <Project Path="tests/Mailtide.Android.Tests/Mailtide.Android.Tests.csproj" />

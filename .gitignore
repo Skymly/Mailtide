@@ -430,3 +430,8 @@ FodyWeavers.xsd
 
 # Nuke
 .nuke/temp/
+
+# Release packaging tools / local signing material
+*.jks
+*.keystore
+packaging/tools/

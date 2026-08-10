@@ -13,11 +13,12 @@ public sealed class LibsecretSecureStorageTests
             Assert.Inconclusive("libsecret secure storage is Linux-only.");
         }
 
-        await using var storage = CreateLinuxStorage();
+        LibsecretStorageHandle? storage = null;
         var key = $"account:libsecret-test-{Guid.NewGuid():N}:credential";
 
         try
         {
+            storage = CreateLinuxStorage();
             await storage.StoreSecretAsync(key, "linux-s3cret");
             Assert.AreEqual("linux-s3cret", await storage.RetrieveSecretAsync(key));
         }
@@ -32,13 +33,18 @@ public sealed class LibsecretSecureStorageTests
         }
         finally
         {
-            try
+            if (storage is not null)
             {
-                await storage.DeleteSecretAsync(key);
-            }
-            catch
-            {
-                // Best-effort cleanup when the service is missing or locked.
+                try
+                {
+                    await storage.DeleteSecretAsync(key);
+                }
+                catch
+                {
+                    // Best-effort cleanup when the service is missing or locked.
+                }
+
+                await storage.DisposeAsync();
             }
         }
     }
@@ -51,11 +57,12 @@ public sealed class LibsecretSecureStorageTests
             Assert.Inconclusive("libsecret secure storage is Linux-only.");
         }
 
-        await using var storage = CreateLinuxStorage();
+        LibsecretStorageHandle? storage = null;
         var key = $"account:libsecret-delete-{Guid.NewGuid():N}:credential";
 
         try
         {
+            storage = CreateLinuxStorage();
             await storage.StoreSecretAsync(key, "remove-me-linux");
             await storage.DeleteSecretAsync(key);
             Assert.IsNull(await storage.RetrieveSecretAsync(key));
@@ -68,6 +75,13 @@ public sealed class LibsecretSecureStorageTests
             || ex.Message.Contains("libsecret", StringComparison.OrdinalIgnoreCase))
         {
             Assert.Inconclusive("Secret Service is not available in this environment.");
+        }
+        finally
+        {
+            if (storage is not null)
+            {
+                await storage.DisposeAsync();
+            }
         }
     }
 
