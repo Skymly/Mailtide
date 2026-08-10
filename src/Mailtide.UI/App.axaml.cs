@@ -33,6 +33,7 @@ public partial class App : Application
             mainWindow.Opened += async (_, _) =>
             {
                 await _shell.InitializeBrowseAsync().ConfigureAwait(true);
+                await _shell.CheckDesktopUpdateAsync().ConfigureAwait(true);
             };
         }
         else if (ApplicationLifetime is IActivityApplicationLifetime activityLifetime)
