@@ -24,11 +24,11 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            REF="${{ inputs.version }}"
           else
             REF="${GITHUB_REF_NAME}"
-            echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
           fi
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
 
   windows:
     needs: version

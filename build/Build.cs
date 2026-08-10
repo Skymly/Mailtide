@@ -175,8 +175,10 @@ sealed class Build : NukeBuild
             if (!binary.FileExists())
             {
                 // Fallback: first executable without extension in publish output.
-                binary = appBin.GetFiles("Mailtide*", 1).FirstOrDefault(f => !f.ToString().EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                var fallback = appBin.GetFiles("Mailtide*", 1).FirstOrDefault(f => !f.ToString().EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
                          ?? throw new FileNotFoundException("Published Desktop binary not found for AppImage.");
+                // AppRun and mailtide.desktop always exec usr/bin/Mailtide.Desktop.
+                File.Copy(fallback, binary, overwrite: true);
             }
 
             File.Copy(PackagingDirectory / "linux" / "AppRun", AppDir / "AppRun", overwrite: true);
