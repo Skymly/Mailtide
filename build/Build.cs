@@ -3,7 +3,6 @@ using System.IO;
 using System.Linq;
 using Nuke.Common;
 using Nuke.Common.IO;
-using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
@@ -18,9 +17,6 @@ sealed class Build : NukeBuild
     [Parameter("Release version (tag like v1.2.3 or plain 1.2.3). Defaults to 0.0.0-local.")]
     readonly string Version = ReleaseArtifacts.LocalFallbackVersion;
 
-    [Solution("Mailtide.slnx")]
-    readonly Solution Solution = null!;
-
     AbsolutePath SourceDirectory => RootDirectory / "src";
     AbsolutePath TestsDirectory => RootDirectory / "tests";
     AbsolutePath PackagingDirectory => RootDirectory / "packaging";
@@ -30,12 +26,30 @@ sealed class Build : NukeBuild
     AbsolutePath ReleaseDirectory => ArtifactsDirectory / "release";
     AbsolutePath AppDir => ArtifactsDirectory / "appdir";
 
+    AbsolutePath CoreProject => SourceDirectory / "Mailtide.Core" / "Mailtide.Core.csproj";
+    AbsolutePath UiProject => SourceDirectory / "Mailtide.UI" / "Mailtide.UI.csproj";
     AbsolutePath CoreTestsProject => TestsDirectory / "Mailtide.Core.Tests" / "Mailtide.Core.Tests.csproj";
     AbsolutePath DesktopTestsProject => TestsDirectory / "Mailtide.Desktop.Tests" / "Mailtide.Desktop.Tests.csproj";
     AbsolutePath AndroidTestsProject => TestsDirectory / "Mailtide.Android.Tests" / "Mailtide.Android.Tests.csproj";
     AbsolutePath BuildTestsProject => TestsDirectory / "Mailtide.Build.Tests" / "Mailtide.Build.Tests.csproj";
     AbsolutePath DesktopHostProject => SourceDirectory / "Mailtide.Desktop" / "Mailtide.Desktop.csproj";
     AbsolutePath AndroidHostProject => SourceDirectory / "Mailtide.Android" / "Mailtide.Android.csproj";
+
+    // Solution restore of net10.0-android on Linux requests the deprecated
+    // Microsoft.NETCore.App.Runtime.Mono.linux-x64 pack (NU1102). Pin an Android RID
+    // when restoring/building the host on Linux so NuGet resolves Mono.android-* packs.
+    const string AndroidLinuxRuntimeIdentifier = "android-arm64";
+
+    AbsolutePath[] ManagedProjectsExceptAndroidHost =>
+    [
+        CoreProject,
+        UiProject,
+        DesktopHostProject,
+        CoreTestsProject,
+        DesktopTestsProject,
+        AndroidTestsProject,
+        BuildTestsProject
+    ];
 
     string NormalizedVersion => ReleaseArtifacts.NormalizeVersion(Version);
 
@@ -51,18 +65,27 @@ sealed class Build : NukeBuild
     Target Restore => _ => _
         .Executes(() =>
         {
-            DotNetRestore(s => s
-                .SetProjectFile(Solution));
+            foreach (var project in ManagedProjectsExceptAndroidHost)
+            {
+                DotNetRestore(s => s.SetProjectFile(project));
+            }
+
+            RestoreAndroidHost();
         });
 
     Target Compile => _ => _
         .DependsOn(Restore)
         .Executes(() =>
         {
-            DotNetBuild(s => s
-                .SetProjectFile(Solution)
-                .SetConfiguration(Configuration)
-                .EnableNoRestore());
+            foreach (var project in ManagedProjectsExceptAndroidHost)
+            {
+                DotNetBuild(s => s
+                    .SetProjectFile(project)
+                    .SetConfiguration(Configuration)
+                    .EnableNoRestore());
+            }
+
+            BuildAndroidHost();
         });
 
     Target Test => _ => _
@@ -89,13 +112,7 @@ sealed class Build : NukeBuild
 
     Target CompileAndroid => _ => _
         .DependsOn(Restore)
-        .Executes(() =>
-        {
-            DotNetBuild(s => s
-                .SetProjectFile(AndroidHostProject)
-                .SetConfiguration(Configuration)
-                .EnableNoRestore());
-        });
+        .Executes(BuildAndroidHost);
 
     Target PublishDesktopWindows => _ => _
         .DependsOn(Restore)
@@ -232,6 +249,11 @@ sealed class Build : NukeBuild
                 .SetProperty("ApplicationDisplayVersion", NormalizedVersion)
                 .SetProperty("ApplicationVersion", ReleaseArtifacts.AndroidVersionCode(NormalizedVersion).ToString());
 
+            if (OperatingSystem.IsLinux())
+            {
+                publishSettings = publishSettings.SetProperty("RuntimeIdentifier", AndroidLinuxRuntimeIdentifier);
+            }
+
             publishSettings = ApplyAndroidSigning(publishSettings);
 
             DotNetPublish(publishSettings);
@@ -287,6 +309,37 @@ sealed class Build : NukeBuild
                     .AssertZeroExitCode();
             }
         });
+
+    void RestoreAndroidHost()
+    {
+        DotNetRestore(s =>
+        {
+            s = s.SetProjectFile(AndroidHostProject);
+            if (OperatingSystem.IsLinux())
+            {
+                s = s.SetProperty("RuntimeIdentifier", AndroidLinuxRuntimeIdentifier);
+            }
+
+            return s;
+        });
+    }
+
+    void BuildAndroidHost()
+    {
+        DotNetBuild(s =>
+        {
+            s = s
+                .SetProjectFile(AndroidHostProject)
+                .SetConfiguration(Configuration)
+                .EnableNoRestore();
+            if (OperatingSystem.IsLinux())
+            {
+                s = s.SetProperty("RuntimeIdentifier", AndroidLinuxRuntimeIdentifier);
+            }
+
+            return s;
+        });
+    }
 
     DotNetPublishSettings ApplyAndroidSigning(DotNetPublishSettings settings)
     {
