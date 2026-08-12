@@ -8,6 +8,8 @@ namespace Mailtide.Desktop.Tests;
 [TestClass]
 public sealed class BrowseShellTests
 {
+    private static readonly object HostBootstrapGate = new();
+
     [TestMethod]
     public async Task BrowseShell_lists_Accounts_already_in_the_store()
     {
@@ -178,6 +180,242 @@ public sealed class BrowseShellTests
             shell.AccountStatuses.Single(row => row.Account.Id == account.Id).Status.ErrorMessage);
     }
 
+    [TestMethod]
+    public async Task BrowseShell_AccountStatuses_include_Idle_Syncing_Error_State()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+
+        Assert.AreEqual(AccountSyncState.Idle, shell.AccountStatuses[0].Status.State);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_adds_Manual_and_QQ_Accounts()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+
+        var manual = await shell.AddManualAccountAsync(ValidDraft("Manual", "manual@example.com"));
+        var qq = await shell.AddQqMailAccountAsync(
+            new QqMailAccountDraft("QQ", "123456789@qq.com", "abcdefghijklmnop"));
+        await shell.LoadAccountsAsync();
+
+        Assert.HasCount(2, shell.Accounts);
+        Assert.IsTrue(shell.Accounts.Any(a => a.Id == manual.Id));
+        Assert.IsTrue(shell.Accounts.Any(a => a.Id == qq.Id));
+        Assert.AreEqual(CredentialKind.Password, shell.Accounts.Single(a => a.Id == qq.Id).CredentialKind);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_RemoveAccount_requires_confirmation_and_cancels_without_removing()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+
+        shell.AccountRemovalConfirmation = new FakeConfirmAccountRemoval(confirm: false);
+        var removed = await shell.RemoveAccountAsync(account.Id);
+        Assert.IsFalse(removed);
+        await shell.LoadAccountsAsync();
+        Assert.HasCount(1, shell.Accounts);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_RemoveAccount_removes_after_confirmation()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+
+        shell.AccountRemovalConfirmation = new FakeConfirmAccountRemoval(confirm: true);
+        var removed = await shell.RemoveAccountAsync(account.Id);
+        Assert.IsTrue(removed);
+        Assert.IsEmpty(shell.Accounts);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectMessage_loads_plain_text_body_and_attachments()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-body",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "plain body text")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "notes.txt",
+                        ContentType: "text/plain",
+                        Content: "file-bytes"u8.ToArray()),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+
+        Assert.AreEqual("plain body text", shell.BodyText);
+        Assert.IsFalse(shell.BodyUnavailable);
+        Assert.HasCount(1, shell.Attachments);
+        Assert.AreEqual("notes.txt", shell.Attachments[0].FileName);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectMessage_marks_missing_body_unavailable()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-empty",
+                Subject: "No body",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: string.Empty));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+
+        Assert.IsTrue(shell.BodyUnavailable);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_OpenAttachment_calls_Host_port_with_content()
+    {
+        using var fixture = new DesktopAppFixture();
+        var payload = "attach-payload"u8.ToArray();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-open",
+                Subject: "Has file",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "see file")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "report.pdf",
+                        ContentType: "application/pdf",
+                        Content: payload),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var fakeOpen = new FakeOpenDownloadedAttachment();
+        lock (HostBootstrapGate)
+        {
+            var previous = HostBootstrap.OpenDownloadedAttachment;
+            HostBootstrap.OpenDownloadedAttachment = fakeOpen;
+            try
+            {
+                var shell = new BrowseShell(app);
+                shell.SelectAccountAsync(account.Id).GetAwaiter().GetResult();
+                shell.SelectMailboxAsync(inbox.Id).GetAwaiter().GetResult();
+                shell.SelectMessageAsync(shell.Messages[0].Id).GetAwaiter().GetResult();
+                shell.OpenAttachmentAsync(shell.Attachments[0].Id).GetAwaiter().GetResult();
+
+                Assert.IsNull(shell.AttachmentOpenError);
+                Assert.AreEqual("report.pdf", fakeOpen.LastFileName);
+                Assert.AreEqual("application/pdf", fakeOpen.LastContentType);
+                CollectionAssert.AreEqual(payload, fakeOpen.LastContent);
+            }
+            finally
+            {
+                HostBootstrap.OpenDownloadedAttachment = previous;
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_OpenAttachment_surfaces_short_error_on_Host_failure()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-fail-open",
+                Subject: "Has file",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "see file")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "a.txt",
+                        ContentType: "text/plain",
+                        Content: "x"u8.ToArray()),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        lock (HostBootstrapGate)
+        {
+            var previous = HostBootstrap.OpenDownloadedAttachment;
+            HostBootstrap.OpenDownloadedAttachment = new FakeOpenDownloadedAttachment
+            {
+                FailWith = new OpenAttachmentException(
+                    "Could not open the attachment.",
+                    new Exception("native boom")),
+            };
+            try
+            {
+                var shell = new BrowseShell(app);
+                shell.SelectAccountAsync(account.Id).GetAwaiter().GetResult();
+                shell.SelectMailboxAsync(inbox.Id).GetAwaiter().GetResult();
+                shell.SelectMessageAsync(shell.Messages[0].Id).GetAwaiter().GetResult();
+                shell.OpenAttachmentAsync(shell.Attachments[0].Id).GetAwaiter().GetResult();
+
+                Assert.AreEqual("Could not open the attachment.", shell.AttachmentOpenError);
+            }
+            finally
+            {
+                HostBootstrap.OpenDownloadedAttachment = previous;
+            }
+        }
+    }
+
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(
             DisplayName: displayName,
@@ -187,4 +425,38 @@ public sealed class BrowseShellTests
             SmtpHost: "smtp.example.com",
             SmtpPort: 587,
             Password: "s3cret-password");
+
+    private sealed class FakeConfirmAccountRemoval(bool confirm) : IConfirmAccountRemoval
+    {
+        public Task<bool> ConfirmAsync(string accountDisplayName, CancellationToken cancellationToken = default) =>
+            Task.FromResult(confirm);
+    }
+
+    private sealed class FakeOpenDownloadedAttachment : IOpenDownloadedAttachment
+    {
+        public string? LastFileName { get; private set; }
+
+        public string? LastContentType { get; private set; }
+
+        public byte[]? LastContent { get; private set; }
+
+        public OpenAttachmentException? FailWith { get; init; }
+
+        public Task OpenAsync(
+            string fileName,
+            string contentType,
+            ReadOnlyMemory<byte> content,
+            CancellationToken cancellationToken = default)
+        {
+            if (FailWith is not null)
+            {
+                throw FailWith;
+            }
+
+            LastFileName = fileName;
+            LastContentType = contentType;
+            LastContent = content.ToArray();
+            return Task.CompletedTask;
+        }
+    }
 }

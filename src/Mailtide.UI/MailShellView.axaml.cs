@@ -157,6 +157,9 @@ public partial class MailShellView : UserControl
         }
 
         await compose.SendNowAsync().ConfigureAwait(true);
+
+        var browse = RequireBrowse();
+        await browse.LoadAccountsAsync().ConfigureAwait(true);
         BindLists();
     }
 
@@ -225,23 +228,64 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
-    private async void OnAddGoogleClick(object? sender, RoutedEventArgs e) =>
-        await AddOAuthAccountAsync(() => RequireBrowse().AddGoogleAccountAsync("Gmail")).ConfigureAwait(true);
-
-    private async void OnAddMicrosoftClick(object? sender, RoutedEventArgs e) =>
-        await AddOAuthAccountAsync(() => RequireBrowse().AddMicrosoftConsumerAccountAsync("Outlook"))
-            .ConfigureAwait(true);
-
-    private async Task AddOAuthAccountAsync(Func<Task<AccountInfo>> addAsync)
+    private async void OnAddAccountClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();
         AccountActionStatus.Text = string.Empty;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        var dialog = new AddAccountWindow(browse);
+        bool added;
+        if (owner is null)
+        {
+            AccountActionStatus.Text = "Unable to open Add Account dialog.";
+            return;
+        }
+
+        added = await dialog.ShowDialog<bool>(owner).ConfigureAwait(true);
+
+        if (!added || dialog.CreatedAccount is null)
+        {
+            return;
+        }
+
         try
         {
-            var account = await addAsync().ConfigureAwait(true);
             await browse.LoadAccountsAsync().ConfigureAwait(true);
-            await browse.SelectAccountAsync(account.Id).ConfigureAwait(true);
-            await RequireCompose().SelectAccountAsync(account.Id).ConfigureAwait(true);
+            await browse.SelectAccountAsync(dialog.CreatedAccount.Id).ConfigureAwait(true);
+            await RequireCompose().SelectAccountAsync(dialog.CreatedAccount.Id).ConfigureAwait(true);
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            await browse.LoadAccountsAsync().ConfigureAwait(true);
+            BindLists();
+            AccountActionStatus.Text = ex.Message;
+        }
+    }
+
+    private async void OnRemoveAccountClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        AccountActionStatus.Text = string.Empty;
+        if (AccountsList.SelectedItem is not AccountStatusRow row)
+        {
+            AccountActionStatus.Text = "Select an Account to remove.";
+            return;
+        }
+
+        try
+        {
+            var removed = await browse.RemoveAccountAsync(row.Account.Id).ConfigureAwait(true);
+            if (!removed)
+            {
+                return;
+            }
+
+            if (browse.SelectedAccountId is { } accountId)
+            {
+                await RequireCompose().SelectAccountAsync(accountId).ConfigureAwait(true);
+            }
+
             BindLists();
         }
         catch (Exception ex)
@@ -285,13 +329,48 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private async void OnMessageSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSelectionHandlers || _browse is null)
+        {
+            return;
+        }
+
+        if (MessagesList.SelectedItem is not MessageInfo message)
+        {
+            return;
+        }
+
+        await _browse.SelectMessageAsync(message.Id).ConfigureAwait(true);
+        BindLists();
+    }
+
+    private async void OnOpenAttachmentClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        if (AttachmentsList.SelectedItem is not AttachmentInfo attachment)
+        {
+            return;
+        }
+
+        await browse.OpenAttachmentAsync(attachment.Id).ConfigureAwait(true);
+        BindLists();
+    }
+
     private static async Task ReloadBrowseSelectionAsync(BrowseShell browse, Guid accountId)
     {
         var mailboxId = browse.SelectedMailboxId;
+        var messageId = browse.SelectedMessageId;
         await browse.SelectAccountAsync(accountId).ConfigureAwait(true);
         if (mailboxId is { } selectedMailboxId)
         {
             await browse.SelectMailboxAsync(selectedMailboxId).ConfigureAwait(true);
+        }
+
+        if (messageId is { } selectedMessageId
+            && browse.Messages.Any(m => m.Id == selectedMessageId))
+        {
+            await browse.SelectMessageAsync(selectedMessageId).ConfigureAwait(true);
         }
     }
 
@@ -312,6 +391,7 @@ public partial class MailShellView : UserControl
             AccountsList.ItemsSource = browse.AccountStatuses;
             MailboxesList.ItemsSource = browse.Mailboxes;
             MessagesList.ItemsSource = browse.Messages;
+            AttachmentsList.ItemsSource = browse.Attachments;
             DraftsList.ItemsSource = compose.Drafts;
             OutboxList.ItemsSource = compose.OutboxItems;
 
@@ -323,7 +403,14 @@ public partial class MailShellView : UserControl
                 ? browse.Mailboxes.FirstOrDefault(m => m.Id == mailboxId)
                 : null;
 
+            MessagesList.SelectedItem = browse.SelectedMessageId is { } messageId
+                ? browse.Messages.FirstOrDefault(m => m.Id == messageId)
+                : null;
+
             MessagesHeader.Text = browse.ShowingUnifiedInbox ? "Unified Inbox" : "Messages";
+            BodyUnavailableText.IsVisible = browse.BodyUnavailable;
+            MessageBodyBox.Text = browse.BodyUnavailable ? string.Empty : browse.BodyText ?? string.Empty;
+            AttachmentOpenErrorText.Text = browse.AttachmentOpenError ?? string.Empty;
         }
         finally
         {

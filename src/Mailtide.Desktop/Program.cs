@@ -14,6 +14,7 @@ class Program
     public static void Main(string[] args)
     {
         HostBootstrap.OpenCoreAsync = DesktopComposition.OpenCoreAsync;
+        HostBootstrap.OpenDownloadedAttachment = new DesktopOpenDownloadedAttachment();
 
         var updateSource = new GitHubReleasesUpdateSource(GitHubReleasesUpdateSource.DetectPlatform());
         var updateCoordinator = new DesktopUpdateCoordinator(updateSource);

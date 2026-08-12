@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Mailtide.UI.AddAccountWindow"
+        Title="Add Account"
+        Width="480"
+        Height="420"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel Margin="16">
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+      <Button Name="CancelButton" Content="Cancel" Width="88" Click="OnCancelClick" />
+      <Button Name="AddButton" Content="Add" Width="88" Click="OnAddClick" />
+    </StackPanel>
+
+    <StackPanel Spacing="10">
+      <TextBlock Text="Account type" FontWeight="SemiBold" />
+      <ComboBox Name="AccountTypeBox" SelectedIndex="0">
+        <ComboBoxItem Content="Google" Tag="Google" />
+        <ComboBoxItem Content="Microsoft" Tag="Microsoft" />
+        <ComboBoxItem Content="QQ Mail" Tag="QQ" />
+        <ComboBoxItem Content="Manual IMAP/SMTP" Tag="Manual" />
+      </ComboBox>
+
+      <TextBox Name="DisplayNameBox" PlaceholderText="Display name" Text="Mail" />
+
+      <StackPanel Name="QqFields" IsVisible="False" Spacing="8">
+        <TextBox Name="QqEmailBox" PlaceholderText="QQ email address" />
+        <TextBox Name="QqAuthCodeBox" PlaceholderText="Authorization code" />
+      </StackPanel>
+
+      <StackPanel Name="ManualFields" IsVisible="False" Spacing="8">
+        <TextBox Name="ManualEmailBox" PlaceholderText="Email address" />
+        <TextBox Name="ImapHostBox" PlaceholderText="IMAP host" />
+        <TextBox Name="ImapPortBox" PlaceholderText="IMAP port" Text="993" />
+        <TextBox Name="SmtpHostBox" PlaceholderText="SMTP host" />
+        <TextBox Name="SmtpPortBox" PlaceholderText="SMTP port" Text="587" />
+        <TextBox Name="PasswordBox" PlaceholderText="Password / app password" PasswordChar="*" />
+      </StackPanel>
+
+      <TextBlock Name="FormError" TextWrapping="Wrap" Opacity="0.85" Foreground="IndianRed" />
+    </StackPanel>
+  </DockPanel>
+</Window>
