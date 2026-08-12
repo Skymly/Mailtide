@@ -76,12 +76,12 @@
       </DockPanel>
     </Grid>
 
-    <Grid ColumnDefinitions="220,220,*" ColumnSpacing="12">
+    <Grid ColumnDefinitions="220,200,*,*" ColumnSpacing="12">
       <DockPanel Grid.Column="0">
         <TextBlock DockPanel.Dock="Top" Text="Accounts" FontWeight="SemiBold" Margin="0,0,0,8" />
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
-          <Button Name="AddGoogleButton" Content="Add Google" Click="OnAddGoogleClick" />
-          <Button Name="AddMicrosoftButton" Content="Add Microsoft" Click="OnAddMicrosoftClick" />
+          <Button Name="AddAccountButton" Content="Add Account" Click="OnAddAccountClick" />
+          <Button Name="RemoveAccountButton" Content="Remove" Click="OnRemoveAccountClick" />
         </StackPanel>
         <TextBlock Name="AccountActionStatus"
                    DockPanel.Dock="Top"
@@ -96,6 +96,7 @@
               <StackPanel>
                 <TextBlock Text="{Binding Account.DisplayName}" />
                 <TextBlock Text="{Binding Account.EmailAddress}" Opacity="0.7" FontSize="12" />
+                <TextBlock Text="{Binding Status.State}" Opacity="0.7" FontSize="12" />
                 <TextBlock Text="{Binding Status.ErrorMessage}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
               </StackPanel>
             </DataTemplate>
@@ -121,12 +122,52 @@
                    Text="Messages"
                    FontWeight="SemiBold"
                    Margin="0,0,0,8" />
-        <ListBox Name="MessagesList">
+        <ListBox Name="MessagesList"
+                 SelectionChanged="OnMessageSelectionChanged">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="core:MessageInfo">
               <StackPanel>
                 <TextBlock Text="{Binding Subject}" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding FromAddress}" Opacity="0.7" FontSize="12" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <DockPanel Grid.Column="3">
+        <TextBlock DockPanel.Dock="Top" Text="Message" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <TextBlock Name="BodyUnavailableText"
+                   DockPanel.Dock="Top"
+                   Text="Body unavailable"
+                   IsVisible="False"
+                   Opacity="0.75"
+                   Margin="0,0,0,8" />
+        <TextBox Name="MessageBodyBox"
+                 DockPanel.Dock="Top"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 MinHeight="120"
+                 Margin="0,0,0,8" />
+        <TextBlock DockPanel.Dock="Top" Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <TextBlock Name="AttachmentOpenErrorText"
+                   DockPanel.Dock="Top"
+                   TextWrapping="Wrap"
+                   Opacity="0.85"
+                   FontSize="12"
+                   Margin="0,0,0,8" />
+        <Button Name="OpenAttachmentButton"
+                DockPanel.Dock="Bottom"
+                Content="Open Attachment"
+                Margin="0,8,0,0"
+                Click="OnOpenAttachmentClick" />
+        <ListBox Name="AttachmentsList">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="core:AttachmentInfo">
+              <StackPanel>
+                <TextBlock Text="{Binding FileName}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ContentType}" Opacity="0.7" FontSize="12" />
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>

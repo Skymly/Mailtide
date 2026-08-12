@@ -10,6 +10,8 @@ public static class HostBootstrap
 {
     public static Func<CancellationToken, Task<MailtideApp>>? OpenCoreAsync { get; set; }
 
+    public static IOpenDownloadedAttachment? OpenDownloadedAttachment { get; set; }
+
     /// <summary>
     /// Desktop-only: check GitHub Releases for a newer build. Android leaves this null.
     /// Failures should resolve to <see cref="UpdateCheckStatus.Unavailable"/> rather than throw.

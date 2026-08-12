@@ -131,6 +131,24 @@ public sealed class ComposeOutboxShellTests
         Assert.AreEqual("Hello", fixture.Smtp.Submitted[0].Subject);
     }
 
+    [TestMethod]
+    public async Task ComposeOutboxShell_ClearSelection_drops_account_and_lists()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SaveDraftAsync("bob@example.com", "Hello", "Body");
+
+        shell.ClearSelection();
+
+        Assert.IsNull(shell.SelectedAccountId);
+        Assert.IsEmpty(shell.Drafts);
+        Assert.IsEmpty(shell.OutboxItems);
+    }
+
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(
             DisplayName: displayName,

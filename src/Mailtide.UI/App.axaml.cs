@@ -25,6 +25,8 @@ public partial class App : Application
         var compose = new ComposeOutboxShell(_core);
         _shell = new MailShellView(browse, compose);
 
+        browse.AccountRemovalConfirmation = new AvaloniaConfirmAccountRemoval(() => _shell);
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var mainWindow = new MainWindow(_shell);

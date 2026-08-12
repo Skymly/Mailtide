@@ -17,6 +17,7 @@ public class MailtideAndroidApplication : AvaloniaAndroidApplication<App>
     public override void OnCreate()
     {
         HostBootstrap.OpenCoreAsync = ct => AndroidComposition.OpenCoreAsync(this, ct);
+        HostBootstrap.OpenDownloadedAttachment = new AndroidOpenDownloadedAttachment(this);
         base.OnCreate();
     }
 

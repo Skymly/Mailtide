@@ -27,6 +27,13 @@ public sealed class ComposeOutboxShell
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
 
+    public void ClearSelection()
+    {
+        SelectedAccountId = null;
+        Drafts = [];
+        OutboxItems = [];
+    }
+
     public async Task SaveDraftAsync(
         string toAddresses,
         string subject,
