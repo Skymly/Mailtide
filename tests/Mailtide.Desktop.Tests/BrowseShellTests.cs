@@ -416,6 +416,119 @@ public sealed class BrowseShellTests
         }
     }
 
+    [TestMethod]
+    public async Task BrowseShell_projects_Idle_after_ComposeOutboxShell_SyncNow()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var browse = new BrowseShell(app);
+        var compose = new ComposeOutboxShell(app);
+        await compose.SelectAccountAsync(account.Id);
+        await compose.SyncNowAsync();
+        await browse.LoadAccountsAsync();
+
+        var row = browse.AccountStatuses.Single(r => r.Account.Id == account.Id);
+        Assert.AreEqual(AccountSyncState.Idle, row.Status.State);
+        Assert.IsNull(row.Status.ErrorMessage);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_projects_Error_after_ComposeOutboxShell_SyncNow_auth_failure()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "dave@gmail.com",
+            RefreshSecret: "shell-refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.Google,
+                GoogleMailPreset.Authority,
+                "test-google-client"));
+        fixture.OAuth.RefreshFailWith = new OAuthAuthenticationException("invalid_grant");
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+
+        var browse = new BrowseShell(app);
+        var account = await browse.AddGoogleAccountAsync("Gmail");
+        var compose = new ComposeOutboxShell(app);
+        await compose.SelectAccountAsync(account.Id);
+        await compose.SyncNowAsync();
+        await browse.LoadAccountsAsync();
+
+        var row = browse.AccountStatuses.Single(r => r.Account.Id == account.Id);
+        Assert.AreEqual(AccountSyncState.Error, row.Status.State);
+        Assert.AreEqual("Authentication failed. Sign in again.", row.Status.ErrorMessage);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_projects_Syncing_while_ComposeOutboxShell_SyncNow_is_in_flight()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Imap.BlockConnectUntil = gate;
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var browse = new BrowseShell(app);
+        var compose = new ComposeOutboxShell(app);
+        await compose.SelectAccountAsync(account.Id);
+
+        var syncTask = compose.SyncNowAsync();
+        await WaitUntilAsync(() => app.GetAccountStatus(account.Id).State == AccountSyncState.Syncing);
+        await browse.LoadAccountsAsync();
+
+        Assert.AreEqual(
+            AccountSyncState.Syncing,
+            browse.AccountStatuses.Single(r => r.Account.Id == account.Id).Status.State);
+
+        gate.SetResult();
+        await syncTask;
+        await browse.LoadAccountsAsync();
+
+        Assert.AreEqual(
+            AccountSyncState.Idle,
+            browse.AccountStatuses.Single(r => r.Account.Id == account.Id).Status.State);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_refreshes_status_snapshot_after_ComposeOutboxShell_SendNow()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var browse = new BrowseShell(app);
+        var compose = new ComposeOutboxShell(app);
+        await compose.SelectAccountAsync(account.Id);
+        await compose.SaveDraftAsync("bob@example.com", "Hello", "Body");
+        await compose.SendAsync(compose.Drafts[0].Id);
+        await compose.SendNowAsync();
+        await browse.LoadAccountsAsync();
+
+        var row = browse.AccountStatuses.Single(r => r.Account.Id == account.Id);
+        Assert.AreEqual(AccountSyncState.Idle, row.Status.State);
+        Assert.IsNull(row.Status.ErrorMessage);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(20);
+        }
+
+        Assert.Fail("Timed out waiting for condition.");
+    }
+
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(
             DisplayName: displayName,
