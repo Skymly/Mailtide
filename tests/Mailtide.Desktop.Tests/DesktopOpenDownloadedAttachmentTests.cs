@@ -50,6 +50,18 @@ public sealed class DesktopOpenDownloadedAttachmentTests
     }
 
     [TestMethod]
+    public void CreateLinuxOpenStartInfo_passes_path_with_spaces_as_single_argument()
+    {
+        var path = "/tmp/Mailtide/attachments/abcd-Q2 Report.pdf";
+        var startInfo = DesktopOpenDownloadedAttachment.CreateLinuxOpenStartInfo(path);
+
+        Assert.AreEqual("xdg-open", startInfo.FileName);
+        Assert.IsFalse(startInfo.UseShellExecute);
+        Assert.HasCount(1, startInfo.ArgumentList);
+        Assert.AreEqual(path, startInfo.ArgumentList[0]);
+    }
+
+    [TestMethod]
     public async Task OpenAsync_sanitizes_path_segments_and_falls_back_filename()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "MailtideTests", Guid.NewGuid().ToString("N"));

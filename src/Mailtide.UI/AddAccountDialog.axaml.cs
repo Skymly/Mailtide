@@ -4,20 +4,23 @@ using Mailtide.Core;
 
 namespace Mailtide.UI;
 
-public partial class AddAccountWindow : Window
+public partial class AddAccountDialog : UserControl
 {
     private readonly BrowseShell _browse;
+    private readonly TaskCompletionSource<bool> _completion = new();
 
     public AccountInfo? CreatedAccount { get; private set; }
 
-    public AddAccountWindow()
+    public Task<bool> Completion => _completion.Task;
+
+    public AddAccountDialog()
     {
         // Designer
         _browse = null!;
         InitializeComponent();
     }
 
-    public AddAccountWindow(BrowseShell browse)
+    public AddAccountDialog(BrowseShell browse)
     {
         ArgumentNullException.ThrowIfNull(browse);
         _browse = browse;
@@ -43,7 +46,7 @@ public partial class AddAccountWindow : Window
         return "Google";
     }
 
-    private void OnCancelClick(object? sender, RoutedEventArgs e) => Close(false);
+    private void OnCancelClick(object? sender, RoutedEventArgs e) => _completion.TrySetResult(false);
 
     private async void OnAddClick(object? sender, RoutedEventArgs e)
     {
@@ -71,7 +74,7 @@ public partial class AddAccountWindow : Window
                     .ConfigureAwait(true),
                 _ => throw new InvalidOperationException("Unknown account type."),
             };
-            Close(true);
+            _completion.TrySetResult(true);
         }
         catch (Exception ex)
         {

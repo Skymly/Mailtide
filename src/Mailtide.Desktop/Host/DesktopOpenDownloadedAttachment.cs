@@ -107,10 +107,20 @@ internal sealed class DesktopOpenDownloadedAttachment : IOpenDownloadedAttachmen
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            Process.Start(new ProcessStartInfo("xdg-open", path) { UseShellExecute = false });
+            Process.Start(CreateLinuxOpenStartInfo(path));
             return;
         }
 
         throw new PlatformNotSupportedException("Opening attachments is only supported on Windows and Linux.");
+    }
+
+    /// <summary>
+    /// Builds the Linux open launch so paths with spaces stay a single argv entry.
+    /// </summary>
+    internal static ProcessStartInfo CreateLinuxOpenStartInfo(string path)
+    {
+        var startInfo = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
+        startInfo.ArgumentList.Add(path);
+        return startInfo;
     }
 }

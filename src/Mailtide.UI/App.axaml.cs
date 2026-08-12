@@ -1,5 +1,4 @@
 using Avalonia;
-using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Mailtide.Core;
@@ -26,11 +25,12 @@ public partial class App : Application
         var compose = new ComposeOutboxShell(_core);
         _shell = new MailShellView(browse, compose);
 
+        browse.AccountRemovalConfirmation = new AvaloniaConfirmAccountRemoval(() => _shell);
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var mainWindow = new MainWindow(_shell);
             desktop.MainWindow = mainWindow;
-            browse.AccountRemovalConfirmation = new AvaloniaConfirmAccountRemoval(() => desktop.MainWindow);
 
             mainWindow.Opened += async (_, _) =>
             {
@@ -40,8 +40,6 @@ public partial class App : Application
         }
         else if (ApplicationLifetime is IActivityApplicationLifetime activityLifetime)
         {
-            browse.AccountRemovalConfirmation = new AvaloniaConfirmAccountRemoval(
-                () => TopLevel.GetTopLevel(_shell) as Window);
             activityLifetime.MainViewFactory = () =>
             {
                 _ = InitializeShellWhenAttachedAsync(_shell);
@@ -50,8 +48,6 @@ public partial class App : Application
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)
         {
-            browse.AccountRemovalConfirmation = new AvaloniaConfirmAccountRemoval(
-                () => TopLevel.GetTopLevel(_shell) as Window);
             singleView.MainView = _shell;
             _ = InitializeShellWhenAttachedAsync(_shell);
         }

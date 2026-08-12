@@ -232,16 +232,17 @@ public partial class MailShellView : UserControl
     {
         var browse = RequireBrowse();
         AccountActionStatus.Text = string.Empty;
-        var owner = TopLevel.GetTopLevel(this) as Window;
-        var dialog = new AddAccountWindow(browse);
+        var dialog = new AddAccountDialog(browse);
         bool added;
-        if (owner is null)
+        try
+        {
+            added = await AvaloniaOverlayDialog.ShowAsync(this, dialog, dialog.Completion).ConfigureAwait(true);
+        }
+        catch (InvalidOperationException)
         {
             AccountActionStatus.Text = "Unable to open Add Account dialog.";
             return;
         }
-
-        added = await dialog.ShowDialog<bool>(owner).ConfigureAwait(true);
 
         if (!added || dialog.CreatedAccount is null)
         {
@@ -284,6 +285,10 @@ public partial class MailShellView : UserControl
             if (browse.SelectedAccountId is { } accountId)
             {
                 await RequireCompose().SelectAccountAsync(accountId).ConfigureAwait(true);
+            }
+            else
+            {
+                RequireCompose().ClearSelection();
             }
 
             BindLists();

@@ -7,82 +7,67 @@ namespace Mailtide.UI;
 
 /// <summary>
 /// Avalonia confirmation dialog for Account removal.
+/// Uses an in-tree overlay so Android / single-view lifetimes work (no Window owner).
 /// </summary>
 public sealed class AvaloniaConfirmAccountRemoval : IConfirmAccountRemoval
 {
-    private readonly Func<Window?> _ownerFactory;
+    private readonly Func<Visual?> _hostFactory;
 
-    public AvaloniaConfirmAccountRemoval(Func<Window?> ownerFactory)
+    public AvaloniaConfirmAccountRemoval(Func<Visual?> hostFactory)
     {
-        ArgumentNullException.ThrowIfNull(ownerFactory);
-        _ownerFactory = ownerFactory;
+        ArgumentNullException.ThrowIfNull(hostFactory);
+        _hostFactory = hostFactory;
     }
 
     public async Task<bool> ConfirmAsync(
         string accountDisplayName,
         CancellationToken cancellationToken = default)
     {
-        var owner = _ownerFactory();
+        var host = _hostFactory()
+            ?? throw new InvalidOperationException("Unable to open Remove Account confirmation.");
+
         var tcs = new TaskCompletionSource<bool>();
 
         var cancel = new Button { Content = "Cancel", Width = 88 };
         var remove = new Button { Content = "Remove", Width = 88 };
 
-        var dialog = new Window
+        var content = new DockPanel
         {
-            Title = "Remove Account",
-            Width = 420,
-            Height = 180,
-            CanResize = false,
-            WindowStartupLocation = owner is null
-                ? WindowStartupLocation.CenterScreen
-                : WindowStartupLocation.CenterOwner,
-            Content = new DockPanel
+            Width = 388,
+            Children =
             {
-                Margin = new Thickness(16),
-                Children =
+                new TextBlock
                 {
-                    new TextBlock
-                    {
-                        Text =
-                            $"Remove account \"{accountDisplayName}\"? Local Messages, related data, and credentials will be cleared.",
-                        TextWrapping = TextWrapping.Wrap,
-                        [DockPanel.DockProperty] = Dock.Top,
-                        Margin = new Thickness(0, 0, 0, 16),
-                    },
-                    new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        HorizontalAlignment = HorizontalAlignment.Right,
-                        Spacing = 8,
-                        [DockPanel.DockProperty] = Dock.Bottom,
-                        Children = { cancel, remove },
-                    },
+                    Text = "Remove Account",
+                    FontSize = 18,
+                    FontWeight = FontWeight.SemiBold,
+                    [DockPanel.DockProperty] = Dock.Top,
+                    Margin = new Thickness(0, 0, 0, 12),
+                },
+                new TextBlock
+                {
+                    Text =
+                        $"Remove account \"{accountDisplayName}\"? Local Messages, related data, and credentials will be cleared.",
+                    TextWrapping = TextWrapping.Wrap,
+                    [DockPanel.DockProperty] = Dock.Top,
+                    Margin = new Thickness(0, 0, 0, 16),
+                },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    [DockPanel.DockProperty] = Dock.Bottom,
+                    Children = { cancel, remove },
                 },
             },
         };
 
-        cancel.Click += (_, _) =>
-        {
-            tcs.TrySetResult(false);
-            dialog.Close();
-        };
-        remove.Click += (_, _) =>
-        {
-            tcs.TrySetResult(true);
-            dialog.Close();
-        };
-        dialog.Closed += (_, _) => tcs.TrySetResult(false);
+        cancel.Click += (_, _) => tcs.TrySetResult(false);
+        remove.Click += (_, _) => tcs.TrySetResult(true);
 
-        if (owner is null)
-        {
-            dialog.Show();
-        }
-        else
-        {
-            await dialog.ShowDialog(owner).ConfigureAwait(true);
-        }
-
-        return await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(true);
+        return await AvaloniaOverlayDialog
+            .ShowAsync(host, content, tcs.Task.WaitAsync(cancellationToken))
+            .ConfigureAwait(true);
     }
 }
