@@ -62,6 +62,8 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
     private readonly Dictionary<string, List<RemoteMessage>> _messagesByPath =
         new(StringComparer.Ordinal);
 
+    public TaskCompletionSource? BlockConnectUntil { get; set; }
+
     public void SeedMailboxes(params RemoteMailbox[] mailboxes)
     {
         _mailboxes.Clear();
@@ -85,19 +87,23 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             _factory = factory;
         }
 
-        public Task ConnectAndAuthenticateAsync(
+        public async Task ConnectAndAuthenticateAsync(
             string host,
             int port,
             string username,
             string password,
             CancellationToken cancellationToken = default)
         {
+            if (_factory.BlockConnectUntil is not null)
+            {
+                await _factory.BlockConnectUntil.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             _ = host;
             _ = port;
             _ = username;
             _ = password;
             _authenticated = true;
-            return Task.CompletedTask;
         }
 
         public Task<IReadOnlyList<RemoteMailbox>> ListMailboxesAsync(
