@@ -53,22 +53,39 @@ public sealed class BrowseShell
     public Task<AccountInfo> AddGoogleAccountAsync(
         string displayName,
         CancellationToken cancellationToken = default) =>
-        _app.AddGoogleAccountAsync(displayName, cancellationToken);
+        AddThenReloadAsync(
+            ct => _app.AddGoogleAccountAsync(displayName, ct),
+            cancellationToken);
 
     public Task<AccountInfo> AddMicrosoftConsumerAccountAsync(
         string displayName,
         CancellationToken cancellationToken = default) =>
-        _app.AddMicrosoftConsumerAccountAsync(displayName, cancellationToken);
+        AddThenReloadAsync(
+            ct => _app.AddMicrosoftConsumerAccountAsync(displayName, ct),
+            cancellationToken);
 
     public Task<AccountInfo> AddQqMailAccountAsync(
         QqMailAccountDraft draft,
         CancellationToken cancellationToken = default) =>
-        _app.AddQqMailAccountAsync(draft, cancellationToken);
+        AddThenReloadAsync(
+            ct => _app.AddQqMailAccountAsync(draft, ct),
+            cancellationToken);
 
     public Task<AccountInfo> AddManualAccountAsync(
         ManualAccountDraft draft,
         CancellationToken cancellationToken = default) =>
-        _app.AddManualAccountAsync(draft, cancellationToken);
+        AddThenReloadAsync(
+            ct => _app.AddManualAccountAsync(draft, ct),
+            cancellationToken);
+
+    private async Task<AccountInfo> AddThenReloadAsync(
+        Func<CancellationToken, Task<AccountInfo>> add,
+        CancellationToken cancellationToken)
+    {
+        var account = await add(cancellationToken).ConfigureAwait(false);
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+        return account;
+    }
 
     public async Task<bool> RemoveAccountAsync(
         Guid accountId,

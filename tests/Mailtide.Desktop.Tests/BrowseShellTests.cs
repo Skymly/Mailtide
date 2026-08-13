@@ -146,11 +146,32 @@ public sealed class BrowseShellTests
 
         var shell = new BrowseShell(app);
         var account = await shell.AddGoogleAccountAsync("Gmail");
-        await shell.LoadAccountsAsync();
 
         Assert.AreEqual(account.Id, shell.Accounts[0].Id);
         Assert.AreEqual(CredentialKind.OAuth, shell.Accounts[0].CredentialKind);
         Assert.AreEqual(OAuthProvider.Google, shell.Accounts[0].OAuthProvider);
+        Assert.AreEqual(AccountSyncState.Idle, shell.AccountStatuses[0].Status.State);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_adds_Microsoft_consumer_Account_via_Core_OAuth()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "bob@outlook.com",
+            RefreshSecret: "shell-ms-refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.MicrosoftConsumer,
+                MicrosoftConsumerMailPreset.Authority,
+                "test-ms-client"));
+        await using var app = await fixture.OpenAppAsync();
+
+        var shell = new BrowseShell(app);
+        var account = await shell.AddMicrosoftConsumerAccountAsync("Outlook");
+
+        Assert.AreEqual(account.Id, shell.Accounts[0].Id);
+        Assert.AreEqual(CredentialKind.OAuth, shell.Accounts[0].CredentialKind);
+        Assert.AreEqual(OAuthProvider.MicrosoftConsumer, shell.Accounts[0].OAuthProvider);
         Assert.AreEqual(AccountSyncState.Idle, shell.AccountStatuses[0].Status.State);
     }
 
@@ -203,12 +224,13 @@ public sealed class BrowseShellTests
         var manual = await shell.AddManualAccountAsync(ValidDraft("Manual", "manual@example.com"));
         var qq = await shell.AddQqMailAccountAsync(
             new QqMailAccountDraft("QQ", "123456789@qq.com", "abcdefghijklmnop"));
-        await shell.LoadAccountsAsync();
 
         Assert.HasCount(2, shell.Accounts);
         Assert.IsTrue(shell.Accounts.Any(a => a.Id == manual.Id));
         Assert.IsTrue(shell.Accounts.Any(a => a.Id == qq.Id));
         Assert.AreEqual(CredentialKind.Password, shell.Accounts.Single(a => a.Id == qq.Id).CredentialKind);
+        Assert.HasCount(2, shell.AccountStatuses);
+        Assert.IsTrue(shell.AccountStatuses.All(row => row.Status.State == AccountSyncState.Idle));
     }
 
     [TestMethod]
