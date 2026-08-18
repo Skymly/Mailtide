@@ -304,6 +304,45 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_SelectMessage_from_Unified_Inbox_loads_body_and_attachments()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-unified",
+                Subject: "Unified Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "unified body text")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "invoice.pdf",
+                        ContentType: "application/pdf",
+                        Content: "invoice-bytes"u8.ToArray()),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.ShowUnifiedInboxAsync();
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+
+        Assert.IsTrue(shell.ShowingUnifiedInbox);
+        Assert.IsNull(shell.SelectedAccountId);
+        Assert.AreEqual("unified body text", shell.BodyText);
+        Assert.IsFalse(shell.BodyUnavailable);
+        Assert.HasCount(1, shell.Attachments);
+        Assert.AreEqual("invoice.pdf", shell.Attachments[0].FileName);
+    }
+
+    [TestMethod]
     public async Task BrowseShell_SelectMessage_marks_missing_body_unavailable()
     {
         using var fixture = new DesktopAppFixture();
@@ -328,6 +367,7 @@ public sealed class BrowseShellTests
         await shell.SelectMessageAsync(shell.Messages[0].Id);
 
         Assert.IsTrue(shell.BodyUnavailable);
+        Assert.IsTrue(string.IsNullOrEmpty(shell.BodyText));
     }
 
     [TestMethod]
@@ -430,6 +470,10 @@ public sealed class BrowseShellTests
                 shell.OpenAttachmentAsync(shell.Attachments[0].Id).GetAwaiter().GetResult();
 
                 Assert.AreEqual("Could not open the attachment.", shell.AttachmentOpenError);
+                Assert.DoesNotContain(
+                    "native boom",
+                    shell.AttachmentOpenError!,
+                    StringComparison.Ordinal);
             }
             finally
             {
