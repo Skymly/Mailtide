@@ -209,9 +209,9 @@ public sealed class BrowseShell
                 .OpenAsync(content.FileName, content.ContentType, content.Content, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (OpenAttachmentException)
+        catch (OpenAttachmentException ex)
         {
-            AttachmentOpenError = "Could not open the attachment.";
+            AttachmentOpenError = ex.Message;
         }
     }
 
