@@ -619,8 +619,19 @@ public sealed class MailtideApp : IAsyncDisposable
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
+            var unreadByMailbox = await _db.Messages
+                .AsNoTracking()
+                .Where(m => m.AccountId == accountId && !m.IsRead)
+                .GroupBy(m => m.MailboxId)
+                .Select(g => new { MailboxId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(g => g.MailboxId, g => g.Count, cancellationToken)
+                .ConfigureAwait(false);
+
             return records
-                .Select(m => new MailboxInfo(m.Id, m.AccountId, m.Name, m.Path, m.Role))
+                .Select(m => new MailboxInfo(m.Id, m.AccountId, m.Name, m.Path, m.Role)
+                {
+                    UnreadCount = unreadByMailbox.GetValueOrDefault(m.Id),
+                })
                 .ToList();
         }
         finally

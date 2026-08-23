@@ -214,6 +214,12 @@ public sealed class BrowseShell
             Messages = Messages
                 .Select(item => item.Id == messageId ? item with { IsRead = true } : item)
                 .ToList();
+            if (SelectedAccountId is { } mailboxAccountId)
+            {
+                Mailboxes = await _app
+                    .ListMailboxesAsync(mailboxAccountId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
     }
 
