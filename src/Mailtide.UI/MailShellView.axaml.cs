@@ -536,12 +536,28 @@ public partial class MailShellView : UserControl
 
         try
         {
-            MessageHtmlView.NavigateToString(html!);
+            MessageHtmlView.NavigateToString(HtmlRemoteContentPolicy.WrapForOfflineRender(html!));
         }
         catch
         {
             MessageHtmlView.IsVisible = false;
             MessageBodyBox.IsVisible = true;
+        }
+    }
+
+    private void OnMessageHtmlNavigationStarted(object? sender, WebViewNavigationStartingEventArgs e)
+    {
+        if (!HtmlRemoteContentPolicy.IsAllowed(e.Request))
+        {
+            e.Cancel = true;
+        }
+    }
+
+    private void OnMessageHtmlNewWindowRequested(object? sender, WebViewNewWindowRequestedEventArgs e)
+    {
+        if (!HtmlRemoteContentPolicy.IsAllowed(e.Request))
+        {
+            e.Handled = true;
         }
     }
 
