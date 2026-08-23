@@ -27,6 +27,11 @@ public interface IImapClient : IAsyncDisposable
     Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
         string mailboxPath,
         CancellationToken cancellationToken = default);
+
+    Task SetSeenAsync(
+        string mailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record RemoteMailbox(

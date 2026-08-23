@@ -17,6 +17,7 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
     private readonly string _username;
     private readonly string _password;
     private readonly bool _rejectAuth;
+    private readonly HashSet<(string Path, uint Uid)> _seen = new();
 
     private LoopbackImapServer(
         TcpListener listener,
@@ -219,7 +220,8 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
                     .ConfigureAwait(false);
                 await writer.WriteLineAsync("* OK [PERMANENTFLAGS (\\Deleted \\Seen \\*)] Limited")
                     .ConfigureAwait(false);
-                await writer.WriteLineAsync($"{tag} OK [READ-ONLY] completed").ConfigureAwait(false);
+                var access = upper.StartsWith("EXAMINE", StringComparison.Ordinal) ? "READ-ONLY" : "READ-WRITE";
+                await writer.WriteLineAsync($"{tag} OK [{access}] completed").ConfigureAwait(false);
             }
             else if (upper.Contains("FETCH", StringComparison.Ordinal))
             {
@@ -239,7 +241,7 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
                     var msg = mailbox.Messages[i];
                     var seq = i + 1;
                     var uid = msg.Uid;
-                    var flags = msg.IsRead ? "\\Seen" : "";
+                    var flags = msg.IsRead || _seen.Contains((selectedPath ?? string.Empty, uid)) ? "\\Seen" : "";
                     var flagPart = string.IsNullOrEmpty(flags) ? "FLAGS ()" : $"FLAGS ({flags})";
                     var date = msg.InternalDate.ToString("dd-MMM-yyyy HH:mm:ss +0000",
                         System.Globalization.CultureInfo.InvariantCulture);
@@ -266,7 +268,20 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
 
                 await writer.WriteLineAsync($"{tag} OK FETCH completed").ConfigureAwait(false);
             }
-            else if (upper.StartsWith("LOGOUT", StringComparison.Ordinal))
+            else if (upper.Contains("STORE", StringComparison.Ordinal))
+            {
+                var mailbox = FindMailbox(selectedPath);
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    command,
+                    @"(?:UID\s+)?STORE\s+(\d+)\s+\+FLAGS",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (mailbox is not null && match.Success && uint.TryParse(match.Groups[1].Value, out var storedUid))
+                {
+                    _seen.Add((mailbox.Path, storedUid));
+                }
+
+                await writer.WriteLineAsync($"{tag} OK STORE completed").ConfigureAwait(false);
+            }            else if (upper.StartsWith("LOGOUT", StringComparison.Ordinal))
             {
                 await writer.WriteLineAsync("* BYE").ConfigureAwait(false);
                 await writer.WriteLineAsync($"{tag} OK LOGOUT completed").ConfigureAwait(false);

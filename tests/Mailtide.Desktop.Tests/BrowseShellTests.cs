@@ -613,6 +613,36 @@ public sealed class BrowseShellTests
         Assert.AreEqual("Self-driven", browse.Messages[0].Subject);
         Assert.IsTrue(browse.ShowingUnifiedInbox);
     }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectMessage_marks_unread_Message_read()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "uid-9",
+                Subject: "Please read me",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 4, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "secret"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        Assert.IsFalse(shell.Messages[0].IsRead);
+
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+
+        Assert.IsTrue(shell.Messages[0].IsRead);
+        Assert.IsTrue((await app.ListMessagesAsync(account.Id, inbox.Id)).Single().IsRead);
+    }
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
