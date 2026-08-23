@@ -265,6 +265,45 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_Search_filters_current_Mailbox_by_Subject()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "keep",
+                Subject: "Invoice March",
+                FromAddress: "billing@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "pay"),
+            new RemoteMessage(
+                RemoteId: "drop",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "hi"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("invoice");
+
+        Assert.AreEqual("invoice", shell.SearchQuery);
+        Assert.HasCount(1, shell.Messages);
+        Assert.AreEqual("Invoice March", shell.Messages[0].Subject);
+
+        await shell.SearchAsync(" ");
+        Assert.HasCount(2, shell.Messages);
+    }
+
+    [TestMethod]
     public async Task BrowseShell_SelectMessage_loads_plain_text_body_and_attachments()
     {
         using var fixture = new DesktopAppFixture();

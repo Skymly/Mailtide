@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Mailtide.Core;
 using Mailtide.Core.Updates;
@@ -327,6 +328,18 @@ public partial class MailShellView : UserControl
 
         await _browse.SelectAccountAsync(row.Account.Id).ConfigureAwait(true);
         await RequireCompose().SelectAccountAsync(row.Account.Id).ConfigureAwait(true);
+        BindLists();
+    }
+
+    private async void OnMessageSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+        {
+            return;
+        }
+
+        var browse = RequireBrowse();
+        await browse.SearchAsync(MessageSearchBox.Text ?? string.Empty).ConfigureAwait(true);
         BindLists();
     }
 

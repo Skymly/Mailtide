@@ -122,6 +122,11 @@
                    Text="Messages"
                    FontWeight="SemiBold"
                    Margin="0,0,0,8" />
+        <TextBox Name="MessageSearchBox"
+                 DockPanel.Dock="Top"
+                 PlaceholderText="Search"
+                 Margin="0,0,0,8"
+                 KeyDown="OnMessageSearchKeyDown" />
         <ListBox Name="MessagesList"
                  SelectionChanged="OnMessageSelectionChanged">
           <ListBox.ItemTemplate>
