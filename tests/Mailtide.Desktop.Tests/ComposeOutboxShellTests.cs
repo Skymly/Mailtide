@@ -149,6 +149,84 @@ public sealed class ComposeOutboxShellTests
         Assert.IsEmpty(shell.OutboxItems);
     }
 
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_StartReply_creates_Draft_on_the_Message_Account()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "hi"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var message = (await app.ListUnifiedInboxAsync()).Single();
+
+        var shell = new ComposeOutboxShell(app);
+        var draft = await shell.StartReplyAsync(message.AccountId, message.Id);
+
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.AreEqual(account.Id, draft.AccountId);
+        Assert.AreEqual("Re: Hello", draft.Subject);
+        CollectionAssert.AreEqual(new[] { "bob@example.com" }, draft.ToAddresses.ToArray());
+        Assert.HasCount(1, shell.Drafts);
+        Assert.AreEqual(draft.Id, shell.Drafts[0].Id);
+    }
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_StartReply_from_Unified_Inbox_targets_the_Message_Account()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+
+        var alice = await app.AddManualAccountAsync(ValidDraft("Alice", "alice@example.com"));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "a-1",
+                Subject: "For Alice",
+                FromAddress: "carol@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "a"));
+        await app.SyncNowAsync(alice.Id);
+
+        var bob = await app.AddManualAccountAsync(ValidDraft("Bob", "bob@example.com"));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "b-1",
+                Subject: "For Bob",
+                FromAddress: "dave@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 12, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "b"));
+        await app.SyncNowAsync(bob.Id);
+
+        var browse = new BrowseShell(app);
+        await browse.ShowUnifiedInboxAsync();
+        var forBob = browse.Messages.Single(m => m.Subject == "For Bob");
+
+        var compose = new ComposeOutboxShell(app);
+        await compose.SelectAccountAsync(alice.Id);
+        var draft = await compose.StartReplyAsync(forBob.AccountId, forBob.Id);
+
+        Assert.IsTrue(browse.ShowingUnifiedInbox);
+        Assert.AreEqual(bob.Id, compose.SelectedAccountId);
+        Assert.AreEqual(bob.Id, draft.AccountId);
+        CollectionAssert.AreEqual(new[] { "dave@example.com" }, draft.ToAddresses.ToArray());
+        Assert.AreEqual("Re: For Bob", draft.Subject);
+        Assert.IsEmpty(await app.ListDraftsAsync(alice.Id));
+        Assert.HasCount(1, await app.ListDraftsAsync(bob.Id));
+    }
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(
             DisplayName: displayName,

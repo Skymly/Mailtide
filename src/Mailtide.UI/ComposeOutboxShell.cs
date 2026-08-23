@@ -48,6 +48,20 @@ public sealed class ComposeOutboxShell
         Drafts = await _app.ListDraftsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
 
+
+    public async Task<DraftInfo> StartReplyAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        var draft = await _app
+            .StartReplyAsync(accountId, messageId, cancellationToken)
+            .ConfigureAwait(false);
+        SelectedAccountId = accountId;
+        await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
+        return draft;
+    }
+
     public async Task SendAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         var accountId = RequireSelectedAccount();
