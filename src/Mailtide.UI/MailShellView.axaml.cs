@@ -659,6 +659,14 @@ public partial class MailShellView : UserControl
                 : null;
 
             MessagesHeader.Text = browse.ShowingUnifiedInbox ? "Unified Inbox" : "Messages";
+            MessageToText.Text = browse.SelectedToAddresses.Count == 0
+                ? string.Empty
+                : "To: " + string.Join(", ", browse.SelectedToAddresses);
+            MessageToText.IsVisible = browse.SelectedToAddresses.Count > 0;
+            MessageCcText.Text = browse.SelectedCcAddresses.Count == 0
+                ? string.Empty
+                : "Cc: " + string.Join(", ", browse.SelectedCcAddresses);
+            MessageCcText.IsVisible = browse.SelectedCcAddresses.Count > 0;
             BodyUnavailableText.IsVisible = browse.BodyUnavailable;
             BindMessageBody(browse);
             AttachmentOpenErrorText.Text = browse.AttachmentOpenError ?? string.Empty;

@@ -3300,6 +3300,8 @@ public sealed class MailtideApp : IAsyncDisposable
             record.IsFlagged)
         {
             Preview = MessagePreview.FromBodyText(record.BodyText),
+            ToAddresses = DecodeAddresses(record.ToAddresses),
+            CcAddresses = DecodeAddresses(record.CcAddresses),
         };
 
     private sealed record RemoteMailboxSnapshot(
