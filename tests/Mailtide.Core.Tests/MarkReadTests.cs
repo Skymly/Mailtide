@@ -74,3 +74,4 @@ public sealed class MarkReadTests
             SmtpPort: 587,
             Password: "s3cret-password");
 }
+
