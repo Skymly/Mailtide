@@ -14,4 +14,9 @@ public sealed record MailboxInfo(
     Guid AccountId,
     string Name,
     string Path,
-    MailboxRole? Role);
+    MailboxRole? Role)
+{
+    public int UnreadCount { get; init; }
+
+    public bool HasUnread => UnreadCount > 0;
+}
