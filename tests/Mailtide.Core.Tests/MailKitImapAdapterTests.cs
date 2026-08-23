@@ -178,5 +178,6 @@ public sealed class MailKitImapAdapterTests
         Assert.HasCount(1, messages);
         Assert.AreEqual("Hello world", messages[0].BodyText);
         Assert.DoesNotContain("<", messages[0].BodyText, StringComparison.Ordinal);
+        Assert.AreEqual("<p>Hello&nbsp;<b>world</b></p>", messages[0].BodyHtml);
     }
 }

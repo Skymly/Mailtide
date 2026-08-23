@@ -139,6 +139,7 @@ internal sealed class MailKitImapClient : IImapClient
                 {
                     ToAddresses = ExtractAddresses(mime.To),
                     CcAddresses = ExtractAddresses(mime.Cc),
+                    BodyHtml = ExtractBodyHtml(mime),
                     Attachments = ExtractAttachments(mime),
                 };
                 messages.Add(remote);
@@ -251,6 +252,7 @@ internal sealed class MailKitImapClient : IImapClient
                 {
                     ToAddresses = ExtractAddresses(mime.To),
                     CcAddresses = ExtractAddresses(mime.Cc),
+                    BodyHtml = ExtractBodyHtml(mime),
                     Attachments = ExtractAttachments(mime),
                 });
             }
@@ -393,6 +395,16 @@ internal sealed class MailKitImapClient : IImapClient
         var decoded = System.Net.WebUtility.HtmlDecode(withoutTags);
         return NormalizeBody(
             System.Text.RegularExpressions.Regex.Replace(decoded, @"\s+", " ").Trim());
+    }
+
+    private static string? ExtractBodyHtml(MimeMessage mime)
+    {
+        if (string.IsNullOrWhiteSpace(mime.HtmlBody))
+        {
+            return null;
+        }
+
+        return NormalizeBody(mime.HtmlBody);
     }
 
     private static string NormalizeBody(string? body) =>

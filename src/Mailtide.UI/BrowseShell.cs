@@ -38,6 +38,8 @@ public sealed class BrowseShell
 
     public string? BodyText { get; private set; }
 
+    public string? BodyHtml { get; private set; }
+
     public bool BodyUnavailable { get; private set; }
 
     public string? AttachmentOpenError { get; private set; }
@@ -168,8 +170,12 @@ public sealed class BrowseShell
         var body = await _app
             .GetMessageBodyAsync(message.AccountId, messageId, cancellationToken)
             .ConfigureAwait(false);
+        var html = await _app
+            .GetMessageHtmlAsync(message.AccountId, messageId, cancellationToken)
+            .ConfigureAwait(false);
         BodyText = body;
-        BodyUnavailable = string.IsNullOrEmpty(body);
+        BodyHtml = html;
+        BodyUnavailable = string.IsNullOrEmpty(body) && string.IsNullOrEmpty(html);
 
         Attachments = await _app
             .ListAttachmentsAsync(message.AccountId, messageId, cancellationToken)
@@ -257,6 +263,7 @@ public sealed class BrowseShell
     {
         SelectedMessageId = null;
         BodyText = null;
+        BodyHtml = null;
         BodyUnavailable = false;
         Attachments = [];
         AttachmentOpenError = null;

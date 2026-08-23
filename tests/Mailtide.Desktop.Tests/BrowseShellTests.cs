@@ -298,9 +298,42 @@ public sealed class BrowseShellTests
         await shell.SelectMessageAsync(shell.Messages[0].Id);
 
         Assert.AreEqual("plain body text", shell.BodyText);
+        Assert.IsNull(shell.BodyHtml);
         Assert.IsFalse(shell.BodyUnavailable);
         Assert.HasCount(1, shell.Attachments);
         Assert.AreEqual("notes.txt", shell.Attachments[0].FileName);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectMessage_loads_html_body()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-html",
+                Subject: "Hello html",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "Hello world")
+            {
+                BodyHtml = "<p>Hello <b>world</b></p>",
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+
+        Assert.AreEqual("<p>Hello <b>world</b></p>", shell.BodyHtml);
+        Assert.AreEqual("Hello world", shell.BodyText);
+        Assert.IsFalse(shell.BodyUnavailable);
     }
 
     [TestMethod]
@@ -368,6 +401,38 @@ public sealed class BrowseShellTests
 
         Assert.IsTrue(shell.BodyUnavailable);
         Assert.IsTrue(string.IsNullOrEmpty(shell.BodyText));
+        Assert.IsTrue(string.IsNullOrEmpty(shell.BodyHtml));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectMessage_html_only_is_available()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-html-only",
+                Subject: "Html only",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: string.Empty)
+            {
+                BodyHtml = "<p>only html</p>",
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+
+        Assert.IsFalse(shell.BodyUnavailable);
+        Assert.AreEqual("<p>only html</p>", shell.BodyHtml);
     }
 
     [TestMethod]

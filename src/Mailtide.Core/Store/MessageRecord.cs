@@ -20,6 +20,8 @@ internal sealed class MessageRecord
 
     public required string BodyText { get; set; }
 
+    public string? BodyHtml { get; set; }
+
     public string ToAddresses { get; set; } = "[]";
 
     public string CcAddresses { get; set; } = "[]";
