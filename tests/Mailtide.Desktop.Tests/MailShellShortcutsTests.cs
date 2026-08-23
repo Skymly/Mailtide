@@ -18,6 +18,7 @@ public sealed class MailShellShortcutsTests
         Assert.AreEqual(MailShellShortcut.FocusSearch, MailShellShortcuts.FromKey(Key.Oem2, false));
         Assert.AreEqual(MailShellShortcut.NewDraft, MailShellShortcuts.FromKey(Key.C, false));
         Assert.AreEqual(MailShellShortcut.NextUnread, MailShellShortcuts.FromKey(Key.N, false));
+        Assert.AreEqual(MailShellShortcut.PreviousUnread, MailShellShortcuts.FromKey(Key.P, false));
     }
 
     [TestMethod]
