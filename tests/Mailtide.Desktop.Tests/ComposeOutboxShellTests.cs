@@ -32,6 +32,23 @@ public sealed class ComposeOutboxShellTests
     }
 
     [TestMethod]
+    public async Task ComposeOutboxShell_DiscardDraft_removes_selected_Draft()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SaveDraftAsync("bob@example.com", "Hello", "Body");
+        var draftId = shell.SelectedDraftId!.Value;
+
+        await shell.DiscardDraftAsync(draftId);
+
+        Assert.IsEmpty(shell.Drafts);
+        Assert.IsNull(shell.SelectedDraftId);
+    }
+
+    [TestMethod]
     public async Task ComposeOutboxShell_SaveDraft_updates_the_selected_Reply_Draft()
     {
         using var fixture = new DesktopAppFixture();

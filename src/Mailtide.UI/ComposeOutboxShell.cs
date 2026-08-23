@@ -105,6 +105,18 @@ public sealed class ComposeOutboxShell
         return draft;
     }
 
+    public async Task DiscardDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+    {
+        var accountId = RequireSelectedAccount();
+        await _app.DiscardDraftAsync(accountId, draftId, cancellationToken).ConfigureAwait(false);
+        if (SelectedDraftId == draftId)
+        {
+            SelectedDraftId = null;
+        }
+
+        await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task SendAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         var accountId = RequireSelectedAccount();
