@@ -9,4 +9,7 @@ public sealed record MessageInfo(
     string FromAddress,
     DateTimeOffset ReceivedAt,
     bool IsRead,
-    bool IsFlagged = false);
+    bool IsFlagged = false)
+{
+    public string Preview { get; init; } = string.Empty;
+}

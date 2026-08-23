@@ -2989,7 +2989,10 @@ public sealed class MailtideApp : IAsyncDisposable
             record.FromAddress,
             record.ReceivedAt,
             record.IsRead,
-            record.IsFlagged);
+            record.IsFlagged)
+        {
+            Preview = MessagePreview.FromBodyText(record.BodyText),
+        };
 
     private sealed record RemoteMailboxSnapshot(
         RemoteMailbox Mailbox,
