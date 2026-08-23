@@ -228,6 +228,11 @@
                 Content="Delete"
                 Margin="0,0,0,8"
                 Click="OnDeleteClick" />
+        <Button Name="RestoreButton"
+                DockPanel.Dock="Top"
+                Content="Restore"
+                Margin="0,0,0,8"
+                Click="OnRestoreClick" />
         <TextBlock DockPanel.Dock="Top" Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,8" />
         <TextBlock Name="AttachmentOpenErrorText"
                    DockPanel.Dock="Top"

@@ -1564,6 +1564,166 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task RestoreFromTrashAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        var workGate = AccountWorkGate(accountId);
+        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            string imapHost;
+            int imapPort;
+            string emailAddress;
+            string trashPath;
+            string inboxPath;
+            string remoteId;
+            string credentialHandle;
+            CredentialKind credentialKind;
+            OAuthTokenMetadata? oauthMetadata = null;
+            string? secret;
+            Guid inboxMailboxId;
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var message = await _db.Messages
+                    .SingleOrDefaultAsync(
+                        m => m.AccountId == accountId && m.Id == messageId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (message is null)
+                {
+                    throw new InvalidOperationException($"Message '{messageId}' was not found.");
+                }
+
+                var source = await _db.Mailboxes
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(
+                        m => m.AccountId == accountId && m.Id == message.MailboxId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (source is null)
+                {
+                    throw new InvalidOperationException($"Mailbox '{message.MailboxId}' was not found.");
+                }
+
+                var trash = await _db.Mailboxes
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(
+                        m => m.AccountId == accountId && m.Role == MailboxRole.Trash,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (trash is null)
+                {
+                    throw new InvalidOperationException("This Account has no Trash Mailbox.");
+                }
+
+                if (source.Id != trash.Id)
+                {
+                    throw new InvalidOperationException("Message is not in Trash.");
+                }
+
+                var inbox = await _db.Mailboxes
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(
+                        m => m.AccountId == accountId && m.Role == MailboxRole.Inbox,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (inbox is null)
+                {
+                    throw new InvalidOperationException("This Account has no Inbox Mailbox.");
+                }
+
+                var account = await _db.Accounts
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (account is null)
+                {
+                    throw new InvalidOperationException($"Account '{accountId}' was not found.");
+                }
+
+                imapHost = account.ImapHost;
+                imapPort = account.ImapPort;
+                emailAddress = account.EmailAddress;
+                trashPath = trash.Path;
+                inboxPath = inbox.Path;
+                remoteId = message.RemoteId;
+                inboxMailboxId = inbox.Id;
+                credentialHandle = account.CredentialHandle;
+                credentialKind = account.CredentialKind;
+                if (account.CredentialKind == CredentialKind.OAuth)
+                {
+                    oauthMetadata = RequireOAuthMetadata(account);
+                }
+
+                secret = await _auth
+                    .RetrieveCredentialSecretAsync(account.CredentialHandle, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+
+            if (secret is null)
+            {
+                throw new InvalidOperationException(AuthenticationFailedMessage);
+            }
+
+            var protocolSecret = await ResolveProtocolSecretAsync(
+                    credentialKind,
+                    oauthMetadata,
+                    secret,
+                    credentialHandle,
+                    invalidateOnAuthFailure: true,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (protocolSecret is null)
+            {
+                throw new InvalidOperationException(AuthenticationFailedMessage);
+            }
+
+            await using var client = _imapClientFactory.Create();
+            await client
+                .ConnectAndAuthenticateAsync(
+                    imapHost,
+                    imapPort,
+                    emailAddress,
+                    protocolSecret,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await client
+                .MoveAsync(trashPath, inboxPath, remoteId, cancellationToken)
+                .ConfigureAwait(false);
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var message = await _db.Messages
+                    .SingleOrDefaultAsync(
+                        m => m.AccountId == accountId && m.Id == messageId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (message is not null)
+                {
+                    message.MailboxId = inboxMailboxId;
+                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+        }
+        finally
+        {
+            workGate.Release();
+        }
+    }
+
     public async Task<IReadOnlyList<AttachmentInfo>> ListAttachmentsAsync(
         Guid accountId,
         Guid messageId,

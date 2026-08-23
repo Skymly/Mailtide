@@ -457,6 +457,43 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_RestoreSelectedFromTrash_returns_Message_to_Inbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "del-1",
+                Subject: "Delete me",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "gone"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Trash);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        await shell.MoveSelectedToTrashAsync();
+        await shell.SelectMailboxAsync(trash.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        await shell.RestoreSelectedFromTrashAsync();
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsNull(shell.SelectedMessageId);
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, trash.Id));
+    }
+
+    [TestMethod]
     public async Task BrowseShell_SelectMessage_loads_plain_text_body_and_attachments()
     {
         using var fixture = new DesktopAppFixture();
