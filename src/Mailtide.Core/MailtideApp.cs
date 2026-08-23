@@ -1052,7 +1052,65 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task MarkMailboxReadAsync(
+        Guid accountId,
+        Guid mailboxId,
+        CancellationToken cancellationToken = default)
+    {
+        List<Guid> unreadIds;
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            unreadIds = await _db.Messages
+                .AsNoTracking()
+                .Where(m => m.AccountId == accountId && m.MailboxId == mailboxId && !m.IsRead)
+                .Select(m => m.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        foreach (var messageId in unreadIds)
+        {
+            await MarkReadAsync(accountId, messageId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public async Task MarkUnifiedInboxReadAsync(CancellationToken cancellationToken = default)
+    {
+        List<(Guid AccountId, Guid MessageId)> unread;
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var inboxIds = await _db.Mailboxes
+                .AsNoTracking()
+                .Where(m => m.Role == MailboxRole.Inbox)
+                .Select(m => m.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            unread = await _db.Messages
+                .AsNoTracking()
+                .Where(m => inboxIds.Contains(m.MailboxId) && !m.IsRead)
+                .Select(m => new ValueTuple<Guid, Guid>(m.AccountId, m.Id))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        foreach (var (accountId, messageId) in unread)
+        {
+            await MarkReadAsync(accountId, messageId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public async Task MarkReadAsync(
+
         Guid accountId,
         Guid messageId,
         CancellationToken cancellationToken = default)
