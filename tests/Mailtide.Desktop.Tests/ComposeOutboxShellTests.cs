@@ -49,6 +49,28 @@ public sealed class ComposeOutboxShellTests
     }
 
     [TestMethod]
+    public async Task ComposeOutboxShell_SelectDraft_exposes_that_Draft()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SaveDraftAsync("bob@example.com", "First", "one", "carol@example.com");
+        var firstId = shell.SelectedDraftId!.Value;
+        shell.ClearSelection();
+        await shell.SelectAccountAsync(account.Id);
+
+        var loaded = await shell.SelectDraftAsync(firstId);
+
+        Assert.AreEqual(firstId, shell.SelectedDraftId);
+        Assert.AreEqual("First", loaded.Subject);
+        Assert.AreEqual("one", loaded.BodyText);
+        CollectionAssert.AreEqual(new[] { "bob@example.com" }, loaded.ToAddresses.ToArray());
+        CollectionAssert.AreEqual(new[] { "carol@example.com" }, loaded.CcAddresses.ToArray());
+    }
+
+    [TestMethod]
     public async Task ComposeOutboxShell_SaveDraft_updates_the_selected_Reply_Draft()
     {
         using var fixture = new DesktopAppFixture();

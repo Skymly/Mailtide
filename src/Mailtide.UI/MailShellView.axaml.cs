@@ -329,6 +329,26 @@ public partial class MailShellView : UserControl
         }
     }
 
+    private async void OnDraftSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSelectionHandlers)
+        {
+            return;
+        }
+
+        if (DraftsList.SelectedItem is not DraftInfo draft)
+        {
+            return;
+        }
+
+        var compose = RequireCompose();
+        var loaded = await compose.SelectDraftAsync(draft.Id).ConfigureAwait(true);
+        ComposeToBox.Text = string.Join(", ", loaded.ToAddresses);
+        ComposeCcBox.Text = string.Join(", ", loaded.CcAddresses);
+        ComposeSubjectBox.Text = loaded.Subject;
+        ComposeBodyBox.Text = loaded.BodyText;
+    }
+
     private async void OnAccountSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_suppressSelectionHandlers || _browse is null)
@@ -530,6 +550,9 @@ public partial class MailShellView : UserControl
             AttachmentsList.ItemsSource = browse.Attachments;
             DraftsList.ItemsSource = compose.Drafts;
             OutboxList.ItemsSource = compose.OutboxItems;
+            DraftsList.SelectedItem = compose.SelectedDraftId is { } selectedDraftId
+                ? compose.Drafts.FirstOrDefault(d => d.Id == selectedDraftId)
+                : null;
 
             AccountsList.SelectedItem = browse.SelectedAccountId is { } accountId
                 ? browse.AccountStatuses.FirstOrDefault(a => a.Account.Id == accountId)

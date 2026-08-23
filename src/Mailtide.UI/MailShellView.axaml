@@ -48,7 +48,10 @@
           <TextBox Name="ComposeSubjectBox" PlaceholderText="Subject" />
           <TextBox Name="ComposeBodyBox" PlaceholderText="Body" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" />
           <TextBlock Text="Drafts" FontWeight="SemiBold" Margin="0,8,0,0" />
-          <ListBox Name="DraftsList" MinHeight="60" MaxHeight="100">
+          <ListBox Name="DraftsList"
+                   MinHeight="60"
+                   MaxHeight="100"
+                   SelectionChanged="OnDraftSelectionChanged">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="core:DraftInfo">
                 <TextBlock Text="{Binding Subject}" />

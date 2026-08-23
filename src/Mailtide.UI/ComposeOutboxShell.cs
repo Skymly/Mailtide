@@ -63,6 +63,26 @@ public sealed class ComposeOutboxShell
         Drafts = await _app.ListDraftsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<DraftInfo> SelectDraftAsync(
+        Guid draftId,
+        CancellationToken cancellationToken = default)
+    {
+        var accountId = RequireSelectedAccount();
+        var draft = Drafts.FirstOrDefault(item => item.Id == draftId);
+        if (draft is null)
+        {
+            Drafts = await _app.ListDraftsAsync(accountId, cancellationToken).ConfigureAwait(false);
+            draft = Drafts.FirstOrDefault(item => item.Id == draftId);
+        }
+
+        if (draft is null)
+        {
+            throw new InvalidOperationException($"Draft '{draftId}' was not found.");
+        }
+
+        SelectedDraftId = draft.Id;
+        return draft;
+    }
 
     public async Task<DraftInfo> StartForwardAsync(
         Guid accountId,
