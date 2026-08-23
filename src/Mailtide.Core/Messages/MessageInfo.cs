@@ -12,4 +12,8 @@ public sealed record MessageInfo(
     bool IsFlagged = false)
 {
     public string Preview { get; init; } = string.Empty;
+
+    public IReadOnlyList<string> ToAddresses { get; init; } = [];
+
+    public IReadOnlyList<string> CcAddresses { get; init; } = [];
 }

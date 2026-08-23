@@ -44,6 +44,10 @@ public sealed class BrowseShell
 
     public bool BodyUnavailable { get; private set; }
 
+    public IReadOnlyList<string> SelectedToAddresses { get; private set; } = [];
+
+    public IReadOnlyList<string> SelectedCcAddresses { get; private set; } = [];
+
     public string? AttachmentOpenError { get; private set; }
 
     public async Task LoadAccountsAsync(CancellationToken cancellationToken = default)
@@ -201,6 +205,8 @@ public sealed class BrowseShell
         BodyText = body;
         BodyHtml = html;
         BodyUnavailable = string.IsNullOrEmpty(body) && string.IsNullOrEmpty(html);
+        SelectedToAddresses = message.ToAddresses;
+        SelectedCcAddresses = message.CcAddresses;
 
         Attachments = await _app
             .ListAttachmentsAsync(message.AccountId, messageId, cancellationToken)
@@ -430,6 +436,8 @@ public sealed class BrowseShell
         BodyText = null;
         BodyHtml = null;
         BodyUnavailable = false;
+        SelectedToAddresses = [];
+        SelectedCcAddresses = [];
         Attachments = [];
         AttachmentOpenError = null;
     }
