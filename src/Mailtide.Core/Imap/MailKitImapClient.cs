@@ -140,6 +140,8 @@ internal sealed class MailKitImapClient : IImapClient
                     ToAddresses = ExtractAddresses(mime.To),
                     CcAddresses = ExtractAddresses(mime.Cc),
                     BodyHtml = ExtractBodyHtml(mime),
+                    InternetMessageId = ExtractInternetMessageId(mime),
+                    References = ExtractReferences(mime),
                     Attachments = ExtractAttachments(mime),
                 };
                 messages.Add(remote);
@@ -253,6 +255,8 @@ internal sealed class MailKitImapClient : IImapClient
                     ToAddresses = ExtractAddresses(mime.To),
                     CcAddresses = ExtractAddresses(mime.Cc),
                     BodyHtml = ExtractBodyHtml(mime),
+                    InternetMessageId = ExtractInternetMessageId(mime),
+                    References = ExtractReferences(mime),
                     Attachments = ExtractAttachments(mime),
                 });
             }
@@ -406,6 +410,15 @@ internal sealed class MailKitImapClient : IImapClient
 
         return NormalizeBody(mime.HtmlBody);
     }
+
+    private static string? ExtractInternetMessageId(MimeMessage mime) =>
+        string.IsNullOrWhiteSpace(mime.MessageId) ? null : mime.MessageId.Trim();
+
+    private static IReadOnlyList<string> ExtractReferences(MimeMessage mime) =>
+        mime.References
+            .Select(id => id.Trim())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToList();
 
     private static string NormalizeBody(string? body) =>
         (body ?? string.Empty).TrimEnd('\r', '\n');

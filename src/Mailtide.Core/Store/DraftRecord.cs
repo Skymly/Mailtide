@@ -14,5 +14,9 @@ internal sealed class DraftRecord
 
     public required string BodyText { get; set; }
 
+    public string? InReplyTo { get; set; }
+
+    public string ReferencesJson { get; set; } = "[]";
+
     public DateTimeOffset UpdatedAt { get; set; }
 }

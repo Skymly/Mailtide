@@ -163,7 +163,11 @@ public sealed class ComposeOutboxShellTests
                 FromAddress: "bob@example.com",
                 ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
                 IsRead: false,
-                BodyText: "hi"));
+                BodyText: "hi")
+            {
+                InternetMessageId = "<orig@example.com>",
+                References = ["<root@example.com>"],
+            });
         await using var app = await fixture.OpenAppAsync();
         var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
         await app.SyncNowAsync(account.Id);
@@ -175,6 +179,10 @@ public sealed class ComposeOutboxShellTests
         Assert.AreEqual(account.Id, shell.SelectedAccountId);
         Assert.AreEqual(account.Id, draft.AccountId);
         Assert.AreEqual("Re: Hello", draft.Subject);
+        Assert.AreEqual("<orig@example.com>", draft.InReplyTo);
+        CollectionAssert.AreEqual(
+            new[] { "<root@example.com>", "<orig@example.com>" },
+            draft.References.ToArray());
         CollectionAssert.AreEqual(new[] { "bob@example.com" }, draft.ToAddresses.ToArray());
         Assert.HasCount(1, shell.Drafts);
         Assert.AreEqual(draft.Id, shell.Drafts[0].Id);
