@@ -72,6 +72,8 @@ public sealed record RemoteMessage(
 
     public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
 
+    public string? BodyHtml { get; init; }
+
     public IReadOnlyList<RemoteAttachment> Attachments { get; init; } =
         Array.Empty<RemoteAttachment>();
 }

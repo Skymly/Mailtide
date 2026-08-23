@@ -718,6 +718,29 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<string?> GetMessageHtmlAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var record = await _db.Messages
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    m => m.AccountId == accountId && m.Id == messageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return record?.BodyHtml;
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     public async Task MarkReadAsync(
         Guid accountId,
         Guid messageId,
@@ -1528,6 +1551,7 @@ public sealed class MailtideApp : IAsyncDisposable
                  {
                      "ALTER TABLE Messages ADD COLUMN ToAddresses TEXT NOT NULL DEFAULT '[]'",
                      "ALTER TABLE Messages ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
+                     "ALTER TABLE Messages ADD COLUMN BodyHtml TEXT",
                  })
         {
             try
@@ -1873,6 +1897,7 @@ public sealed class MailtideApp : IAsyncDisposable
                         ReceivedAt = fetched.ReceivedAt,
                         IsRead = summary.IsRead,
                         BodyText = fetched.BodyText,
+                        BodyHtml = fetched.BodyHtml,
                         ToAddresses = EncodeAddresses(fetched.ToAddresses),
                         CcAddresses = EncodeAddresses(fetched.CcAddresses),
                     };
@@ -1908,6 +1933,7 @@ public sealed class MailtideApp : IAsyncDisposable
                     if (fetched is not null)
                     {
                         message.BodyText = fetched.BodyText;
+                        message.BodyHtml = fetched.BodyHtml;
                         message.ToAddresses = EncodeAddresses(fetched.ToAddresses);
                         message.CcAddresses = EncodeAddresses(fetched.CcAddresses);
                     }

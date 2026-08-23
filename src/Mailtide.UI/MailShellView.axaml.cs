@@ -501,12 +501,35 @@ public partial class MailShellView : UserControl
 
             MessagesHeader.Text = browse.ShowingUnifiedInbox ? "Unified Inbox" : "Messages";
             BodyUnavailableText.IsVisible = browse.BodyUnavailable;
-            MessageBodyBox.Text = browse.BodyUnavailable ? string.Empty : browse.BodyText ?? string.Empty;
+            BindMessageBody(browse);
             AttachmentOpenErrorText.Text = browse.AttachmentOpenError ?? string.Empty;
         }
         finally
         {
             _suppressSelectionHandlers = false;
+        }
+    }
+
+    private void BindMessageBody(BrowseShell browse)
+    {
+        var html = browse.BodyHtml;
+        var showHtml = !browse.BodyUnavailable && !string.IsNullOrEmpty(html);
+        MessageHtmlView.IsVisible = showHtml;
+        MessageBodyBox.IsVisible = !showHtml;
+        MessageBodyBox.Text = browse.BodyUnavailable ? string.Empty : browse.BodyText ?? string.Empty;
+        if (!showHtml)
+        {
+            return;
+        }
+
+        try
+        {
+            MessageHtmlView.NavigateToString(html!);
+        }
+        catch
+        {
+            MessageHtmlView.IsVisible = false;
+            MessageBodyBox.IsVisible = true;
         }
     }
 
