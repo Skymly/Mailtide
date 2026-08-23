@@ -147,7 +147,7 @@
                    Margin="0,0,0,8" />
         <TextBox Name="MessageSearchBox"
                  DockPanel.Dock="Top"
-                 PlaceholderText="Search  is:flagged"
+                 PlaceholderText="Search  is:flagged  is:unread"
                  Margin="0,0,0,8"
                  KeyDown="OnMessageSearchKeyDown" />
         <ListBox Name="MessagesList"
