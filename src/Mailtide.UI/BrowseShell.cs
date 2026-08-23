@@ -231,6 +231,47 @@ public sealed class BrowseShell
         }
     }
 
+    public async Task SelectNextUnreadAsync(CancellationToken cancellationToken = default)
+    {
+        if (Messages.Count == 0)
+        {
+            return;
+        }
+
+        var start = 0;
+        if (SelectedMessageId is { } selectedId)
+        {
+            var index = -1;
+            for (var i = 0; i < Messages.Count; i++)
+            {
+                if (Messages[i].Id == selectedId)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            start = index + 1;
+        }
+
+        MessageInfo? next = null;
+        for (var i = start; i < Messages.Count; i++)
+        {
+            if (!Messages[i].IsRead)
+            {
+                next = Messages[i];
+                break;
+            }
+        }
+
+        if (next is null)
+        {
+            return;
+        }
+
+        await SelectMessageAsync(next.Id, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task MarkSelectedUnreadAsync(CancellationToken cancellationToken = default)
     {
         if (SelectedMessageId is not { } messageId)

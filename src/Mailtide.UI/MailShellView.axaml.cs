@@ -603,6 +603,13 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private async void OnNextUnreadClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        await browse.SelectNextUnreadAsync().ConfigureAwait(true);
+        BindLists();
+    }
+
     private async void OnOpenAttachmentClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();

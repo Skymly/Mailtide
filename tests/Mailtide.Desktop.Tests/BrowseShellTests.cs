@@ -525,6 +525,48 @@ public sealed class BrowseShellTests
         Assert.IsEmpty(await app.ListMessagesAsync(account.Id, trash.Id));
     }
 
+    [TestMethod]
+    public async Task BrowseShell_SelectNextUnread_skips_read_and_selects_the_next_unread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "newer",
+                Subject: "Newer unread",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "one"),
+            new RemoteMessage(
+                RemoteId: "mid",
+                Subject: "Read",
+                FromAddress: "b@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 9, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "two"),
+            new RemoteMessage(
+                RemoteId: "older",
+                Subject: "Older unread",
+                FromAddress: "c@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "three"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        Assert.AreEqual("Newer unread", shell.Messages[0].Subject);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        await shell.SelectNextUnreadAsync();
+
+        Assert.AreEqual("Older unread", shell.Messages.Single(m => m.Id == shell.SelectedMessageId).Subject);
+    }
 
     [TestMethod]
     public async Task BrowseShell_SelectMessage_loads_plain_text_body_and_attachments()
