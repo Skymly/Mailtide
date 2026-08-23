@@ -26,6 +26,8 @@ public sealed class MailKitSmtpAdapterTests
                 BodyText: "Body")
             {
                 CcAddresses = ["carol@example.com"],
+                InReplyTo = "<orig@example.com>",
+                References = ["<root@example.com>", "<orig@example.com>"],
             });
 
         Assert.HasCount(1, server.AcceptedMessages);
@@ -33,6 +35,8 @@ public sealed class MailKitSmtpAdapterTests
         StringAssert.Contains(server.AcceptedMessages[0], "Body");
         StringAssert.Contains(server.AcceptedMessages[0], "bob@example.com");
         StringAssert.Contains(server.AcceptedMessages[0], "carol@example.com");
+        StringAssert.Contains(server.AcceptedMessages[0], "orig@example.com");
+        StringAssert.Contains(server.AcceptedMessages[0], "root@example.com");
     }
 
     [TestMethod]

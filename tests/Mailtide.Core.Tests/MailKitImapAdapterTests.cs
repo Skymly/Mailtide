@@ -180,4 +180,41 @@ public sealed class MailKitImapAdapterTests
         Assert.DoesNotContain("<", messages[0].BodyText, StringComparison.Ordinal);
         Assert.AreEqual("<p>Hello&nbsp;<b>world</b></p>", messages[0].BodyHtml);
     }
+
+    [TestMethod]
+    public async Task Real_IMAP_adapter_extracts_MessageId_and_References()
+    {
+        await using var server = LoopbackImapServer.Start(
+        [
+            new SeededMailbox(
+                Path: "INBOX",
+                Attributes: ["Inbox"],
+                Messages:
+                [
+                    new SeededImapMessage(
+                        Uid: 3,
+                        Subject: "Threaded",
+                        From: "bob@example.com",
+                        InternalDate: new DateTimeOffset(2026, 8, 2, 12, 0, 0, TimeSpan.Zero),
+                        IsRead: true,
+                        BodyText: "thread")
+                    {
+                        InternetMessageId = "<orig@example.com>",
+                        ReferencesHeader = "<root@example.com>",
+                    },
+                ]),
+        ]);
+
+        await using var client = new MailKitImapClientFactory().Create();
+        await client.ConnectAndAuthenticateAsync(
+            "127.0.0.1",
+            server.Port,
+            "alice@example.com",
+            "s3cret-password");
+
+        var messages = await client.FetchMessagesAsync("INBOX");
+        Assert.HasCount(1, messages);
+        Assert.AreEqual("orig@example.com", messages[0].InternetMessageId);
+        CollectionAssert.AreEqual(new[] { "root@example.com" }, messages[0].References.ToArray());
+    }
 }

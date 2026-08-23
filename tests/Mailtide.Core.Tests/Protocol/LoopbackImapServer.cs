@@ -398,6 +398,29 @@ internal sealed record SeededImapMessage(
 {
     public string? HtmlBody { get; init; }
 
+    public string? InternetMessageId { get; init; }
+
+    public string? ReferencesHeader { get; init; }
+
+    private string ThreadHeaders
+    {
+        get
+        {
+            var sb = new StringBuilder();
+            if (!string.IsNullOrWhiteSpace(InternetMessageId))
+            {
+                sb.Append("Message-ID: ").Append(InternetMessageId).Append("\r\n");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ReferencesHeader))
+            {
+                sb.Append("References: ").Append(ReferencesHeader).Append("\r\n");
+            }
+
+            return sb.ToString();
+        }
+    }
+
     public string Rfc822
     {
         get
@@ -409,6 +432,7 @@ internal sealed record SeededImapMessage(
                 sb.Append("From: ").Append(From).Append("\r\n");
                 sb.Append("Subject: ").Append(Subject).Append("\r\n");
                 sb.Append("Date: ").Append(InternalDate.UtcDateTime.ToString("r")).Append("\r\n");
+                sb.Append(ThreadHeaders);
                 sb.Append("MIME-Version: 1.0\r\n");
                 sb.Append("Content-Type: multipart/mixed; boundary=\"").Append(boundary).Append("\"\r\n");
                 sb.Append("\r\n");
@@ -436,6 +460,7 @@ internal sealed record SeededImapMessage(
                     $"From: {From}\r\n" +
                     $"Subject: {Subject}\r\n" +
                     $"Date: {InternalDate.UtcDateTime:r}\r\n" +
+                    ThreadHeaders +
                     "MIME-Version: 1.0\r\n" +
                     "Content-Type: text/html; charset=utf-8\r\n" +
                     "\r\n" +
@@ -446,6 +471,7 @@ internal sealed record SeededImapMessage(
                 $"From: {From}\r\n" +
                 $"Subject: {Subject}\r\n" +
                 $"Date: {InternalDate.UtcDateTime:r}\r\n" +
+                ThreadHeaders +
                 "MIME-Version: 1.0\r\n" +
                 "Content-Type: text/plain; charset=utf-8\r\n" +
                 "\r\n" +

@@ -1081,6 +1081,8 @@ public sealed class MailtideApp : IAsyncDisposable
                 ToAddresses = EncodeAddresses([]),
                 Subject = ForwardSubject(message.Subject),
                 BodyText = FormatForwardedBody(message.FromAddress, message.ReceivedAt, message.Subject, message.BodyText),
+                InReplyTo = message.InternetMessageId,
+                ReferencesJson = EncodeReplyReferences(message.ReferencesJson, message.InternetMessageId),
                 UpdatedAt = now,
             };
 
@@ -1137,6 +1139,8 @@ public sealed class MailtideApp : IAsyncDisposable
                 CcAddresses = EncodeAddresses(cc),
                 Subject = ReplySubject(message.Subject),
                 BodyText = QuoteForReply(message.FromAddress, message.ReceivedAt, message.BodyText),
+                InReplyTo = message.InternetMessageId,
+                ReferencesJson = EncodeReplyReferences(message.ReferencesJson, message.InternetMessageId),
                 UpdatedAt = DateTimeOffset.UtcNow,
             };
             _db.Drafts.Add(record);
@@ -1186,6 +1190,8 @@ public sealed class MailtideApp : IAsyncDisposable
                 ToAddresses = EncodeAddresses([message.FromAddress]),
                 Subject = ReplySubject(message.Subject),
                 BodyText = QuoteForReply(message.FromAddress, message.ReceivedAt, message.BodyText),
+                InReplyTo = message.InternetMessageId,
+                ReferencesJson = EncodeReplyReferences(message.ReferencesJson, message.InternetMessageId),
                 UpdatedAt = now,
             };
 
@@ -1297,6 +1303,8 @@ public sealed class MailtideApp : IAsyncDisposable
                 CcAddresses = draft.CcAddresses,
                 Subject = draft.Subject,
                 BodyText = draft.BodyText,
+                InReplyTo = draft.InReplyTo,
+                ReferencesJson = draft.ReferencesJson,
                 State = OutboxItemState.Queued,
                 ErrorMessage = null,
                 UpdatedAt = now,
@@ -1481,6 +1489,8 @@ public sealed class MailtideApp : IAsyncDisposable
                         item.BodyText)
                     {
                         CcAddresses = DecodeAddresses(item.CcAddresses),
+                        InReplyTo = item.InReplyTo,
+                        References = DecodeAddresses(item.ReferencesJson),
                     };
                 }
                 finally
@@ -1656,6 +1666,31 @@ public sealed class MailtideApp : IAsyncDisposable
     /// EnsureCreated only creates a missing database; it does not add tables to an existing file.
     /// Create any model tables that may be absent after upgrading from an Accounts-only schema.
     /// </summary>
+    private static async Task TryAddThreadingColumnsAsync(
+        MailtideDbContext db,
+        CancellationToken cancellationToken)
+    {
+        foreach (var sql in new[]
+                 {
+                     "ALTER TABLE Messages ADD COLUMN InternetMessageId TEXT",
+                     "ALTER TABLE Messages ADD COLUMN ReferencesJson TEXT NOT NULL DEFAULT '[]'",
+                     "ALTER TABLE Drafts ADD COLUMN InReplyTo TEXT",
+                     "ALTER TABLE Drafts ADD COLUMN ReferencesJson TEXT NOT NULL DEFAULT '[]'",
+                     "ALTER TABLE OutboxItems ADD COLUMN InReplyTo TEXT",
+                     "ALTER TABLE OutboxItems ADD COLUMN ReferencesJson TEXT NOT NULL DEFAULT '[]'",
+                 })
+        {
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Column already exists on upgraded stores.
+            }
+        }
+    }
+
     private static async Task TryAddDraftOutboxCcColumnsAsync(
         MailtideDbContext db,
         CancellationToken cancellationToken)
@@ -1752,6 +1787,7 @@ public sealed class MailtideApp : IAsyncDisposable
 
         await TryAddMessageRecipientColumnsAsync(db, cancellationToken).ConfigureAwait(false);
         await TryAddDraftOutboxCcColumnsAsync(db, cancellationToken).ConfigureAwait(false);
+        await TryAddThreadingColumnsAsync(db, cancellationToken).ConfigureAwait(false);
 
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -2033,6 +2069,8 @@ public sealed class MailtideApp : IAsyncDisposable
                         IsRead = summary.IsRead,
                         BodyText = fetched.BodyText,
                         BodyHtml = fetched.BodyHtml,
+                        InternetMessageId = fetched.InternetMessageId,
+                        ReferencesJson = EncodeAddresses(fetched.References),
                         ToAddresses = EncodeAddresses(fetched.ToAddresses),
                         CcAddresses = EncodeAddresses(fetched.CcAddresses),
                     };
@@ -2069,6 +2107,8 @@ public sealed class MailtideApp : IAsyncDisposable
                     {
                         message.BodyText = fetched.BodyText;
                         message.BodyHtml = fetched.BodyHtml;
+                        message.InternetMessageId = fetched.InternetMessageId;
+                        message.ReferencesJson = EncodeAddresses(fetched.References);
                         message.ToAddresses = EncodeAddresses(fetched.ToAddresses);
                         message.CcAddresses = EncodeAddresses(fetched.CcAddresses);
                     }
@@ -2234,6 +2274,18 @@ public sealed class MailtideApp : IAsyncDisposable
             ? AuthenticationFailedMessage
             : SendFailedMessage;
 
+    private static string EncodeReplyReferences(string existingJson, string? internetMessageId)
+    {
+        var ids = DecodeAddresses(existingJson).ToList();
+        if (!string.IsNullOrWhiteSpace(internetMessageId)
+            && !ids.Contains(internetMessageId, StringComparer.OrdinalIgnoreCase))
+        {
+            ids.Add(internetMessageId);
+        }
+
+        return EncodeAddresses(ids);
+    }
+
     private static string EncodeAddresses(IReadOnlyList<string> addresses) =>
         JsonSerializer.Serialize(addresses);
 
@@ -2303,6 +2355,8 @@ public sealed class MailtideApp : IAsyncDisposable
             record.UpdatedAt)
         {
             CcAddresses = DecodeAddresses(record.CcAddresses),
+            InReplyTo = record.InReplyTo,
+            References = DecodeAddresses(record.ReferencesJson),
         };
 
     private static OutboxItemInfo ToOutboxItemInfo(OutboxItemRecord record) =>

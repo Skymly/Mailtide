@@ -25,4 +25,8 @@ internal sealed class MessageRecord
     public string ToAddresses { get; set; } = "[]";
 
     public string CcAddresses { get; set; } = "[]";
+
+    public string? InternetMessageId { get; set; }
+
+    public string ReferencesJson { get; set; } = "[]";
 }

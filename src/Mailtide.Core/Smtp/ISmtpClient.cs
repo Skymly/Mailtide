@@ -31,4 +31,8 @@ public sealed record OutboundMessage(
     string BodyText)
 {
     public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
+
+    public string? InReplyTo { get; init; }
+
+    public IReadOnlyList<string> References { get; init; } = Array.Empty<string>();
 }

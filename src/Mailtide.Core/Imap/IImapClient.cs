@@ -74,6 +74,10 @@ public sealed record RemoteMessage(
 
     public string? BodyHtml { get; init; }
 
+    public string? InternetMessageId { get; init; }
+
+    public IReadOnlyList<string> References { get; init; } = Array.Empty<string>();
+
     public IReadOnlyList<RemoteAttachment> Attachments { get; init; } =
         Array.Empty<RemoteAttachment>();
 }

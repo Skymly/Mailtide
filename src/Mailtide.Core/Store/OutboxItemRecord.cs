@@ -14,6 +14,10 @@ internal sealed class OutboxItemRecord
 
     public required string BodyText { get; set; }
 
+    public string? InReplyTo { get; set; }
+
+    public string ReferencesJson { get; set; } = "[]";
+
     public OutboxItemState State { get; set; }
 
     public string? ErrorMessage { get; set; }
