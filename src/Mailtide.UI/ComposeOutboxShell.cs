@@ -61,6 +61,19 @@ public sealed class ComposeOutboxShell
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
         return draft;
     }
+    public async Task<DraftInfo> StartReplyAllAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        var draft = await _app
+            .StartReplyAllAsync(accountId, messageId, cancellationToken)
+            .ConfigureAwait(false);
+        SelectedAccountId = accountId;
+        await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
+        return draft;
+    }
+
     public async Task<DraftInfo> StartReplyAsync(
         Guid accountId,
         Guid messageId,

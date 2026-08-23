@@ -68,6 +68,10 @@ public sealed record RemoteMessage(
     bool IsRead,
     string BodyText)
 {
+    public IReadOnlyList<string> ToAddresses { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
+
     public IReadOnlyList<RemoteAttachment> Attachments { get; init; } =
         Array.Empty<RemoteAttachment>();
 }

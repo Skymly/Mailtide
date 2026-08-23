@@ -362,6 +362,31 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private async void OnReplyAllClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        if (browse.SelectedMessageId is not { } messageId)
+        {
+            return;
+        }
+
+        var message = browse.Messages.FirstOrDefault(m => m.Id == messageId);
+        if (message is null)
+        {
+            return;
+        }
+
+        var compose = RequireCompose();
+        var draft = await compose
+            .StartReplyAllAsync(message.AccountId, messageId)
+            .ConfigureAwait(true);
+
+        ComposeToBox.Text = string.Join(", ", draft.ToAddresses);
+        ComposeSubjectBox.Text = draft.Subject;
+        ComposeBodyBox.Text = draft.BodyText;
+        BindLists();
+        DraftsList.SelectedItem = compose.Drafts.FirstOrDefault(d => d.Id == draft.Id);
+    }
     private async void OnReplyClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();
