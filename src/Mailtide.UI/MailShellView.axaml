@@ -155,6 +155,11 @@
                 Content="Reply"
                 Margin="0,0,0,8"
                 Click="OnReplyClick" />
+        <Button Name="ForwardButton"
+                DockPanel.Dock="Top"
+                Content="Forward"
+                Margin="0,0,0,8"
+                Click="OnForwardClick" />
         <TextBlock DockPanel.Dock="Top" Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,8" />
         <TextBlock Name="AttachmentOpenErrorText"
                    DockPanel.Dock="Top"

@@ -227,6 +227,34 @@ public sealed class ComposeOutboxShellTests
         Assert.IsEmpty(await app.ListDraftsAsync(alice.Id));
         Assert.HasCount(1, await app.ListDraftsAsync(bob.Id));
     }
+    [TestMethod]
+    public async Task ComposeOutboxShell_StartForward_creates_Draft_with_empty_To()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "hi"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var message = (await app.ListUnifiedInboxAsync()).Single();
+
+        var shell = new ComposeOutboxShell(app);
+        var draft = await shell.StartForwardAsync(message.AccountId, message.Id);
+
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.AreEqual("Fwd: Hello", draft.Subject);
+        Assert.IsEmpty(draft.ToAddresses);
+        Assert.HasCount(1, shell.Drafts);
+        Assert.AreEqual(draft.Id, shell.Drafts[0].Id);
+    }
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(
             DisplayName: displayName,
