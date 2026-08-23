@@ -53,15 +53,17 @@ public sealed class ComposeOutboxShell
         string subject,
         string bodyText,
         string ccAddresses = "",
+        string bccAddresses = "",
         CancellationToken cancellationToken = default)
     {
         var accountId = RequireSelectedAccount();
         var addresses = ParseAddresses(toAddresses);
         var cc = ParseAddresses(ccAddresses);
+        var bcc = ParseAddresses(bccAddresses);
         var saved = await _app
             .SaveDraftAsync(
                 accountId,
-                new DraftContent(addresses, subject, bodyText) { CcAddresses = cc },
+                new DraftContent(addresses, subject, bodyText) { CcAddresses = cc, BccAddresses = bcc },
                 SelectedDraftId,
                 cancellationToken)
             .ConfigureAwait(false);

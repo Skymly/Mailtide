@@ -10,6 +10,8 @@ internal sealed class OutboxItemRecord
 
     public string CcAddresses { get; set; } = "[]";
 
+    public string BccAddresses { get; set; } = "[]";
+
     public required string Subject { get; set; }
 
     public required string BodyText { get; set; }

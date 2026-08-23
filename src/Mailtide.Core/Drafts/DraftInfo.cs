@@ -6,6 +6,8 @@ public sealed record DraftContent(
     string BodyText)
 {
     public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> BccAddresses { get; init; } = Array.Empty<string>();
 }
 
 public sealed record DraftInfo(
@@ -17,6 +19,8 @@ public sealed record DraftInfo(
     DateTimeOffset UpdatedAt)
 {
     public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> BccAddresses { get; init; } = Array.Empty<string>();
 
     public string? InReplyTo { get; init; }
 
