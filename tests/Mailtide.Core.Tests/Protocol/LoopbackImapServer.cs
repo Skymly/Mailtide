@@ -176,7 +176,7 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
             }
             else if (upper.StartsWith("CAPABILITY", StringComparison.Ordinal))
             {
-                await writer.WriteLineAsync("* CAPABILITY IMAP4rev1 AUTH=PLAIN AUTH=LOGIN LOGIN NAMESPACE")
+                await writer.WriteLineAsync("* CAPABILITY IMAP4rev1 IDLE AUTH=PLAIN AUTH=LOGIN LOGIN NAMESPACE")
                     .ConfigureAwait(false);
                 await writer.WriteLineAsync($"{tag} OK CAPABILITY completed").ConfigureAwait(false);
             }
@@ -204,6 +204,23 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
                 }
 
                 await writer.WriteLineAsync($"{tag} OK LIST completed").ConfigureAwait(false);
+            }
+            else if (upper == "IDLE")
+            {
+                var mailbox = FindMailbox(selectedPath);
+                var count = mailbox?.Messages.Count ?? 0;
+                await writer.WriteLineAsync("+ idling").ConfigureAwait(false);
+                await writer.WriteLineAsync($"* {count + 1} EXISTS").ConfigureAwait(false);
+                while (true)
+                {
+                    var done = await reader.ReadLineAsync().ConfigureAwait(false);
+                    if (done is null || done.Equals("DONE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
+                }
+
+                await writer.WriteLineAsync($"{tag} OK IDLE terminated").ConfigureAwait(false);
             }
             else if (upper.StartsWith("SELECT ", StringComparison.Ordinal)
                      || upper.StartsWith("EXAMINE ", StringComparison.Ordinal))

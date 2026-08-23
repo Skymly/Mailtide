@@ -117,6 +117,11 @@ internal sealed class FakeImapClient : IImapClient
         IReadOnlyList<string> remoteIds,
         CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<RemoteMessage>>([]);
+    public Task WaitForMailboxChangeAsync(
+        string mailboxPath,
+        CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
     public Task SetSeenAsync(
         string mailboxPath,
         string remoteId,

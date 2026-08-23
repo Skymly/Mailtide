@@ -304,6 +304,55 @@ internal sealed class MailKitImapClient : IImapClient
             throw new ImapProtocolException("IMAP protocol failure.", ex);
         }
     }
+
+    public async Task WaitForMailboxChangeAsync(
+        string mailboxPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mailboxPath);
+        var client = EnsureAuthenticated();
+        try
+        {
+            var folder = await client.GetFolderAsync(mailboxPath, cancellationToken).ConfigureAwait(false);
+            await folder.OpenAsync(FolderAccess.ReadOnly, cancellationToken).ConfigureAwait(false);
+
+            var arrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            EventHandler<EventArgs> handler = (_, _) => arrived.TrySetResult();
+            folder.CountChanged += handler;
+            try
+            {
+                using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                using var registration = cancellationToken.Register(() => arrived.TrySetCanceled(cancellationToken));
+                var idle = client.IdleAsync(idleCts.Token);
+                await arrived.Task.ConfigureAwait(false);
+                await idleCts.CancelAsync().ConfigureAwait(false);
+                try
+                {
+                    await idle.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+            finally
+            {
+                folder.CountChanged -= handler;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not ImapAuthenticationException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await DisposeClientAsync().ConfigureAwait(false);
