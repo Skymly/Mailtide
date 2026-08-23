@@ -17,6 +17,7 @@ public sealed class MailShellShortcutsTests
         Assert.AreEqual(MailShellShortcut.Delete, MailShellShortcuts.FromKey(Key.Delete, false));
         Assert.AreEqual(MailShellShortcut.FocusSearch, MailShellShortcuts.FromKey(Key.Oem2, false));
         Assert.AreEqual(MailShellShortcut.NewDraft, MailShellShortcuts.FromKey(Key.C, false));
+        Assert.AreEqual(MailShellShortcut.NextUnread, MailShellShortcuts.FromKey(Key.N, false));
     }
 
     [TestMethod]
@@ -25,5 +26,6 @@ public sealed class MailShellShortcutsTests
         Assert.AreEqual(MailShellShortcut.None, MailShellShortcuts.FromKey(Key.R, true));
         Assert.AreEqual(MailShellShortcut.None, MailShellShortcuts.FromKey(Key.Delete, true));
         Assert.AreEqual(MailShellShortcut.None, MailShellShortcuts.FromKey(Key.Oem2, true));
+        Assert.AreEqual(MailShellShortcut.None, MailShellShortcuts.FromKey(Key.N, true));
     }
 }

@@ -13,6 +13,7 @@ public enum MailShellShortcut
     Delete,
     FocusSearch,
     NewDraft,
+    NextUnread,
 }
 
 public static class MailShellShortcuts
@@ -34,6 +35,7 @@ public static class MailShellShortcuts
             Key.Delete => MailShellShortcut.Delete,
             Key.Oem2 or Key.OemQuestion or Key.Divide => MailShellShortcut.FocusSearch,
             Key.C => MailShellShortcut.NewDraft,
+            Key.N => MailShellShortcut.NextUnread,
             _ => MailShellShortcut.None,
         };
     }
