@@ -379,7 +379,9 @@ public sealed class MailtideApp : IAsyncDisposable
             var cancellationToken = _foregroundCts.Token;
             var period = interval ?? DefaultForegroundSyncInterval;
             _foregroundTask = Task.Run(
-                () => RunForegroundSyncAsync(period, cancellationToken),
+                () => Task.WhenAll(
+                    RunForegroundSyncAsync(period, cancellationToken),
+                    RunForegroundIdleAsync(cancellationToken)),
                 CancellationToken.None);
         }
     }
@@ -438,6 +440,137 @@ public sealed class MailtideApp : IAsyncDisposable
         await SyncNowAsync(accountId, cancellationToken).ConfigureAwait(false);
         await SendNowAsync(accountId, cancellationToken).ConfigureAwait(false);
         AccountWorkCompleted?.Invoke(this, accountId);
+    }
+
+    private async Task RunForegroundIdleAsync(CancellationToken cancellationToken)
+    {
+        var loops = new Dictionary<Guid, Task>();
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var accounts = await ListAccountsAsync(cancellationToken).ConfigureAwait(false);
+                foreach (var account in accounts)
+                {
+                    if (loops.TryGetValue(account.Id, out var existing) && !existing.IsCompleted)
+                    {
+                        continue;
+                    }
+
+                    loops[account.Id] = IdleAccountAsync(account.Id, cancellationToken);
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        try
+        {
+            await Task.WhenAll(loops.Values).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task IdleAccountAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var inbox = (await ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false))
+                    .FirstOrDefault(mailbox => mailbox.Role == MailboxRole.Inbox);
+                if (inbox is null)
+                {
+                    await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                await WaitForInboxChangeAsync(accountId, inbox.Path, cancellationToken).ConfigureAwait(false);
+                await SyncAndSendAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task WaitForInboxChangeAsync(
+        Guid accountId,
+        string mailboxPath,
+        CancellationToken cancellationToken)
+    {
+        string imapHost;
+        int imapPort;
+        string emailAddress;
+        string credentialHandle;
+        CredentialKind credentialKind;
+        OAuthTokenMetadata? oauthMetadata = null;
+        string? secret;
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var account = await _db.Accounts
+                .AsNoTracking()
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+            if (account is null)
+            {
+                throw new InvalidOperationException($"Account '{accountId}' was not found.");
+            }
+
+            imapHost = account.ImapHost;
+            imapPort = account.ImapPort;
+            emailAddress = account.EmailAddress;
+            credentialHandle = account.CredentialHandle;
+            credentialKind = account.CredentialKind;
+            if (account.CredentialKind == CredentialKind.OAuth)
+            {
+                oauthMetadata = RequireOAuthMetadata(account);
+            }
+
+            secret = await _auth
+                .RetrieveCredentialSecretAsync(account.CredentialHandle, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        if (secret is null)
+        {
+            throw new InvalidOperationException(AuthenticationFailedMessage);
+        }
+
+        var protocolSecret = await ResolveProtocolSecretAsync(
+                credentialKind,
+                oauthMetadata,
+                secret,
+                credentialHandle,
+                invalidateOnAuthFailure: false,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (protocolSecret is null)
+        {
+            throw new InvalidOperationException(AuthenticationFailedMessage);
+        }
+
+        await using var client = _imapClientFactory.Create();
+        await client
+            .ConnectAndAuthenticateAsync(imapHost, imapPort, emailAddress, protocolSecret, cancellationToken)
+            .ConfigureAwait(false);
+        await client.WaitForMailboxChangeAsync(mailboxPath, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SyncNowAsync(Guid accountId, CancellationToken cancellationToken = default)

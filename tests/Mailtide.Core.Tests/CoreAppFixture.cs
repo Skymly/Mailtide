@@ -133,6 +133,33 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public List<string> FetchedRemoteIds { get; } = [];
 
+    private TaskCompletionSource _mailboxChange =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public int IdleWaiters { get; private set; }
+
+    public void SignalMailboxChange()
+    {
+        var previous = Interlocked.Exchange(
+            ref _mailboxChange,
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+        previous.TrySetResult();
+    }
+
+    internal async Task WaitForMailboxChangeAsync(CancellationToken cancellationToken)
+    {
+        IdleWaiters++;
+        try
+        {
+            await _mailboxChange.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            IdleWaiters--;
+        }
+    }
+
+
     public void SeedMailboxes(params RemoteMailbox[] mailboxes)
     {
         _mailboxes.Clear();
@@ -244,6 +271,15 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             var fetched = messages.Where(m => wanted.Contains(m.RemoteId)).ToList();
             _factory.FetchedRemoteIds.AddRange(fetched.Select(m => m.RemoteId));
             return Task.FromResult<IReadOnlyList<RemoteMessage>>(fetched);
+        }
+
+        public Task WaitForMailboxChangeAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            _ = mailboxPath;
+            return _factory.WaitForMailboxChangeAsync(cancellationToken);
         }
 
         public Task SetSeenAsync(

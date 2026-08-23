@@ -155,6 +155,11 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             return Task.FromResult<IReadOnlyList<RemoteMessage>>(
                 messages.Where(m => wanted.Contains(m.RemoteId)).ToList());
         }
+        public Task WaitForMailboxChangeAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
         public Task SetSeenAsync(
             string mailboxPath,
             string remoteId,
