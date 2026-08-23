@@ -36,6 +36,8 @@ public sealed class BrowseShell
 
     public bool ShowingUnifiedInbox { get; private set; }
 
+    public string SearchQuery { get; private set; } = string.Empty;
+
     public string? BodyText { get; private set; }
 
     public string? BodyHtml { get; private set; }
@@ -129,6 +131,7 @@ public sealed class BrowseShell
         SelectedAccountId = accountId;
         SelectedMailboxId = null;
         ShowingUnifiedInbox = false;
+        SearchQuery = string.Empty;
         Messages = [];
         ClearMessageDetail();
         Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
@@ -143,6 +146,7 @@ public sealed class BrowseShell
 
         SelectedMailboxId = mailboxId;
         ShowingUnifiedInbox = false;
+        SearchQuery = string.Empty;
         ClearMessageDetail();
         Messages = await _app
             .ListMessagesAsync(accountId, mailboxId, cancellationToken)
@@ -154,9 +158,30 @@ public sealed class BrowseShell
         SelectedAccountId = null;
         SelectedMailboxId = null;
         ShowingUnifiedInbox = true;
+        SearchQuery = string.Empty;
         Mailboxes = [];
         ClearMessageDetail();
         Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SearchAsync(string query, CancellationToken cancellationToken = default)
+    {
+        SearchQuery = query ?? string.Empty;
+        if (ShowingUnifiedInbox)
+        {
+            Messages = await _app.SearchUnifiedInboxAsync(SearchQuery, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (SelectedAccountId is not { } accountId || SelectedMailboxId is not { } mailboxId)
+        {
+            Messages = [];
+            return;
+        }
+
+        Messages = await _app
+            .SearchMessagesAsync(accountId, mailboxId, SearchQuery, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task SelectMessageAsync(Guid messageId, CancellationToken cancellationToken = default)
