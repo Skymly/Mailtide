@@ -1,5 +1,6 @@
 using MailKit;
 using MailKit.Net.Imap;
+using MailKit.Search;
 using MailKit.Security;
 using MimeKit;
 
@@ -402,6 +403,36 @@ internal sealed class MailKitImapClient : IImapClient
             await source.OpenAsync(FolderAccess.ReadWrite, cancellationToken).ConfigureAwait(false);
             var destination = await client.GetFolderAsync(destinationMailboxPath, cancellationToken).ConfigureAwait(false);
             await source.MoveToAsync(new UniqueId(uidValue), destination, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException and not ImapProtocolException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
+    public async Task ExpungeAllAsync(
+        string mailboxPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mailboxPath);
+        var client = EnsureAuthenticated();
+        try
+        {
+            var folder = await client.GetFolderAsync(mailboxPath, cancellationToken).ConfigureAwait(false);
+            await folder.OpenAsync(FolderAccess.ReadWrite, cancellationToken).ConfigureAwait(false);
+            var uids = await folder.SearchAsync(SearchQuery.All, cancellationToken).ConfigureAwait(false);
+            if (uids.Count > 0)
+            {
+                await folder
+                    .AddFlagsAsync(uids, MessageFlags.Deleted, silent: true, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await folder.ExpungeAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (AuthenticationException ex)
         {

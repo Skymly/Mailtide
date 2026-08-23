@@ -358,6 +358,33 @@ public sealed class BrowseShell
         await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task EmptyTrashAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedAccountId is not { } accountId)
+        {
+            throw new InvalidOperationException("Select an Account before emptying Trash.");
+        }
+
+        await _app
+            .EmptyTrashAsync(accountId, cancellationToken)
+            .ConfigureAwait(false);
+
+        ClearMessageDetail();
+        if (ShowingUnifiedInbox)
+        {
+            Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (SelectedMailboxId is { } mailboxId)
+        {
+            Messages = await _app
+                .ListMessagesAsync(accountId, mailboxId, cancellationToken)
+                .ConfigureAwait(false);
+            Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
+        }
+
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task OpenAttachmentAsync(
         Guid attachmentId,
         CancellationToken cancellationToken = default)
