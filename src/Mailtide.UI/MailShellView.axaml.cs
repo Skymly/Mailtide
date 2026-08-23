@@ -212,6 +212,26 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private async void OnDiscardDraftClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (compose.SelectedDraftId is not { } draftId)
+        {
+            if (DraftsList.SelectedItem is DraftInfo selected)
+            {
+                draftId = selected.Id;
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        await compose.DiscardDraftAsync(draftId).ConfigureAwait(true);
+        ClearComposeFields();
+        BindLists();
+    }
+
     private async void OnRetryOutboxClick(object? sender, RoutedEventArgs e)
     {
         var compose = RequireCompose();

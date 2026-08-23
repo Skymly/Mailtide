@@ -1456,6 +1456,31 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task DiscardDraftAsync(
+        Guid accountId,
+        Guid draftId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var draft = await _db.Drafts
+                .SingleOrDefaultAsync(d => d.AccountId == accountId && d.Id == draftId, cancellationToken)
+                .ConfigureAwait(false);
+            if (draft is null)
+            {
+                return;
+            }
+
+            _db.Drafts.Remove(draft);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     public async Task SendAsync(
         Guid accountId,
         Guid draftId,
