@@ -147,6 +147,8 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastMoveRemoteId { get; private set; }
 
+    public string? LastExpungeMailboxPath { get; private set; }
+
 
 
     public List<string> FetchedRemoteIds { get; } = [];
@@ -364,6 +366,16 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
                 _factory._messagesByPath[destinationMailboxPath] = dest.Concat(moved).ToList();
             }
 
+            return Task.CompletedTask;
+        }
+
+        public Task ExpungeAllAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            _factory.LastExpungeMailboxPath = mailboxPath;
+            _factory._messagesByPath[mailboxPath] = [];
             return Task.CompletedTask;
         }
 

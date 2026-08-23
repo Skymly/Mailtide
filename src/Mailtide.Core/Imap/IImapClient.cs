@@ -62,6 +62,10 @@ public interface IImapClient : IAsyncDisposable
         string destinationMailboxPath,
         string remoteId,
         CancellationToken cancellationToken = default);
+
+    Task ExpungeAllAsync(
+        string mailboxPath,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record RemoteMessageSummary(
