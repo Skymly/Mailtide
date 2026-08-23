@@ -140,6 +140,7 @@ internal sealed class MailKitImapClient : IImapClient
                     ToAddresses = ExtractAddresses(mime.To),
                     CcAddresses = ExtractAddresses(mime.Cc),
                     BodyHtml = ExtractBodyHtml(mime),
+                    IsFlagged = summary.Flags?.HasFlag(MessageFlags.Flagged) == true,
                     InternetMessageId = ExtractInternetMessageId(mime),
                     References = ExtractReferences(mime),
                     Attachments = ExtractAttachments(mime),
@@ -187,6 +188,7 @@ internal sealed class MailKitImapClient : IImapClient
                 .Select(summary => new RemoteMessageSummary(
                     RemoteId: summary.UniqueId.Id.ToString(),
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
+                    IsFlagged: summary.Flags?.HasFlag(MessageFlags.Flagged) == true,
                     Subject: summary.Envelope?.Subject ?? string.Empty,
                     FromAddress: summary.Envelope?.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
                     ReceivedAt: summary.InternalDate ?? default))
@@ -255,6 +257,7 @@ internal sealed class MailKitImapClient : IImapClient
                     ToAddresses = ExtractAddresses(mime.To),
                     CcAddresses = ExtractAddresses(mime.Cc),
                     BodyHtml = ExtractBodyHtml(mime),
+                    IsFlagged = summary.Flags?.HasFlag(MessageFlags.Flagged) == true,
                     InternetMessageId = ExtractInternetMessageId(mime),
                     References = ExtractReferences(mime),
                     Attachments = ExtractAttachments(mime),
@@ -326,6 +329,47 @@ internal sealed class MailKitImapClient : IImapClient
             await folder
                 .RemoveFlagsAsync(new UniqueId(uidValue), MessageFlags.Seen, silent: true, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException and not ImapProtocolException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
+    public async Task SetFlaggedAsync(
+        string mailboxPath,
+        string remoteId,
+        bool flagged,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mailboxPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(remoteId);
+        var client = EnsureAuthenticated();
+        try
+        {
+            if (!uint.TryParse(remoteId, out var uidValue))
+            {
+                throw new ImapProtocolException("IMAP protocol failure.", new FormatException($"RemoteId '{remoteId}' is not a UID."));
+            }
+
+            var folder = await client.GetFolderAsync(mailboxPath, cancellationToken).ConfigureAwait(false);
+            await folder.OpenAsync(FolderAccess.ReadWrite, cancellationToken).ConfigureAwait(false);
+            if (flagged)
+            {
+                await folder
+                    .AddFlagsAsync(new UniqueId(uidValue), MessageFlags.Flagged, silent: true, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await folder
+                    .RemoveFlagsAsync(new UniqueId(uidValue), MessageFlags.Flagged, silent: true, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (AuthenticationException ex)
         {

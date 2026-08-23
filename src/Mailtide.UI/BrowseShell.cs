@@ -251,6 +251,25 @@ public sealed class BrowseShell
         await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task ToggleSelectedFlagAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedMessageId is not { } messageId)
+        {
+            throw new InvalidOperationException("Select a Message before flagging it.");
+        }
+
+        var message = Messages.FirstOrDefault(m => m.Id == messageId)
+            ?? throw new InvalidOperationException("Message is not in the current list.");
+
+        var flagged = !message.IsFlagged;
+        await _app
+            .MarkFlaggedAsync(message.AccountId, messageId, flagged, cancellationToken)
+            .ConfigureAwait(false);
+        Messages = Messages
+            .Select(item => item.Id == messageId ? item with { IsFlagged = flagged } : item)
+            .ToList();
+    }
+
     public async Task RefreshAfterAccountWorkAsync(CancellationToken cancellationToken = default)
     {
         var mailboxId = SelectedMailboxId;

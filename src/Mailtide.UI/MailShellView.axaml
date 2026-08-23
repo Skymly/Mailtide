@@ -156,6 +156,10 @@
                 <TextBlock Text="{Binding Subject}"
                            TextWrapping="Wrap"
                            FontWeight="{Binding IsRead, Converter={x:Static local:UnreadFontWeightConverter.Instance}}" />
+                <TextBlock Text="Flagged"
+                           IsVisible="{Binding IsFlagged}"
+                           Opacity="0.7"
+                           FontSize="12" />
                 <TextBlock Text="{Binding FromAddress}" Opacity="0.7" FontSize="12" />
                 <TextBlock Text="{Binding ReceivedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm} UTC'}"
                            Opacity="0.7"
@@ -208,6 +212,11 @@
                 Content="Mark Unread"
                 Margin="0,0,0,8"
                 Click="OnMarkUnreadClick" />
+        <Button Name="FlagButton"
+                DockPanel.Dock="Top"
+                Content="Flag"
+                Margin="0,0,0,8"
+                Click="OnFlagClick" />
         <TextBlock DockPanel.Dock="Top" Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,8" />
         <TextBlock Name="AttachmentOpenErrorText"
                    DockPanel.Dock="Top"

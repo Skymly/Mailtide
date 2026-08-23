@@ -517,6 +517,18 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private async void OnFlagClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        if (browse.SelectedMessageId is null)
+        {
+            return;
+        }
+
+        await browse.ToggleSelectedFlagAsync().ConfigureAwait(true);
+        BindLists();
+    }
+
     private async void OnOpenAttachmentClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();

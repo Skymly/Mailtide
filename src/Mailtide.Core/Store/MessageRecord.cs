@@ -18,6 +18,8 @@ internal sealed class MessageRecord
 
     public bool IsRead { get; set; }
 
+    public bool IsFlagged { get; set; }
+
     public required string BodyText { get; set; }
 
     public string? BodyHtml { get; set; }
