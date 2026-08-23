@@ -33,8 +33,11 @@ public sealed class ReplyAllDraftTests
         var draft = await app.StartReplyAllAsync(account.Id, message.Id);
 
         CollectionAssert.AreEqual(
-            new[] { "bob@example.com", "carol@example.com", "dave@example.com" },
+            new[] { "bob@example.com", "carol@example.com" },
             draft.ToAddresses.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "dave@example.com" },
+            draft.CcAddresses.ToArray());
         Assert.AreEqual("Re: Team thread", draft.Subject);
         StringAssert.Contains(draft.BodyText.ReplaceLineEndings("\n"), "> please reply all");
     }

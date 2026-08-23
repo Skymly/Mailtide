@@ -43,6 +43,7 @@
         </StackPanel>
         <StackPanel Spacing="6">
           <TextBox Name="ComposeToBox" PlaceholderText="To" />
+          <TextBox Name="ComposeCcBox" PlaceholderText="Cc" />
           <TextBox Name="ComposeSubjectBox" PlaceholderText="Subject" />
           <TextBox Name="ComposeBodyBox" PlaceholderText="Body" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" />
           <TextBlock Text="Drafts" FontWeight="SemiBold" Margin="0,8,0,0" />

@@ -23,12 +23,16 @@ public sealed class MailKitSmtpAdapterTests
                 FromAddress: "alice@example.com",
                 ToAddresses: ["bob@example.com"],
                 Subject: "Hello",
-                BodyText: "Body"));
+                BodyText: "Body")
+            {
+                CcAddresses = ["carol@example.com"],
+            });
 
         Assert.HasCount(1, server.AcceptedMessages);
         StringAssert.Contains(server.AcceptedMessages[0], "Subject: Hello");
         StringAssert.Contains(server.AcceptedMessages[0], "Body");
         StringAssert.Contains(server.AcceptedMessages[0], "bob@example.com");
+        StringAssert.Contains(server.AcceptedMessages[0], "carol@example.com");
     }
 
     [TestMethod]

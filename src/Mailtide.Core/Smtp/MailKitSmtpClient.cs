@@ -65,6 +65,11 @@ internal sealed class MailKitSmtpClient : ISmtpClient
                 mime.To.Add(MailboxAddress.Parse(to));
             }
 
+            foreach (var cc in message.CcAddresses)
+            {
+                mime.Cc.Add(MailboxAddress.Parse(cc));
+            }
+
             mime.Subject = message.Subject;
             mime.Body = new TextPart("plain")
             {

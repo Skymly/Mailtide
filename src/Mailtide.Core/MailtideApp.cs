@@ -1019,14 +1019,18 @@ public sealed class MailtideApp : IAsyncDisposable
 
             var self = account.EmailAddress;
             var to = DistinctAddresses(
-                [message.FromAddress, ..DecodeAddresses(message.ToAddresses), ..DecodeAddresses(message.CcAddresses)],
+                [message.FromAddress, ..DecodeAddresses(message.ToAddresses)],
                 except: [self]);
+            var cc = DistinctAddresses(
+                DecodeAddresses(message.CcAddresses),
+                except: [self, ..to]);
 
             var record = new DraftRecord
             {
                 Id = Guid.NewGuid(),
                 AccountId = accountId,
                 ToAddresses = EncodeAddresses(to),
+                CcAddresses = EncodeAddresses(cc),
                 Subject = ReplySubject(message.Subject),
                 BodyText = QuoteForReply(message.FromAddress, message.ReceivedAt, message.BodyText),
                 UpdatedAt = DateTimeOffset.UtcNow,
@@ -1120,6 +1124,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 Id = Guid.NewGuid(),
                 AccountId = accountId,
                 ToAddresses = EncodeAddresses(content.ToAddresses),
+                CcAddresses = EncodeAddresses(content.CcAddresses),
                 Subject = content.Subject,
                 BodyText = content.BodyText,
                 UpdatedAt = now,
@@ -1185,6 +1190,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 Id = Guid.NewGuid(),
                 AccountId = accountId,
                 ToAddresses = draft.ToAddresses,
+                CcAddresses = draft.CcAddresses,
                 Subject = draft.Subject,
                 BodyText = draft.BodyText,
                 State = OutboxItemState.Queued,
@@ -1368,7 +1374,10 @@ public sealed class MailtideApp : IAsyncDisposable
                         account.EmailAddress,
                         DecodeAddresses(item.ToAddresses),
                         item.Subject,
-                        item.BodyText);
+                        item.BodyText)
+                    {
+                        CcAddresses = DecodeAddresses(item.CcAddresses),
+                    };
                 }
                 finally
                 {
@@ -1543,6 +1552,27 @@ public sealed class MailtideApp : IAsyncDisposable
     /// EnsureCreated only creates a missing database; it does not add tables to an existing file.
     /// Create any model tables that may be absent after upgrading from an Accounts-only schema.
     /// </summary>
+    private static async Task TryAddDraftOutboxCcColumnsAsync(
+        MailtideDbContext db,
+        CancellationToken cancellationToken)
+    {
+        foreach (var sql in new[]
+                 {
+                     "ALTER TABLE Drafts ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
+                     "ALTER TABLE OutboxItems ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
+                 })
+        {
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Column already exists on upgraded stores.
+            }
+        }
+    }
+
     private static async Task TryAddMessageRecipientColumnsAsync(
         MailtideDbContext db,
         CancellationToken cancellationToken)
@@ -1617,6 +1647,7 @@ public sealed class MailtideApp : IAsyncDisposable
             .ConfigureAwait(false);
 
         await TryAddMessageRecipientColumnsAsync(db, cancellationToken).ConfigureAwait(false);
+        await TryAddDraftOutboxCcColumnsAsync(db, cancellationToken).ConfigureAwait(false);
 
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -2165,7 +2196,10 @@ public sealed class MailtideApp : IAsyncDisposable
             DecodeAddresses(record.ToAddresses),
             record.Subject,
             record.BodyText,
-            record.UpdatedAt);
+            record.UpdatedAt)
+        {
+            CcAddresses = DecodeAddresses(record.CcAddresses),
+        };
 
     private static OutboxItemInfo ToOutboxItemInfo(OutboxItemRecord record) =>
         new(

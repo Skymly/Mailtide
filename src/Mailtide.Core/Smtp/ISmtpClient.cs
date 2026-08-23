@@ -28,4 +28,7 @@ public sealed record OutboundMessage(
     string FromAddress,
     IReadOnlyList<string> ToAddresses,
     string Subject,
-    string BodyText);
+    string BodyText)
+{
+    public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
+}

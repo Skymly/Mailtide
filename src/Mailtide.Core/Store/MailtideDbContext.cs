@@ -65,6 +65,7 @@ internal sealed class MailtideDbContext : DbContext
         draft.ToTable("Drafts");
         draft.HasKey(d => d.Id);
         draft.Property(d => d.ToAddresses).IsRequired();
+        draft.Property(d => d.CcAddresses).IsRequired();
         draft.Property(d => d.Subject).IsRequired();
         draft.Property(d => d.BodyText).IsRequired();
         draft.HasIndex(d => d.AccountId);
@@ -73,6 +74,7 @@ internal sealed class MailtideDbContext : DbContext
         outbox.ToTable("OutboxItems");
         outbox.HasKey(o => o.Id);
         outbox.Property(o => o.ToAddresses).IsRequired();
+        outbox.Property(o => o.CcAddresses).IsRequired();
         outbox.Property(o => o.Subject).IsRequired();
         outbox.Property(o => o.BodyText).IsRequired();
         outbox.Property(o => o.State).HasConversion<string>();
