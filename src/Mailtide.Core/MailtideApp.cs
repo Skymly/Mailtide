@@ -2136,6 +2136,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 existing.BccAddresses = EncodeAddresses(content.BccAddresses);
                 existing.Subject = content.Subject;
                 existing.BodyText = content.BodyText;
+                existing.BodyHtml = content.BodyHtml;
                 existing.UpdatedAt = now;
                 await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 return ToDraftInfo(existing);
@@ -2150,6 +2151,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 BccAddresses = EncodeAddresses(content.BccAddresses),
                 Subject = content.Subject,
                 BodyText = content.BodyText,
+                BodyHtml = content.BodyHtml,
                 UpdatedAt = now,
             };
 
@@ -2371,6 +2373,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 BccAddresses = draft.BccAddresses,
                 Subject = draft.Subject,
                 BodyText = draft.BodyText,
+                BodyHtml = draft.BodyHtml,
                 InReplyTo = draft.InReplyTo,
                 ReferencesJson = draft.ReferencesJson,
                 State = OutboxItemState.Queued,
@@ -2599,6 +2602,7 @@ public sealed class MailtideApp : IAsyncDisposable
                         InReplyTo = item.InReplyTo,
                         References = DecodeAddresses(item.ReferencesJson),
                         Attachments = outboundAttachments,
+                        BodyHtml = item.BodyHtml,
                     };
                 }
                 finally
@@ -2843,6 +2847,8 @@ public sealed class MailtideApp : IAsyncDisposable
                      "ALTER TABLE OutboxItems ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
                      "ALTER TABLE Drafts ADD COLUMN BccAddresses TEXT NOT NULL DEFAULT '[]'",
                      "ALTER TABLE OutboxItems ADD COLUMN BccAddresses TEXT NOT NULL DEFAULT '[]'",
+                     "ALTER TABLE Drafts ADD COLUMN BodyHtml TEXT",
+                     "ALTER TABLE OutboxItems ADD COLUMN BodyHtml TEXT",
                  })
         {
             try
@@ -3553,6 +3559,7 @@ public sealed class MailtideApp : IAsyncDisposable
             BccAddresses = DecodeAddresses(record.BccAddresses),
             InReplyTo = record.InReplyTo,
             References = DecodeAddresses(record.ReferencesJson),
+            BodyHtml = record.BodyHtml,
         };
 
     private static OutboxItemInfo ToOutboxItemInfo(OutboxItemRecord record) =>

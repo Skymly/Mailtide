@@ -16,6 +16,8 @@ internal sealed class DraftRecord
 
     public required string BodyText { get; set; }
 
+    public string? BodyHtml { get; set; }
+
     public string? InReplyTo { get; set; }
 
     public string ReferencesJson { get; set; } = "[]";

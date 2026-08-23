@@ -200,7 +200,7 @@ public partial class MailShellView : UserControl
         }
 
         await compose
-            .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty, ComposeBccBox.Text ?? string.Empty)
+            .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty, ComposeBccBox.Text ?? string.Empty, string.IsNullOrWhiteSpace(ComposeHtmlBox.Text) ? null : ComposeHtmlBox.Text)
             .ConfigureAwait(true);
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault();
@@ -217,7 +217,7 @@ public partial class MailShellView : UserControl
         if (compose.SelectedDraftId is null)
         {
             await compose
-                .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty, ComposeBccBox.Text ?? string.Empty)
+                .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty, ComposeBccBox.Text ?? string.Empty, string.IsNullOrWhiteSpace(ComposeHtmlBox.Text) ? null : ComposeHtmlBox.Text)
                 .ConfigureAwait(true);
         }
 
@@ -268,7 +268,7 @@ public partial class MailShellView : UserControl
         }
 
         await compose
-            .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty, ComposeBccBox.Text ?? string.Empty)
+            .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty, ComposeBccBox.Text ?? string.Empty, string.IsNullOrWhiteSpace(ComposeHtmlBox.Text) ? null : ComposeHtmlBox.Text)
             .ConfigureAwait(true);
         if (compose.SelectedDraftId is not { } draftId)
         {
@@ -416,6 +416,7 @@ public partial class MailShellView : UserControl
         ComposeBccBox.Text = string.Join(", ", loaded.BccAddresses);
         ComposeSubjectBox.Text = loaded.Subject;
         ComposeBodyBox.Text = loaded.BodyText;
+        ComposeHtmlBox.Text = loaded.BodyHtml ?? string.Empty;
     }
 
     private async void OnAccountSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -544,6 +545,7 @@ public partial class MailShellView : UserControl
         ComposeBccBox.Text = string.Join(", ", draft.BccAddresses);
         ComposeSubjectBox.Text = draft.Subject;
         ComposeBodyBox.Text = draft.BodyText;
+        ComposeHtmlBox.Text = draft.BodyHtml ?? string.Empty;
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault(d => d.Id == draft.Id);
     }
@@ -571,6 +573,7 @@ public partial class MailShellView : UserControl
         ComposeBccBox.Text = string.Join(", ", draft.BccAddresses);
         ComposeSubjectBox.Text = draft.Subject;
         ComposeBodyBox.Text = draft.BodyText;
+        ComposeHtmlBox.Text = draft.BodyHtml ?? string.Empty;
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault(d => d.Id == draft.Id);
     }
@@ -598,6 +601,7 @@ public partial class MailShellView : UserControl
         ComposeBccBox.Text = string.Join(", ", draft.BccAddresses);
         ComposeSubjectBox.Text = draft.Subject;
         ComposeBodyBox.Text = draft.BodyText;
+        ComposeHtmlBox.Text = draft.BodyHtml ?? string.Empty;
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault(d => d.Id == draft.Id);
     }
@@ -704,6 +708,7 @@ public partial class MailShellView : UserControl
         ComposeBccBox.Text = string.Empty;
         ComposeSubjectBox.Text = string.Empty;
         ComposeBodyBox.Text = string.Empty;
+        ComposeHtmlBox.Text = string.Empty;
     }
 
     private void BindLists()

@@ -58,6 +58,7 @@ public sealed class ComposeOutboxShell
         string bodyText,
         string ccAddresses = "",
         string bccAddresses = "",
+        string? bodyHtml = null,
         CancellationToken cancellationToken = default)
     {
         var accountId = RequireSelectedAccount();
@@ -67,7 +68,7 @@ public sealed class ComposeOutboxShell
         var saved = await _app
             .SaveDraftAsync(
                 accountId,
-                new DraftContent(addresses, subject, bodyText) { CcAddresses = cc, BccAddresses = bcc },
+                new DraftContent(addresses, subject, bodyText) { CcAddresses = cc, BccAddresses = bcc, BodyHtml = bodyHtml },
                 SelectedDraftId,
                 cancellationToken)
             .ConfigureAwait(false);
