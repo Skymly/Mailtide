@@ -394,6 +394,27 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_MarkCurrentRead_marks_Mailbox_read()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage("u1", "Unread", "a@b.com", new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero), false, "x"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        Assert.IsFalse(shell.Messages[0].IsRead);
+        await shell.MarkCurrentReadAsync();
+        Assert.IsTrue(shell.Messages[0].IsRead);
+        Assert.AreEqual(0, shell.Mailboxes.Single().UnreadCount);
+    }
+
+    [TestMethod]
     public async Task BrowseShell_ToggleSelectedFlag_marks_Message_flagged()
     {
         using var fixture = new DesktopAppFixture();

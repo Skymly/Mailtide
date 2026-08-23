@@ -249,6 +249,11 @@
                 Content="Mark Unread"
                 Margin="0,0,0,8"
                 Click="OnMarkUnreadClick" />
+        <Button Name="MarkMailboxReadButton"
+                DockPanel.Dock="Top"
+                Content="Mark Mailbox Read"
+                Margin="0,0,0,8"
+                Click="OnMarkMailboxReadClick" />
         <Button Name="FlagButton"
                 DockPanel.Dock="Top"
                 Content="Flag"

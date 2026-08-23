@@ -272,7 +272,29 @@ public sealed class BrowseShell
         await SelectMessageAsync(next.Id, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task MarkCurrentReadAsync(CancellationToken cancellationToken = default)
+    {
+        if (ShowingUnifiedInbox)
+        {
+            await _app.MarkUnifiedInboxReadAsync(cancellationToken).ConfigureAwait(false);
+            Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
+        {
+            await _app.MarkMailboxReadAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
+            Messages = await _app.ListMessagesAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
+            Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            return;
+        }
+
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task MarkSelectedUnreadAsync(CancellationToken cancellationToken = default)
+
     {
         if (SelectedMessageId is not { } messageId)
         {
