@@ -23,6 +23,8 @@ public sealed class ComposeOutboxShell
 
     public IReadOnlyList<OutboxItemInfo> OutboxItems { get; private set; } = [];
 
+    public IReadOnlyList<DraftAttachmentInfo> DraftAttachments { get; private set; } = [];
+
     public async Task SelectAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
         if (SelectedAccountId != accountId)
@@ -40,12 +42,14 @@ public sealed class ComposeOutboxShell
         SelectedDraftId = null;
         Drafts = [];
         OutboxItems = [];
+        DraftAttachments = [];
     }
 
     public void StartNewDraft()
     {
         _ = RequireSelectedAccount();
         SelectedDraftId = null;
+        DraftAttachments = [];
     }
 
     public async Task SaveDraftAsync(
@@ -68,7 +72,7 @@ public sealed class ComposeOutboxShell
                 cancellationToken)
             .ConfigureAwait(false);
         SelectedDraftId = saved.Id;
-        Drafts = await _app.ListDraftsAsync(accountId, cancellationToken).ConfigureAwait(false);
+        await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<DraftInfo> SelectDraftAsync(
@@ -89,6 +93,9 @@ public sealed class ComposeOutboxShell
         }
 
         SelectedDraftId = draft.Id;
+        DraftAttachments = await _app
+            .ListDraftAttachmentsAsync(accountId, draft.Id, cancellationToken)
+            .ConfigureAwait(false);
         return draft;
     }
 
@@ -131,6 +138,46 @@ public sealed class ComposeOutboxShell
         SelectedDraftId = draft.Id;
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
         return draft;
+    }
+
+    public async Task AddDraftAttachmentAsync(
+        string fileName,
+        string contentType,
+        byte[] content,
+        CancellationToken cancellationToken = default)
+    {
+        var accountId = RequireSelectedAccount();
+        if (SelectedDraftId is not { } draftId)
+        {
+            throw new InvalidOperationException("Save the Draft before attaching a file.");
+        }
+
+        await _app
+            .AddDraftAttachmentAsync(accountId, draftId, fileName, contentType, content, cancellationToken)
+            .ConfigureAwait(false);
+        DraftAttachments = await _app
+            .ListDraftAttachmentsAsync(accountId, draftId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task RemoveDraftAttachmentAsync(
+        Guid attachmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var accountId = RequireSelectedAccount();
+        await _app
+            .RemoveDraftAttachmentAsync(accountId, attachmentId, cancellationToken)
+            .ConfigureAwait(false);
+        if (SelectedDraftId is { } draftId)
+        {
+            DraftAttachments = await _app
+                .ListDraftAttachmentsAsync(accountId, draftId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            DraftAttachments = [];
+        }
     }
 
     public async Task DiscardDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
@@ -188,6 +235,16 @@ public sealed class ComposeOutboxShell
     {
         Drafts = await _app.ListDraftsAsync(accountId, cancellationToken).ConfigureAwait(false);
         OutboxItems = await _app.ListOutboxAsync(accountId, cancellationToken).ConfigureAwait(false);
+        if (SelectedDraftId is { } draftId)
+        {
+            DraftAttachments = await _app
+                .ListDraftAttachmentsAsync(accountId, draftId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            DraftAttachments = [];
+        }
     }
 
     private Guid RequireSelectedAccount() =>

@@ -51,6 +51,20 @@
           <TextBox Name="ComposeBccBox" PlaceholderText="Bcc" />
           <TextBox Name="ComposeSubjectBox" PlaceholderText="Subject" />
           <TextBox Name="ComposeBodyBox" PlaceholderText="Body" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" />
+          <TextBlock Text="Draft attachments" FontWeight="SemiBold" Margin="0,8,0,0" />
+          <ListBox Name="DraftAttachmentsList"
+                   MinHeight="40"
+                   MaxHeight="80">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="core:DraftAttachmentInfo">
+                <TextBlock Text="{Binding FileName}" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Name="AttachDraftButton" Content="Attach" Click="OnAttachDraftClick" />
+            <Button Name="RemoveDraftAttachmentButton" Content="Remove Attachment" Click="OnRemoveDraftAttachmentClick" />
+          </StackPanel>
           <TextBlock Text="Drafts" FontWeight="SemiBold" Margin="0,8,0,0" />
           <ListBox Name="DraftsList"
                    MinHeight="60"
