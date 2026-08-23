@@ -8,4 +8,5 @@ public sealed record MessageInfo(
     string Subject,
     string FromAddress,
     DateTimeOffset ReceivedAt,
-    bool IsRead);
+    bool IsRead,
+    bool IsFlagged = false);

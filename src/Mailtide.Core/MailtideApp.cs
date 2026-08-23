@@ -1298,6 +1298,124 @@ public sealed class MailtideApp : IAsyncDisposable
             SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
         }
     }
+
+    public async Task MarkFlaggedAsync(
+        Guid accountId,
+        Guid messageId,
+        bool flagged,
+        CancellationToken cancellationToken = default)
+    {
+        string imapHost;
+        int imapPort;
+        string emailAddress;
+        string mailboxPath;
+        string remoteId;
+        string credentialHandle;
+        CredentialKind credentialKind;
+        OAuthTokenMetadata? oauthMetadata = null;
+        string? secret;
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var message = await _db.Messages
+                .SingleOrDefaultAsync(
+                    m => m.AccountId == accountId && m.Id == messageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (message is null)
+            {
+                throw new InvalidOperationException($"Message '{messageId}' was not found.");
+            }
+
+            if (message.IsFlagged == flagged)
+            {
+                return;
+            }
+
+            var mailbox = await _db.Mailboxes
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    m => m.AccountId == accountId && m.Id == message.MailboxId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (mailbox is null)
+            {
+                throw new InvalidOperationException($"Mailbox '{message.MailboxId}' was not found.");
+            }
+
+            var account = await _db.Accounts
+                .AsNoTracking()
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+            if (account is null)
+            {
+                throw new InvalidOperationException($"Account '{accountId}' was not found.");
+            }
+
+            message.IsFlagged = flagged;
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            imapHost = account.ImapHost;
+            imapPort = account.ImapPort;
+            emailAddress = account.EmailAddress;
+            mailboxPath = mailbox.Path;
+            remoteId = message.RemoteId;
+            credentialHandle = account.CredentialHandle;
+            credentialKind = account.CredentialKind;
+            if (account.CredentialKind == CredentialKind.OAuth)
+            {
+                oauthMetadata = RequireOAuthMetadata(account);
+            }
+
+            secret = await _auth
+                .RetrieveCredentialSecretAsync(account.CredentialHandle, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        if (secret is null)
+        {
+            SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+            return;
+        }
+
+        try
+        {
+            var protocolSecret = await ResolveProtocolSecretAsync(
+                    credentialKind,
+                    oauthMetadata,
+                    secret,
+                    credentialHandle,
+                    invalidateOnAuthFailure: true,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (protocolSecret is null)
+            {
+                SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+                return;
+            }
+
+            await using var client = _imapClientFactory.Create();
+            await client
+                .ConnectAndAuthenticateAsync(imapHost, imapPort, emailAddress, protocolSecret, cancellationToken)
+                .ConfigureAwait(false);
+            await client
+                .SetFlaggedAsync(mailboxPath, remoteId, flagged, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+        }
+    }
     public async Task<IReadOnlyList<AttachmentInfo>> ListAttachmentsAsync(
         Guid accountId,
         Guid messageId,
@@ -2041,6 +2159,24 @@ public sealed class MailtideApp : IAsyncDisposable
     /// EnsureCreated only creates a missing database; it does not add tables to an existing file.
     /// Create any model tables that may be absent after upgrading from an Accounts-only schema.
     /// </summary>
+    private static async Task TryAddMessageFlaggedColumnAsync(
+        MailtideDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await db.Database
+                .ExecuteSqlRawAsync(
+                    "ALTER TABLE Messages ADD COLUMN IsFlagged INTEGER NOT NULL DEFAULT 0",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Column already exists on upgraded stores.
+        }
+    }
+
     private static async Task TryAddAttachmentContentIdColumnAsync(
         MailtideDbContext db,
         CancellationToken cancellationToken)
@@ -2180,6 +2316,7 @@ public sealed class MailtideApp : IAsyncDisposable
         await TryAddDraftOutboxCcColumnsAsync(db, cancellationToken).ConfigureAwait(false);
         await TryAddThreadingColumnsAsync(db, cancellationToken).ConfigureAwait(false);
         await TryAddAttachmentContentIdColumnAsync(db, cancellationToken).ConfigureAwait(false);
+        await TryAddMessageFlaggedColumnAsync(db, cancellationToken).ConfigureAwait(false);
 
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -2459,6 +2596,7 @@ public sealed class MailtideApp : IAsyncDisposable
                         FromAddress = fetched.FromAddress,
                         ReceivedAt = fetched.ReceivedAt,
                         IsRead = summary.IsRead,
+                        IsFlagged = summary.IsFlagged,
                         BodyText = fetched.BodyText,
                         BodyHtml = fetched.BodyHtml,
                         InternetMessageId = fetched.InternetMessageId,
@@ -2493,6 +2631,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 else
                 {
                     message.IsRead = summary.IsRead;
+                    message.IsFlagged = summary.IsFlagged;
                     message.Subject = summary.Subject;
                     message.FromAddress = summary.FromAddress;
                     message.ReceivedAt = summary.ReceivedAt;
@@ -2842,7 +2981,8 @@ public sealed class MailtideApp : IAsyncDisposable
             record.Subject,
             record.FromAddress,
             record.ReceivedAt,
-            record.IsRead);
+            record.IsRead,
+            record.IsFlagged);
 
     private sealed record RemoteMailboxSnapshot(
         RemoteMailbox Mailbox,

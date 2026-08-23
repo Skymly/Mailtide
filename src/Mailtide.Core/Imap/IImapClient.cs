@@ -47,6 +47,12 @@ public interface IImapClient : IAsyncDisposable
         string remoteId,
         CancellationToken cancellationToken = default);
 
+    Task SetFlaggedAsync(
+        string mailboxPath,
+        string remoteId,
+        bool flagged,
+        CancellationToken cancellationToken = default);
+
     Task WaitForMailboxChangeAsync(
         string mailboxPath,
         CancellationToken cancellationToken = default);
@@ -57,7 +63,8 @@ public sealed record RemoteMessageSummary(
     bool IsRead,
     string Subject,
     string FromAddress,
-    DateTimeOffset ReceivedAt);
+    DateTimeOffset ReceivedAt,
+    bool IsFlagged = false);
 
 public sealed record RemoteMailbox(
     string Name,
@@ -87,6 +94,8 @@ public sealed record RemoteMessage(
     public string? BodyHtml { get; init; }
 
     public string? InternetMessageId { get; init; }
+
+    public bool IsFlagged { get; init; }
 
     public IReadOnlyList<string> References { get; init; } = Array.Empty<string>();
 

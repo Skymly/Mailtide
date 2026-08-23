@@ -135,6 +135,13 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastSetUnseenRemoteId { get; private set; }
 
+    public string? LastSetFlaggedMailboxPath { get; private set; }
+
+    public string? LastSetFlaggedRemoteId { get; private set; }
+
+    public bool? LastSetFlaggedValue { get; private set; }
+
+
 
     public List<string> FetchedRemoteIds { get; } = [];
 
@@ -258,7 +265,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             }
 
             return Task.FromResult<IReadOnlyList<RemoteMessageSummary>>(
-                messages.Select(m => new RemoteMessageSummary(m.RemoteId, m.IsRead, m.Subject, m.FromAddress, m.ReceivedAt)).ToList());
+                messages.Select(m => new RemoteMessageSummary(m.RemoteId, m.IsRead, m.Subject, m.FromAddress, m.ReceivedAt, m.IsFlagged)).ToList());
         }
 
         public Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
@@ -306,6 +313,26 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             EnsureAuthenticated();
             _factory.LastSetUnseenMailboxPath = mailboxPath;
             _factory.LastSetUnseenRemoteId = remoteId;
+            return Task.CompletedTask;
+        }
+
+        public Task SetFlaggedAsync(
+            string mailboxPath,
+            string remoteId,
+            bool flagged,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            _factory.LastSetFlaggedMailboxPath = mailboxPath;
+            _factory.LastSetFlaggedRemoteId = remoteId;
+            _factory.LastSetFlaggedValue = flagged;
+            if (_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                _factory._messagesByPath[mailboxPath] = messages
+                    .Select(m => m.RemoteId == remoteId ? m with { IsFlagged = flagged } : m)
+                    .ToList();
+            }
+
             return Task.CompletedTask;
         }
 
