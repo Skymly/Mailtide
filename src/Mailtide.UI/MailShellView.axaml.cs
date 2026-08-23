@@ -468,6 +468,18 @@ public partial class MailShellView : UserControl
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault(d => d.Id == draft.Id);
     }
+    private async void OnMarkUnreadClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        if (browse.SelectedMessageId is null)
+        {
+            return;
+        }
+
+        await browse.MarkSelectedUnreadAsync().ConfigureAwait(true);
+        BindLists();
+    }
+
     private async void OnOpenAttachmentClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();

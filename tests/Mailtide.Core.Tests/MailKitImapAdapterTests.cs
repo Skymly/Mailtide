@@ -82,6 +82,41 @@ public sealed class MailKitImapAdapterTests
         Assert.HasCount(1, messages);
         Assert.IsTrue(messages[0].IsRead);
     }
+
+    [TestMethod]
+    public async Task Real_IMAP_adapter_clears_Seen_flag()
+    {
+        await using var server = LoopbackImapServer.Start(
+        [
+            new SeededMailbox(
+                Path: "INBOX",
+                Attributes: ["Inbox"],
+                Messages:
+                [
+                    new SeededImapMessage(
+                        Uid: 1,
+                        Subject: "Hello offline",
+                        From: "bob@example.com",
+                        InternalDate: new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero),
+                        IsRead: false,
+                        BodyText: "Body stays local."),
+                ]),
+        ]);
+
+        await using var client = new MailKitImapClientFactory().Create();
+        await client.ConnectAndAuthenticateAsync(
+            "127.0.0.1",
+            server.Port,
+            "alice@example.com",
+            "s3cret-password");
+
+        await client.SetSeenAsync("INBOX", "1");
+        Assert.IsTrue((await client.FetchMessagesAsync("INBOX"))[0].IsRead);
+        await client.SetUnseenAsync("INBOX", "1");
+        var messages = await client.FetchMessagesAsync("INBOX");
+        Assert.HasCount(1, messages);
+        Assert.IsFalse(messages[0].IsRead);
+    }
     [TestMethod]
     public async Task Real_IMAP_adapter_lists_summaries_and_fetches_selected_bodies()
     {

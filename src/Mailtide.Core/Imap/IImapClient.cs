@@ -42,6 +42,11 @@ public interface IImapClient : IAsyncDisposable
         string remoteId,
         CancellationToken cancellationToken = default);
 
+    Task SetUnseenAsync(
+        string mailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default);
+
     Task WaitForMailboxChangeAsync(
         string mailboxPath,
         CancellationToken cancellationToken = default);

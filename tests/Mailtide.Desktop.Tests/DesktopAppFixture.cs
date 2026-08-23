@@ -160,6 +160,12 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
+        public Task SetUnseenAsync(
+            string mailboxPath,
+            string remoteId,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
         public Task SetSeenAsync(
             string mailboxPath,
             string remoteId,
