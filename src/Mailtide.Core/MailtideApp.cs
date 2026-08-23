@@ -1527,6 +1527,7 @@ public sealed class MailtideApp : IAsyncDisposable
 
                 existing.ToAddresses = EncodeAddresses(content.ToAddresses);
                 existing.CcAddresses = EncodeAddresses(content.CcAddresses);
+                existing.BccAddresses = EncodeAddresses(content.BccAddresses);
                 existing.Subject = content.Subject;
                 existing.BodyText = content.BodyText;
                 existing.UpdatedAt = now;
@@ -1540,6 +1541,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 AccountId = accountId,
                 ToAddresses = EncodeAddresses(content.ToAddresses),
                 CcAddresses = EncodeAddresses(content.CcAddresses),
+                BccAddresses = EncodeAddresses(content.BccAddresses),
                 Subject = content.Subject,
                 BodyText = content.BodyText,
                 UpdatedAt = now,
@@ -1631,6 +1633,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 AccountId = accountId,
                 ToAddresses = draft.ToAddresses,
                 CcAddresses = draft.CcAddresses,
+                BccAddresses = draft.BccAddresses,
                 Subject = draft.Subject,
                 BodyText = draft.BodyText,
                 InReplyTo = draft.InReplyTo,
@@ -1819,6 +1822,7 @@ public sealed class MailtideApp : IAsyncDisposable
                         item.BodyText)
                     {
                         CcAddresses = DecodeAddresses(item.CcAddresses),
+                        BccAddresses = DecodeAddresses(item.BccAddresses),
                         InReplyTo = item.InReplyTo,
                         References = DecodeAddresses(item.ReferencesJson),
                     };
@@ -2029,6 +2033,8 @@ public sealed class MailtideApp : IAsyncDisposable
                  {
                      "ALTER TABLE Drafts ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
                      "ALTER TABLE OutboxItems ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
+                     "ALTER TABLE Drafts ADD COLUMN BccAddresses TEXT NOT NULL DEFAULT '[]'",
+                     "ALTER TABLE OutboxItems ADD COLUMN BccAddresses TEXT NOT NULL DEFAULT '[]'",
                  })
         {
             try
@@ -2685,6 +2691,7 @@ public sealed class MailtideApp : IAsyncDisposable
             record.UpdatedAt)
         {
             CcAddresses = DecodeAddresses(record.CcAddresses),
+            BccAddresses = DecodeAddresses(record.BccAddresses),
             InReplyTo = record.InReplyTo,
             References = DecodeAddresses(record.ReferencesJson),
         };

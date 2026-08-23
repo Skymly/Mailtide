@@ -70,6 +70,11 @@ internal sealed class MailKitSmtpClient : ISmtpClient
                 mime.Cc.Add(MailboxAddress.Parse(cc));
             }
 
+            foreach (var bcc in message.BccAddresses)
+            {
+                mime.Bcc.Add(MailboxAddress.Parse(bcc));
+            }
+
             if (!string.IsNullOrWhiteSpace(message.InReplyTo))
             {
                 mime.InReplyTo = message.InReplyTo;

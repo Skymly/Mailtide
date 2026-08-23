@@ -391,6 +391,18 @@ public sealed class ComposeOutboxShellTests
         CollectionAssert.AreEqual(new[] { "bob@example.com" }, shell.Drafts[0].ToAddresses.ToArray());
         CollectionAssert.AreEqual(new[] { "carol@example.com" }, shell.Drafts[0].CcAddresses.ToArray());
     }
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_SaveDraft_keeps_Bcc_separate()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SaveDraftAsync("bob@example.com", "Hello", "Body", ccAddresses: "", bccAddresses: "hidden@example.com");
+        CollectionAssert.AreEqual(new[] { "hidden@example.com" }, shell.Drafts[0].BccAddresses.ToArray());
+    }
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(
             DisplayName: displayName,
