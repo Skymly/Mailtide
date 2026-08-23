@@ -184,7 +184,7 @@ public partial class MailShellView : UserControl
         }
 
         await compose
-            .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty)
+            .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty)
             .ConfigureAwait(true);
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault();
@@ -202,7 +202,7 @@ public partial class MailShellView : UserControl
         if (draft is null)
         {
             await compose
-                .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty)
+                .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty)
                 .ConfigureAwait(true);
             draft = compose.Drafts.FirstOrDefault();
             if (draft is null)
@@ -382,6 +382,7 @@ public partial class MailShellView : UserControl
             .ConfigureAwait(true);
 
         ComposeToBox.Text = string.Join(", ", draft.ToAddresses);
+        ComposeCcBox.Text = string.Join(", ", draft.CcAddresses);
         ComposeSubjectBox.Text = draft.Subject;
         ComposeBodyBox.Text = draft.BodyText;
         BindLists();
@@ -407,6 +408,7 @@ public partial class MailShellView : UserControl
             .ConfigureAwait(true);
 
         ComposeToBox.Text = string.Join(", ", draft.ToAddresses);
+        ComposeCcBox.Text = string.Join(", ", draft.CcAddresses);
         ComposeSubjectBox.Text = draft.Subject;
         ComposeBodyBox.Text = draft.BodyText;
         BindLists();
@@ -432,6 +434,7 @@ public partial class MailShellView : UserControl
             .ConfigureAwait(true);
 
         ComposeToBox.Text = string.Join(", ", draft.ToAddresses);
+        ComposeCcBox.Text = string.Join(", ", draft.CcAddresses);
         ComposeSubjectBox.Text = draft.Subject;
         ComposeBodyBox.Text = draft.BodyText;
         BindLists();
@@ -469,6 +472,7 @@ public partial class MailShellView : UserControl
     private void ClearComposeFields()
     {
         ComposeToBox.Text = string.Empty;
+        ComposeCcBox.Text = string.Empty;
         ComposeSubjectBox.Text = string.Empty;
         ComposeBodyBox.Text = string.Empty;
     }

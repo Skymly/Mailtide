@@ -8,6 +8,8 @@ internal sealed class DraftRecord
 
     public required string ToAddresses { get; set; }
 
+    public string CcAddresses { get; set; } = "[]";
+
     public required string Subject { get; set; }
 
     public required string BodyText { get; set; }

@@ -282,10 +282,33 @@ public sealed class ComposeOutboxShellTests
         var draft = await shell.StartReplyAllAsync(message.AccountId, message.Id);
 
         CollectionAssert.AreEqual(
-            new[] { "bob@example.com", "carol@example.com", "dave@example.com" },
+            new[] { "bob@example.com", "carol@example.com" },
             draft.ToAddresses.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "dave@example.com" },
+            draft.CcAddresses.ToArray());
         Assert.AreEqual("Re: Hello", draft.Subject);
         Assert.HasCount(1, shell.Drafts);
+    }
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_SaveDraft_keeps_Cc_separate()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+
+        await shell.SaveDraftAsync(
+            toAddresses: "bob@example.com",
+            subject: "Hello",
+            bodyText: "Body",
+            ccAddresses: "carol@example.com");
+
+        Assert.HasCount(1, shell.Drafts);
+        CollectionAssert.AreEqual(new[] { "bob@example.com" }, shell.Drafts[0].ToAddresses.ToArray());
+        CollectionAssert.AreEqual(new[] { "carol@example.com" }, shell.Drafts[0].CcAddresses.ToArray());
     }
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(

@@ -3,7 +3,10 @@ namespace Mailtide.Core;
 public sealed record DraftContent(
     IReadOnlyList<string> ToAddresses,
     string Subject,
-    string BodyText);
+    string BodyText)
+{
+    public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
+}
 
 public sealed record DraftInfo(
     Guid Id,
@@ -11,4 +14,7 @@ public sealed record DraftInfo(
     IReadOnlyList<string> ToAddresses,
     string Subject,
     string BodyText,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
+}

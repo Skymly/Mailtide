@@ -38,12 +38,17 @@ public sealed class ComposeOutboxShell
         string toAddresses,
         string subject,
         string bodyText,
+        string ccAddresses = "",
         CancellationToken cancellationToken = default)
     {
         var accountId = RequireSelectedAccount();
         var addresses = ParseAddresses(toAddresses);
+        var cc = ParseAddresses(ccAddresses);
         await _app
-            .SaveDraftAsync(accountId, new DraftContent(addresses, subject, bodyText), cancellationToken)
+            .SaveDraftAsync(
+                accountId,
+                new DraftContent(addresses, subject, bodyText) { CcAddresses = cc },
+                cancellationToken)
             .ConfigureAwait(false);
         Drafts = await _app.ListDraftsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
