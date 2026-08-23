@@ -127,8 +127,13 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="core:MessageInfo">
               <StackPanel>
-                <TextBlock Text="{Binding Subject}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Subject}"
+                           TextWrapping="Wrap"
+                           FontWeight="{Binding IsRead, Converter={x:Static local:UnreadFontWeightConverter.Instance}}" />
                 <TextBlock Text="{Binding FromAddress}" Opacity="0.7" FontSize="12" />
+                <TextBlock Text="{Binding ReceivedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm} UTC'}"
+                           Opacity="0.7"
+                           FontSize="12" />
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
