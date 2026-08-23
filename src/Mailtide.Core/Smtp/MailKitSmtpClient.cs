@@ -86,10 +86,24 @@ internal sealed class MailKitSmtpClient : ISmtpClient
             }
 
             mime.Subject = message.Subject;
-            mime.Body = new TextPart("plain")
+            if (message.Attachments.Count == 0)
             {
-                Text = message.BodyText,
-            };
+                mime.Body = new TextPart("plain")
+                {
+                    Text = message.BodyText,
+                };
+            }
+            else
+            {
+                var builder = new BodyBuilder { TextBody = message.BodyText };
+                foreach (var attachment in message.Attachments)
+                {
+                    var type = ContentType.Parse(attachment.ContentType);
+                    builder.Attachments.Add(attachment.FileName, attachment.Content, type);
+                }
+
+                mime.Body = builder.ToMessageBody();
+            }
 
             await client.SendAsync(mime, cancellationToken).ConfigureAwait(false);
         }

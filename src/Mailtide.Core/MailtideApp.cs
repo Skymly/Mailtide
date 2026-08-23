@@ -2361,9 +2361,10 @@ public sealed class MailtideApp : IAsyncDisposable
             }
 
             var now = DateTimeOffset.UtcNow;
+            var outboxItemId = Guid.NewGuid();
             _db.OutboxItems.Add(new OutboxItemRecord
             {
-                Id = Guid.NewGuid(),
+                Id = outboxItemId,
                 AccountId = accountId,
                 ToAddresses = draft.ToAddresses,
                 CcAddresses = draft.CcAddresses,
@@ -2376,6 +2377,24 @@ public sealed class MailtideApp : IAsyncDisposable
                 ErrorMessage = null,
                 UpdatedAt = now,
             });
+            var draftAttachments = await _db.DraftAttachments
+                .Where(a => a.AccountId == accountId && a.DraftId == draftId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var attachment in draftAttachments)
+            {
+                _db.OutboxAttachments.Add(new OutboxAttachmentRecord
+                {
+                    Id = Guid.NewGuid(),
+                    AccountId = accountId,
+                    OutboxItemId = outboxItemId,
+                    FileName = attachment.FileName,
+                    ContentType = attachment.ContentType,
+                    BlobRelativePath = attachment.BlobRelativePath,
+                });
+            }
+
+            _db.DraftAttachments.RemoveRange(draftAttachments);
             _db.Drafts.Remove(draft);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -2549,6 +2568,26 @@ public sealed class MailtideApp : IAsyncDisposable
                     item.UpdatedAt = DateTimeOffset.UtcNow;
                     await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
+                    var outboxAttachments = await _db.OutboxAttachments
+                        .AsNoTracking()
+                        .Where(a => a.AccountId == accountId && a.OutboxItemId == item.Id)
+                        .ToListAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    var outboundAttachments = new List<OutboundAttachment>();
+                    foreach (var attachment in outboxAttachments)
+                    {
+                        var blobPath = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
+                        if (!File.Exists(blobPath))
+                        {
+                            continue;
+                        }
+
+                        outboundAttachments.Add(new OutboundAttachment(
+                            attachment.FileName,
+                            attachment.ContentType,
+                            await File.ReadAllBytesAsync(blobPath, cancellationToken).ConfigureAwait(false)));
+                    }
+
                     outbound = new OutboundMessage(
                         account.EmailAddress,
                         DecodeAddresses(item.ToAddresses),
@@ -2559,6 +2598,7 @@ public sealed class MailtideApp : IAsyncDisposable
                         BccAddresses = DecodeAddresses(item.BccAddresses),
                         InReplyTo = item.InReplyTo,
                         References = DecodeAddresses(item.ReferencesJson),
+                        Attachments = outboundAttachments,
                     };
                 }
                 finally
@@ -2985,6 +3025,29 @@ public sealed class MailtideApp : IAsyncDisposable
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "OutboxAttachments" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_OutboxAttachments" PRIMARY KEY,
+                    "AccountId" TEXT NOT NULL,
+                    "OutboxItemId" TEXT NOT NULL,
+                    "FileName" TEXT NOT NULL,
+                    "ContentType" TEXT NOT NULL,
+                    "BlobRelativePath" TEXT NOT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE INDEX IF NOT EXISTS "IX_OutboxAttachments_AccountId_OutboxItemId"
+                ON "OutboxAttachments" ("AccountId", "OutboxItemId")
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
 
         await EnsureAccountsOAuthColumnsAsync(db, cancellationToken).ConfigureAwait(false);
     }

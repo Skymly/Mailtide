@@ -37,4 +37,11 @@ public sealed record OutboundMessage(
     public string? InReplyTo { get; init; }
 
     public IReadOnlyList<string> References { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<OutboundAttachment> Attachments { get; init; } = Array.Empty<OutboundAttachment>();
 }
+
+public sealed record OutboundAttachment(
+    string FileName,
+    string ContentType,
+    byte[] Content);

@@ -23,6 +23,8 @@ internal sealed class MailtideDbContext : DbContext
 
     public DbSet<OutboxItemRecord> OutboxItems => Set<OutboxItemRecord>();
 
+    public DbSet<OutboxAttachmentRecord> OutboxAttachments => Set<OutboxAttachmentRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var account = modelBuilder.Entity<AccountRecord>();
@@ -91,5 +93,13 @@ internal sealed class MailtideDbContext : DbContext
         outbox.Property(o => o.BodyText).IsRequired();
         outbox.Property(o => o.State).HasConversion<string>();
         outbox.HasIndex(o => o.AccountId);
+
+        var outboxAttachment = modelBuilder.Entity<OutboxAttachmentRecord>();
+        outboxAttachment.ToTable("OutboxAttachments");
+        outboxAttachment.HasKey(a => a.Id);
+        outboxAttachment.Property(a => a.FileName).IsRequired();
+        outboxAttachment.Property(a => a.ContentType).IsRequired();
+        outboxAttachment.Property(a => a.BlobRelativePath).IsRequired();
+        outboxAttachment.HasIndex(a => new { a.AccountId, a.OutboxItemId });
     }
 }

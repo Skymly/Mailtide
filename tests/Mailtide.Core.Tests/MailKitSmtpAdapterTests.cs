@@ -28,6 +28,10 @@ public sealed class MailKitSmtpAdapterTests
                 CcAddresses = ["carol@example.com"],
                 InReplyTo = "<orig@example.com>",
                 References = ["<root@example.com>", "<orig@example.com>"],
+                Attachments =
+                [
+                    new OutboundAttachment("notes.txt", "text/plain", "hello"u8.ToArray()),
+                ],
             });
 
         Assert.HasCount(1, server.AcceptedMessages);
@@ -37,6 +41,7 @@ public sealed class MailKitSmtpAdapterTests
         StringAssert.Contains(server.AcceptedMessages[0], "carol@example.com");
         StringAssert.Contains(server.AcceptedMessages[0], "orig@example.com");
         StringAssert.Contains(server.AcceptedMessages[0], "root@example.com");
+        StringAssert.Contains(server.AcceptedMessages[0], "notes.txt");
     }
 
     [TestMethod]
