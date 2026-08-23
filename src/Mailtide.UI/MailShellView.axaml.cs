@@ -380,6 +380,44 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private void OnShellKeyDown(object? sender, KeyEventArgs e)
+    {
+        var shortcut = MailShellShortcuts.FromKey(e.Key, e.Source is TextBox);
+        if (shortcut == MailShellShortcut.None)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        switch (shortcut)
+        {
+            case MailShellShortcut.Reply:
+                OnReplyClick(sender, e);
+                return;
+            case MailShellShortcut.ReplyAll:
+                OnReplyAllClick(sender, e);
+                return;
+            case MailShellShortcut.Forward:
+                OnForwardClick(sender, e);
+                return;
+            case MailShellShortcut.MarkUnread:
+                OnMarkUnreadClick(sender, e);
+                return;
+            case MailShellShortcut.Flag:
+                OnFlagClick(sender, e);
+                return;
+            case MailShellShortcut.Delete:
+                OnDeleteClick(sender, e);
+                return;
+            case MailShellShortcut.FocusSearch:
+                MessageSearchBox.Focus();
+                return;
+            case MailShellShortcut.NewDraft:
+                OnNewDraftClick(sender, e);
+                return;
+        }
+    }
+
     private async void OnMessageSearchKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter)

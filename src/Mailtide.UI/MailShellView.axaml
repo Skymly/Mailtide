@@ -5,7 +5,9 @@
              mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="720"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             x:Class="Mailtide.UI.MailShellView">
+             x:Class="Mailtide.UI.MailShellView"
+             Focusable="True"
+             KeyDown="OnShellKeyDown">
   <DockPanel Margin="12">
     <Border Name="UpdateBanner"
             DockPanel.Dock="Top"
