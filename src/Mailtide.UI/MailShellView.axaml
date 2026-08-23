@@ -223,6 +223,11 @@
                 Content="Flag"
                 Margin="0,0,0,8"
                 Click="OnFlagClick" />
+        <Button Name="DeleteButton"
+                DockPanel.Dock="Top"
+                Content="Delete"
+                Margin="0,0,0,8"
+                Click="OnDeleteClick" />
         <TextBlock DockPanel.Dock="Top" Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,8" />
         <TextBlock Name="AttachmentOpenErrorText"
                    DockPanel.Dock="Top"

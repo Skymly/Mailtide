@@ -424,6 +424,39 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_MoveSelectedToTrash_removes_Message_from_Inbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "del-1",
+                Subject: "Delete me",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "gone"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        await shell.MoveSelectedToTrashAsync();
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsNull(shell.SelectedMessageId);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Trash);
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, trash.Id));
+    }
+
+    [TestMethod]
     public async Task BrowseShell_SelectMessage_loads_plain_text_body_and_attachments()
     {
         using var fixture = new DesktopAppFixture();

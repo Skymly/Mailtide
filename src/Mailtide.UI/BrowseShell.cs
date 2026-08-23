@@ -298,6 +298,36 @@ public sealed class BrowseShell
             await SelectMessageAsync(selectedMessageId, cancellationToken).ConfigureAwait(false);
         }
     }
+    public async Task MoveSelectedToTrashAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedMessageId is not { } messageId)
+        {
+            throw new InvalidOperationException("Select a Message before moving it to Trash.");
+        }
+
+        var message = Messages.FirstOrDefault(m => m.Id == messageId)
+            ?? throw new InvalidOperationException("Message is not in the current list.");
+
+        await _app
+            .MoveToTrashAsync(message.AccountId, messageId, cancellationToken)
+            .ConfigureAwait(false);
+
+        ClearMessageDetail();
+        if (ShowingUnifiedInbox)
+        {
+            Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
+        {
+            Messages = await _app
+                .ListMessagesAsync(accountId, mailboxId, cancellationToken)
+                .ConfigureAwait(false);
+            Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
+        }
+
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task OpenAttachmentAsync(
         Guid attachmentId,
         CancellationToken cancellationToken = default)

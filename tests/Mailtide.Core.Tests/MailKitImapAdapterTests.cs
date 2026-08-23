@@ -294,4 +294,38 @@ public sealed class MailKitImapAdapterTests
         Assert.HasCount(1, messages[0].Attachments);
         Assert.AreEqual("pic@example.com", messages[0].Attachments[0].ContentId);
     }
+
+    [TestMethod]
+    public async Task Real_IMAP_adapter_moves_a_Message_between_Mailboxes()
+    {
+        await using var server = LoopbackImapServer.Start(
+        [
+            new SeededMailbox(
+                Path: "INBOX",
+                Attributes: ["Inbox"],
+                Messages:
+                [
+                    new SeededImapMessage(
+                        Uid: 1,
+                        Subject: "Bye",
+                        From: "bob@example.com",
+                        InternalDate: new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero),
+                        IsRead: false,
+                        BodyText: "gone"),
+                ]),
+            new SeededMailbox(
+                Path: "Trash",
+                Attributes: ["Trash"],
+                Messages: []),
+        ]);
+
+        await using var client = new MailKitImapClientFactory().Create();
+        await client.ConnectAndAuthenticateAsync(
+            "127.0.0.1",
+            server.Port,
+            "alice@example.com",
+            "s3cret-password");
+
+        await client.MoveAsync("INBOX", "Trash", "1");
+    }
 }

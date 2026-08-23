@@ -176,7 +176,7 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
             }
             else if (upper.StartsWith("CAPABILITY", StringComparison.Ordinal))
             {
-                await writer.WriteLineAsync("* CAPABILITY IMAP4rev1 IDLE AUTH=PLAIN AUTH=LOGIN LOGIN NAMESPACE")
+                await writer.WriteLineAsync("* CAPABILITY IMAP4rev1 IDLE MOVE AUTH=PLAIN AUTH=LOGIN LOGIN NAMESPACE")
                     .ConfigureAwait(false);
                 await writer.WriteLineAsync($"{tag} OK CAPABILITY completed").ConfigureAwait(false);
             }
@@ -239,6 +239,10 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
                     .ConfigureAwait(false);
                 var access = upper.StartsWith("EXAMINE", StringComparison.Ordinal) ? "READ-ONLY" : "READ-WRITE";
                 await writer.WriteLineAsync($"{tag} OK [{access}] completed").ConfigureAwait(false);
+            }
+            else if (upper.Contains("MOVE", StringComparison.Ordinal))
+            {
+                await writer.WriteLineAsync($"{tag} OK MOVE completed").ConfigureAwait(false);
             }
             else if (upper.Contains("FETCH", StringComparison.Ordinal))
             {
