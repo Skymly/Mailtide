@@ -42,6 +42,12 @@ public sealed class ComposeOutboxShell
         OutboxItems = [];
     }
 
+    public void StartNewDraft()
+    {
+        _ = RequireSelectedAccount();
+        SelectedDraftId = null;
+    }
+
     public async Task SaveDraftAsync(
         string toAddresses,
         string subject,
