@@ -49,6 +49,8 @@ internal sealed class MailtideDbContext : DbContext
         message.Property(m => m.Subject).IsRequired();
         message.Property(m => m.FromAddress).IsRequired();
         message.Property(m => m.BodyText).IsRequired();
+        message.Property(m => m.ToAddresses).IsRequired();
+        message.Property(m => m.CcAddresses).IsRequired();
         message.HasIndex(m => new { m.AccountId, m.MailboxId, m.RemoteId }).IsUnique();
 
         var attachment = modelBuilder.Entity<AttachmentRecord>();

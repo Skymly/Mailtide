@@ -19,4 +19,8 @@ internal sealed class MessageRecord
     public bool IsRead { get; set; }
 
     public required string BodyText { get; set; }
+
+    public string ToAddresses { get; set; } = "[]";
+
+    public string CcAddresses { get; set; } = "[]";
 }

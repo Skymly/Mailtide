@@ -255,6 +255,38 @@ public sealed class ComposeOutboxShellTests
         Assert.HasCount(1, shell.Drafts);
         Assert.AreEqual(draft.Id, shell.Drafts[0].Id);
     }
+    [TestMethod]
+    public async Task ComposeOutboxShell_StartReplyAll_drops_self_and_keeps_other_recipients()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "uid-ra",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 5, 2, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "hi")
+            {
+                ToAddresses = ["alice@example.com", "carol@example.com"],
+                CcAddresses = ["dave@example.com"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var message = (await app.ListUnifiedInboxAsync()).Single();
+
+        var shell = new ComposeOutboxShell(app);
+        var draft = await shell.StartReplyAllAsync(message.AccountId, message.Id);
+
+        CollectionAssert.AreEqual(
+            new[] { "bob@example.com", "carol@example.com", "dave@example.com" },
+            draft.ToAddresses.ToArray());
+        Assert.AreEqual("Re: Hello", draft.Subject);
+        Assert.HasCount(1, shell.Drafts);
+    }
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(
             DisplayName: displayName,

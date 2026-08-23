@@ -137,6 +137,8 @@ internal sealed class MailKitImapClient : IImapClient
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
                     BodyText: ExtractBodyText(mime))
                 {
+                    ToAddresses = ExtractAddresses(mime.To),
+                    CcAddresses = ExtractAddresses(mime.Cc),
                     Attachments = ExtractAttachments(mime),
                 };
                 messages.Add(remote);
@@ -247,6 +249,8 @@ internal sealed class MailKitImapClient : IImapClient
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
                     BodyText: ExtractBodyText(mime))
                 {
+                    ToAddresses = ExtractAddresses(mime.To),
+                    CcAddresses = ExtractAddresses(mime.Cc),
                     Attachments = ExtractAttachments(mime),
                 });
             }
@@ -394,6 +398,11 @@ internal sealed class MailKitImapClient : IImapClient
     private static string NormalizeBody(string? body) =>
         (body ?? string.Empty).TrimEnd('\r', '\n');
 
+    private static IReadOnlyList<string> ExtractAddresses(InternetAddressList list) =>
+        list.Mailboxes
+            .Select(mailbox => mailbox.Address)
+            .Where(address => !string.IsNullOrWhiteSpace(address))
+            .ToList();
     private static IReadOnlyList<RemoteAttachment> ExtractAttachments(MimeMessage mime)
     {
         var attachments = new List<RemoteAttachment>();

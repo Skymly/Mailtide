@@ -966,6 +966,57 @@ public sealed class MailtideApp : IAsyncDisposable
             _dbGate.Release();
         }
     }
+    public async Task<DraftInfo> StartReplyAllAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var account = await _db.Accounts
+                .AsNoTracking()
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+            if (account is null)
+            {
+                throw new InvalidOperationException($"Account '{accountId}' was not found.");
+            }
+
+            var message = await _db.Messages
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    m => m.AccountId == accountId && m.Id == messageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (message is null)
+            {
+                throw new InvalidOperationException($"Message '{messageId}' was not found.");
+            }
+
+            var self = account.EmailAddress;
+            var to = DistinctAddresses(
+                [message.FromAddress, ..DecodeAddresses(message.ToAddresses), ..DecodeAddresses(message.CcAddresses)],
+                except: [self]);
+
+            var record = new DraftRecord
+            {
+                Id = Guid.NewGuid(),
+                AccountId = accountId,
+                ToAddresses = EncodeAddresses(to),
+                Subject = ReplySubject(message.Subject),
+                BodyText = QuoteForReply(message.FromAddress, message.ReceivedAt, message.BodyText),
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            _db.Drafts.Add(record);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return ToDraftInfo(record);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
     public async Task<DraftInfo> StartReplyAsync(
         Guid accountId,
         Guid messageId,
@@ -1469,6 +1520,26 @@ public sealed class MailtideApp : IAsyncDisposable
     /// EnsureCreated only creates a missing database; it does not add tables to an existing file.
     /// Create any model tables that may be absent after upgrading from an Accounts-only schema.
     /// </summary>
+    private static async Task TryAddMessageRecipientColumnsAsync(
+        MailtideDbContext db,
+        CancellationToken cancellationToken)
+    {
+        foreach (var sql in new[]
+                 {
+                     "ALTER TABLE Messages ADD COLUMN ToAddresses TEXT NOT NULL DEFAULT '[]'",
+                     "ALTER TABLE Messages ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
+                 })
+        {
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Column already exists on upgraded stores.
+            }
+        }
+    }
     private static async Task EnsureStoreSchemaAsync(
         MailtideDbContext db,
         CancellationToken cancellationToken)
@@ -1520,6 +1591,8 @@ public sealed class MailtideApp : IAsyncDisposable
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        await TryAddMessageRecipientColumnsAsync(db, cancellationToken).ConfigureAwait(false);
 
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -1800,6 +1873,8 @@ public sealed class MailtideApp : IAsyncDisposable
                         ReceivedAt = fetched.ReceivedAt,
                         IsRead = summary.IsRead,
                         BodyText = fetched.BodyText,
+                        ToAddresses = EncodeAddresses(fetched.ToAddresses),
+                        CcAddresses = EncodeAddresses(fetched.CcAddresses),
                     };
                     _db.Messages.Add(message);
 
@@ -1833,6 +1908,8 @@ public sealed class MailtideApp : IAsyncDisposable
                     if (fetched is not null)
                     {
                         message.BodyText = fetched.BodyText;
+                        message.ToAddresses = EncodeAddresses(fetched.ToAddresses);
+                        message.CcAddresses = EncodeAddresses(fetched.CcAddresses);
                     }
                 }
 
@@ -2018,6 +2095,26 @@ public sealed class MailtideApp : IAsyncDisposable
             "yyyy-MM-dd HH:mm",
             System.Globalization.CultureInfo.InvariantCulture);
         return $"\n---------- Forwarded Message ----------\nFrom: {fromAddress}\nDate: {when} UTC\nSubject: {subject}\n\n{bodyText}";
+    }
+    private static IReadOnlyList<string> DistinctAddresses(
+        IEnumerable<string> addresses,
+        IEnumerable<string> except)
+    {
+        var skip = except
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        foreach (var address in addresses)
+        {
+            if (string.IsNullOrWhiteSpace(address) || skip.Contains(address) || result.Contains(address, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            result.Add(address);
+        }
+
+        return result;
     }
     private static string ReplySubject(string subject) =>
         subject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase)
