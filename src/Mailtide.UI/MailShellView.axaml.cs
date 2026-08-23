@@ -176,6 +176,19 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private void OnNewDraftClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (compose.SelectedAccountId is null)
+        {
+            return;
+        }
+
+        compose.StartNewDraft();
+        ClearComposeFields();
+        BindLists();
+    }
+
     private async void OnSaveDraftClick(object? sender, RoutedEventArgs e)
     {
         var compose = RequireCompose();
