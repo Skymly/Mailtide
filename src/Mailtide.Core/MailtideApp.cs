@@ -1002,6 +1002,51 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<string?> GetMessageHtmlForDisplayAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        var html = await GetMessageHtmlAsync(accountId, messageId, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(html))
+        {
+            return html;
+        }
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.Attachments
+                .AsNoTracking()
+                .Where(a => a.AccountId == accountId && a.MessageId == messageId && a.ContentId != null)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (records.Count == 0)
+            {
+                return html;
+            }
+
+            var parts = new List<(string ContentId, string ContentType, byte[] Content)>();
+            foreach (var record in records)
+            {
+                var blobPath = Path.Combine(_appDataDirectory, record.BlobRelativePath);
+                if (!File.Exists(blobPath) || string.IsNullOrWhiteSpace(record.ContentId))
+                {
+                    continue;
+                }
+
+                var bytes = await File.ReadAllBytesAsync(blobPath, cancellationToken).ConfigureAwait(false);
+                parts.Add((record.ContentId, record.ContentType, bytes));
+            }
+
+            return HtmlCidInliner.Inline(html, parts);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     public async Task MarkReadAsync(
         Guid accountId,
         Guid messageId,
@@ -1870,6 +1915,22 @@ public sealed class MailtideApp : IAsyncDisposable
     /// EnsureCreated only creates a missing database; it does not add tables to an existing file.
     /// Create any model tables that may be absent after upgrading from an Accounts-only schema.
     /// </summary>
+    private static async Task TryAddAttachmentContentIdColumnAsync(
+        MailtideDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await db.Database
+                .ExecuteSqlRawAsync("ALTER TABLE Attachments ADD COLUMN ContentId TEXT", cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Column already exists on upgraded stores.
+        }
+    }
+
     private static async Task TryAddThreadingColumnsAsync(
         MailtideDbContext db,
         CancellationToken cancellationToken)
@@ -1992,6 +2053,7 @@ public sealed class MailtideApp : IAsyncDisposable
         await TryAddMessageRecipientColumnsAsync(db, cancellationToken).ConfigureAwait(false);
         await TryAddDraftOutboxCcColumnsAsync(db, cancellationToken).ConfigureAwait(false);
         await TryAddThreadingColumnsAsync(db, cancellationToken).ConfigureAwait(false);
+        await TryAddAttachmentContentIdColumnAsync(db, cancellationToken).ConfigureAwait(false);
 
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -2298,6 +2360,7 @@ public sealed class MailtideApp : IAsyncDisposable
                             FileName = remoteAttachment.FileName,
                             ContentType = remoteAttachment.ContentType,
                             BlobRelativePath = blobRelativePath,
+                            ContentId = remoteAttachment.ContentId,
                         });
                     }
                 }

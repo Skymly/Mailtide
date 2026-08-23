@@ -482,7 +482,19 @@ internal sealed class MailKitImapClient : IImapClient
         var attachments = new List<RemoteAttachment>();
         foreach (var part in mime.BodyParts.OfType<MimePart>())
         {
-            if (!part.IsAttachment && string.IsNullOrEmpty(part.FileName))
+            var contentId = string.IsNullOrWhiteSpace(part.ContentId)
+                ? null
+                : part.ContentId.Trim().Trim('<', '>');
+            if (!part.IsAttachment
+                && string.IsNullOrEmpty(part.FileName)
+                && string.IsNullOrEmpty(contentId))
+            {
+                continue;
+            }
+
+            if (!part.IsAttachment
+                && (part.ContentType.IsMimeType("text", "plain")
+                    || part.ContentType.IsMimeType("text", "html")))
             {
                 continue;
             }
@@ -496,9 +508,12 @@ internal sealed class MailKitImapClient : IImapClient
             part.Content.DecodeTo(memory);
             attachments.Add(
                 new RemoteAttachment(
-                    FileName: part.FileName ?? "attachment",
+                    FileName: part.FileName ?? (contentId is null ? "attachment" : "inline"),
                     ContentType: part.ContentType.MimeType,
-                    Content: memory.ToArray()));
+                    Content: memory.ToArray())
+                {
+                    ContentId = contentId,
+                });
         }
 
         return attachments;

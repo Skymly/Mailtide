@@ -16,4 +16,6 @@ internal sealed class AttachmentRecord
     /// Path relative to the app-data directory for the blob file on disk.
     /// </summary>
     public required string BlobRelativePath { get; set; }
+
+    public string? ContentId { get; set; }
 }
