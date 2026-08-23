@@ -86,7 +86,7 @@ internal sealed class MailKitSmtpClient : ISmtpClient
             }
 
             mime.Subject = message.Subject;
-            if (message.Attachments.Count == 0)
+            if (message.Attachments.Count == 0 && string.IsNullOrEmpty(message.BodyHtml))
             {
                 mime.Body = new TextPart("plain")
                 {
@@ -95,7 +95,11 @@ internal sealed class MailKitSmtpClient : ISmtpClient
             }
             else
             {
-                var builder = new BodyBuilder { TextBody = message.BodyText };
+                var builder = new BodyBuilder
+                {
+                    TextBody = message.BodyText,
+                    HtmlBody = string.IsNullOrEmpty(message.BodyHtml) ? null : message.BodyHtml,
+                };
                 foreach (var attachment in message.Attachments)
                 {
                     var type = ContentType.Parse(attachment.ContentType);

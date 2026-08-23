@@ -8,6 +8,8 @@ public sealed record DraftContent(
     public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> BccAddresses { get; init; } = Array.Empty<string>();
+
+    public string? BodyHtml { get; init; }
 }
 
 public sealed record DraftInfo(
@@ -25,4 +27,6 @@ public sealed record DraftInfo(
     public string? InReplyTo { get; init; }
 
     public IReadOnlyList<string> References { get; init; } = Array.Empty<string>();
+
+    public string? BodyHtml { get; init; }
 }

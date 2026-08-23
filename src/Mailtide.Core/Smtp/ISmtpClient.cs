@@ -39,6 +39,8 @@ public sealed record OutboundMessage(
     public IReadOnlyList<string> References { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<OutboundAttachment> Attachments { get; init; } = Array.Empty<OutboundAttachment>();
+
+    public string? BodyHtml { get; init; }
 }
 
 public sealed record OutboundAttachment(

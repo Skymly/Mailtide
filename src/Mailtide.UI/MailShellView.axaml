@@ -51,6 +51,7 @@
           <TextBox Name="ComposeBccBox" PlaceholderText="Bcc" />
           <TextBox Name="ComposeSubjectBox" PlaceholderText="Subject" />
           <TextBox Name="ComposeBodyBox" PlaceholderText="Body" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" />
+          <TextBox Name="ComposeHtmlBox" PlaceholderText="HTML (optional)" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" />
           <TextBlock Text="Draft attachments" FontWeight="SemiBold" Margin="0,8,0,0" />
           <ListBox Name="DraftAttachmentsList"
                    MinHeight="40"

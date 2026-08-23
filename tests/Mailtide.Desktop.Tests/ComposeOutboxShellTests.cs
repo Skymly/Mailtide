@@ -427,6 +427,18 @@ public sealed class ComposeOutboxShellTests
     }
 
     [TestMethod]
+    public async Task ComposeOutboxShell_SaveDraft_keeps_BodyHtml()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SaveDraftAsync("bob@example.com", "Hello", "plain", bodyHtml: "<p>hi</p>");
+        Assert.AreEqual("<p>hi</p>", shell.Drafts.Single().BodyHtml);
+    }
+
+    [TestMethod]
     public async Task ComposeOutboxShell_SaveDraft_keeps_Bcc_separate()
     {
         using var fixture = new DesktopAppFixture();
