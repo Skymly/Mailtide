@@ -161,6 +161,12 @@
                            Opacity="0.7"
                            FontSize="12" />
                 <TextBlock Text="{Binding FromAddress}" Opacity="0.7" FontSize="12" />
+                <TextBlock Text="{Binding Preview}"
+                           IsVisible="{Binding Preview, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Opacity="0.65"
+                           FontSize="12"
+                           TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="{Binding ReceivedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm} UTC'}"
                            Opacity="0.7"
                            FontSize="12" />
