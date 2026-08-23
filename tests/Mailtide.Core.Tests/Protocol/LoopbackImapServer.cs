@@ -232,6 +232,7 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
                     continue;
                 }
 
+                var onlyUids = ParseUidSet(command);
                 var wantBody = upper.Contains("BODY.PEEK[]", StringComparison.Ordinal)
                                || upper.Contains("BODY[]", StringComparison.Ordinal)
                                || upper.Contains("RFC822", StringComparison.Ordinal);
@@ -241,6 +242,10 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
                     var msg = mailbox.Messages[i];
                     var seq = i + 1;
                     var uid = msg.Uid;
+                    if (onlyUids is not null && !onlyUids.Contains(uid))
+                    {
+                        continue;
+                    }
                     var flags = msg.IsRead || _seen.Contains((selectedPath ?? string.Empty, uid)) ? "\\Seen" : "";
                     var flagPart = string.IsNullOrEmpty(flags) ? "FLAGS ()" : $"FLAGS ({flags})";
                     var date = msg.InternalDate.ToString("dd-MMM-yyyy HH:mm:ss +0000",
@@ -333,6 +338,38 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
         return Encoding.UTF8.GetString(Convert.FromBase64String(value));
     }
 
+    private static HashSet<uint>? ParseUidSet(string command)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            command,
+            @"UID\s+FETCH\s+([\d:,]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var uids = new HashSet<uint>();
+        foreach (var part in match.Groups[1].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var bounds = part.Split(':');
+            if (bounds.Length == 1 && uint.TryParse(bounds[0], out var one))
+            {
+                uids.Add(one);
+            }
+            else if (bounds.Length == 2
+                     && uint.TryParse(bounds[0], out var start)
+                     && uint.TryParse(bounds[1], out var end))
+            {
+                for (var uid = start; uid <= end; uid++)
+                {
+                    uids.Add(uid);
+                }
+            }
+        }
+
+        return uids;
+    }
     private static string Unquote(string value)
     {
         value = value.Trim();

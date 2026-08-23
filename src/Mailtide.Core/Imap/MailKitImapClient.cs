@@ -154,6 +154,115 @@ internal sealed class MailKitImapClient : IImapClient
         }
     }
 
+    public async Task<IReadOnlyList<RemoteMessageSummary>> FetchMessageSummariesAsync(
+        string mailboxPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mailboxPath);
+        var client = EnsureAuthenticated();
+
+        try
+        {
+            var folder = await client.GetFolderAsync(mailboxPath, cancellationToken).ConfigureAwait(false);
+            await folder.OpenAsync(FolderAccess.ReadOnly, cancellationToken).ConfigureAwait(false);
+            if (folder.Count == 0)
+            {
+                return [];
+            }
+
+            var summaries = await folder
+                .FetchAsync(
+                    0,
+                    -1,
+                    MessageSummaryItems.UniqueId | MessageSummaryItems.Flags | MessageSummaryItems.Envelope | MessageSummaryItems.InternalDate,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return summaries
+                .Select(summary => new RemoteMessageSummary(
+                    RemoteId: summary.UniqueId.Id.ToString(),
+                    IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
+                    Subject: summary.Envelope?.Subject ?? string.Empty,
+                    FromAddress: summary.Envelope?.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
+                    ReceivedAt: summary.InternalDate ?? default))
+                .ToList();
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
+    public async Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
+        string mailboxPath,
+        IReadOnlyList<string> remoteIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mailboxPath);
+        ArgumentNullException.ThrowIfNull(remoteIds);
+        if (remoteIds.Count == 0)
+        {
+            return [];
+        }
+
+        var client = EnsureAuthenticated();
+        try
+        {
+            var folder = await client.GetFolderAsync(mailboxPath, cancellationToken).ConfigureAwait(false);
+            await folder.OpenAsync(FolderAccess.ReadOnly, cancellationToken).ConfigureAwait(false);
+            var uids = new List<UniqueId>(remoteIds.Count);
+            foreach (var remoteId in remoteIds)
+            {
+                if (!uint.TryParse(remoteId, out var uidValue))
+                {
+                    throw new ImapProtocolException("IMAP protocol failure.", new FormatException($"RemoteId '{remoteId}' is not a UID."));
+                }
+
+                uids.Add(new UniqueId(uidValue));
+            }
+
+            var summaries = await folder
+                .FetchAsync(
+                    uids,
+                    MessageSummaryItems.UniqueId
+                    | MessageSummaryItems.Flags
+                    | MessageSummaryItems.InternalDate,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var messages = new List<RemoteMessage>(summaries.Count);
+            foreach (var summary in summaries)
+            {
+                var mime = await folder.GetMessageAsync(summary.UniqueId, cancellationToken)
+                    .ConfigureAwait(false);
+                messages.Add(new RemoteMessage(
+                    RemoteId: summary.UniqueId.Id.ToString(),
+                    Subject: mime.Subject ?? string.Empty,
+                    FromAddress: mime.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
+                    ReceivedAt: summary.InternalDate ?? mime.Date,
+                    IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
+                    BodyText: ExtractBodyText(mime))
+                {
+                    Attachments = ExtractAttachments(mime),
+                });
+            }
+
+            return messages;
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException and not ImapProtocolException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
     public async Task SetSeenAsync(
         string mailboxPath,
         string remoteId,

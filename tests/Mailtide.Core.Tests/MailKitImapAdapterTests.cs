@@ -83,6 +83,51 @@ public sealed class MailKitImapAdapterTests
         Assert.IsTrue(messages[0].IsRead);
     }
     [TestMethod]
+    public async Task Real_IMAP_adapter_lists_summaries_and_fetches_selected_bodies()
+    {
+        await using var server = LoopbackImapServer.Start(
+        [
+            new SeededMailbox(
+                Path: "INBOX",
+                Attributes: ["Inbox"],
+                Messages:
+                [
+                    new SeededImapMessage(
+                        Uid: 1,
+                        Subject: "One",
+                        From: "bob@example.com",
+                        InternalDate: new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero),
+                        IsRead: false,
+                        BodyText: "first body"),
+                    new SeededImapMessage(
+                        Uid: 2,
+                        Subject: "Two",
+                        From: "carol@example.com",
+                        InternalDate: new DateTimeOffset(2026, 3, 2, 12, 0, 0, TimeSpan.Zero),
+                        IsRead: true,
+                        BodyText: "second body"),
+                ]),
+        ]);
+
+        await using var client = new MailKitImapClientFactory().Create();
+        await client.ConnectAndAuthenticateAsync(
+            "127.0.0.1",
+            server.Port,
+            "alice@example.com",
+            "s3cret-password");
+
+        var summaries = await client.FetchMessageSummariesAsync("INBOX");
+        Assert.HasCount(2, summaries);
+        Assert.AreEqual("1", summaries[0].RemoteId);
+        Assert.IsFalse(summaries[0].IsRead);
+        Assert.IsTrue(summaries.Single(s => s.RemoteId == "2").IsRead);
+
+        var fetched = await client.FetchMessagesAsync("INBOX", ["2"]);
+        Assert.HasCount(1, fetched);
+        Assert.AreEqual("2", fetched[0].RemoteId);
+        Assert.AreEqual("second body", fetched[0].BodyText);
+    }
+    [TestMethod]
     public async Task Real_IMAP_adapter_maps_authentication_failure()
     {
         await using var server = LoopbackImapServer.Start(

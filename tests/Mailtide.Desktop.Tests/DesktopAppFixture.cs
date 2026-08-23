@@ -126,6 +126,35 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             return Task.FromResult<IReadOnlyList<RemoteMessage>>(messages.ToList());
         }
 
+        public Task<IReadOnlyList<RemoteMessageSummary>> FetchMessageSummariesAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                messages = [];
+            }
+
+            return Task.FromResult<IReadOnlyList<RemoteMessageSummary>>(
+                messages.Select(m => new RemoteMessageSummary(m.RemoteId, m.IsRead, m.Subject, m.FromAddress, m.ReceivedAt)).ToList());
+        }
+
+        public Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
+            string mailboxPath,
+            IReadOnlyList<string> remoteIds,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                messages = [];
+            }
+
+            var wanted = remoteIds.ToHashSet(StringComparer.Ordinal);
+            return Task.FromResult<IReadOnlyList<RemoteMessage>>(
+                messages.Where(m => wanted.Contains(m.RemoteId)).ToList());
+        }
         public Task SetSeenAsync(
             string mailboxPath,
             string remoteId,
