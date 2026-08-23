@@ -158,7 +158,9 @@
                        DockPanel.Dock="Top"
                        IsVisible="False"
                        MinHeight="120"
-                       Margin="0,0,0,8" />
+                       Margin="0,0,0,8"
+                       NavigationStarted="OnMessageHtmlNavigationStarted"
+                       NewWindowRequested="OnMessageHtmlNewWindowRequested" />
         <TextBox Name="MessageBodyBox"
                  DockPanel.Dock="Top"
                  IsReadOnly="True"
