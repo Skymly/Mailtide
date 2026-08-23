@@ -415,6 +415,9 @@ public partial class MailShellView : UserControl
             case MailShellShortcut.NewDraft:
                 OnNewDraftClick(sender, e);
                 return;
+            case MailShellShortcut.NextUnread:
+                OnNextUnreadClick(sender, e);
+                return;
         }
     }
 
