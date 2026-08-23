@@ -469,6 +469,11 @@ internal sealed record SeededImapMessage(
                     sb.Append("--").Append(boundary).Append("\r\n");
                     sb.Append("Content-Type: ").Append(attachment.ContentType).Append("\r\n");
                     sb.Append("Content-Transfer-Encoding: base64\r\n");
+                    if (!string.IsNullOrWhiteSpace(attachment.ContentId))
+                    {
+                        sb.Append("Content-ID: <").Append(attachment.ContentId).Append(">\r\n");
+                    }
+
                     sb.Append("Content-Disposition: attachment; filename=\"")
                         .Append(attachment.FileName)
                         .Append("\"\r\n\r\n");
@@ -508,4 +513,7 @@ internal sealed record SeededImapMessage(
 internal sealed record SeededImapAttachment(
     string FileName,
     string ContentType,
-    byte[] Content);
+    byte[] Content)
+{
+    public string? ContentId { get; init; }
+}

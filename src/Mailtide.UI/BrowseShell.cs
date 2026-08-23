@@ -196,7 +196,7 @@ public sealed class BrowseShell
             .GetMessageBodyAsync(message.AccountId, messageId, cancellationToken)
             .ConfigureAwait(false);
         var html = await _app
-            .GetMessageHtmlAsync(message.AccountId, messageId, cancellationToken)
+            .GetMessageHtmlForDisplayAsync(message.AccountId, messageId, cancellationToken)
             .ConfigureAwait(false);
         BodyText = body;
         BodyHtml = html;

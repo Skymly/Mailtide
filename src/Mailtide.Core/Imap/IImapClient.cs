@@ -67,7 +67,10 @@ public sealed record RemoteMailbox(
 public sealed record RemoteAttachment(
     string FileName,
     string ContentType,
-    byte[] Content);
+    byte[] Content)
+{
+    public string? ContentId { get; init; }
+}
 
 public sealed record RemoteMessage(
     string RemoteId,
