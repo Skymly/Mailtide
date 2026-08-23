@@ -94,12 +94,19 @@
                  SelectionChanged="OnAccountSelectionChanged">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="local:AccountStatusRow">
-              <StackPanel>
-                <TextBlock Text="{Binding Account.DisplayName}" />
-                <TextBlock Text="{Binding Account.EmailAddress}" Opacity="0.7" FontSize="12" />
-                <TextBlock Text="{Binding Status.State}" Opacity="0.7" FontSize="12" />
-                <TextBlock Text="{Binding Status.ErrorMessage}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
-              </StackPanel>
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Right"
+                           Text="{Binding Account.UnreadCount}"
+                           IsVisible="{Binding Account.HasUnread}"
+                           Opacity="0.7"
+                           Margin="8,0,0,0" />
+                <StackPanel>
+                  <TextBlock Text="{Binding Account.DisplayName}" />
+                  <TextBlock Text="{Binding Account.EmailAddress}" Opacity="0.7" FontSize="12" />
+                  <TextBlock Text="{Binding Status.State}" Opacity="0.7" FontSize="12" />
+                  <TextBlock Text="{Binding Status.ErrorMessage}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
+              </DockPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
