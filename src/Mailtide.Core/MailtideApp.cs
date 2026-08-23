@@ -780,6 +780,56 @@ public sealed class MailtideApp : IAsyncDisposable
     }
 
 
+    public async Task<DraftInfo> StartForwardAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var accountExists = await _db.Accounts
+                .AsNoTracking()
+                .AnyAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!accountExists)
+            {
+                throw new InvalidOperationException($"Account '{accountId}' was not found.");
+            }
+
+            var message = await _db.Messages
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    m => m.AccountId == accountId && m.Id == messageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (message is null)
+            {
+                throw new InvalidOperationException($"Message '{messageId}' was not found.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var record = new DraftRecord
+            {
+                Id = Guid.NewGuid(),
+                AccountId = accountId,
+                ToAddresses = EncodeAddresses([]),
+                Subject = ForwardSubject(message.Subject),
+                BodyText = FormatForwardedBody(message.FromAddress, message.ReceivedAt, message.Subject, message.BodyText),
+                UpdatedAt = now,
+            };
+
+            _db.Drafts.Add(record);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return ToDraftInfo(record);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
     public async Task<DraftInfo> StartReplyAsync(
         Guid accountId,
         Guid messageId,
@@ -1713,6 +1763,22 @@ public sealed class MailtideApp : IAsyncDisposable
         JsonSerializer.Deserialize<string[]>(encoded) ?? [];
 
 
+    private static string ForwardSubject(string subject) =>
+        subject.StartsWith("Fwd:", StringComparison.OrdinalIgnoreCase)
+            ? subject
+            : "Fwd: " + subject;
+
+    private static string FormatForwardedBody(
+        string fromAddress,
+        DateTimeOffset receivedAt,
+        string subject,
+        string bodyText)
+    {
+        var when = receivedAt.UtcDateTime.ToString(
+            "yyyy-MM-dd HH:mm",
+            System.Globalization.CultureInfo.InvariantCulture);
+        return $"\n---------- Forwarded Message ----------\nFrom: {fromAddress}\nDate: {when} UTC\nSubject: {subject}\n\n{bodyText}";
+    }
     private static string ReplySubject(string subject) =>
         subject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase)
             ? subject
