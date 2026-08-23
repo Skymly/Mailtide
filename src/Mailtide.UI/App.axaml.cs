@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Mailtide.Core;
 
 namespace Mailtide.UI;
@@ -35,6 +36,7 @@ public partial class App : Application
             mainWindow.Opened += async (_, _) =>
             {
                 await _shell.InitializeBrowseAsync().ConfigureAwait(true);
+                StartForegroundSync();
                 await _shell.CheckDesktopUpdateAsync().ConfigureAwait(true);
             };
         }
@@ -60,14 +62,59 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    private static async Task InitializeShellWhenAttachedAsync(MailShellView shell)
+    private async Task InitializeShellWhenAttachedAsync(MailShellView shell)
     {
         // Defer until the control is in a visual tree so bindings/layout settle.
         await Task.Yield();
         await shell.InitializeBrowseAsync().ConfigureAwait(true);
+        StartForegroundSync();
     }
 
     private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e) => DisposeCore();
+
+    private void StartForegroundSync()
+    {
+        if (_core is null)
+        {
+            return;
+        }
+
+        _core.AccountWorkCompleted -= OnAccountWorkCompleted;
+        _core.AccountWorkCompleted += OnAccountWorkCompleted;
+        HostBootstrap.SetAppForeground = OnHostForegroundChanged;
+        _core.StartForegroundSync();
+    }
+
+    private void OnHostForegroundChanged(bool isForeground)
+    {
+        if (_core is null)
+        {
+            return;
+        }
+
+        if (isForeground)
+        {
+            _core.StartForegroundSync();
+            return;
+        }
+
+        _ = _core.StopForegroundSyncAsync();
+    }
+
+    private void OnAccountWorkCompleted(object? sender, Guid accountId)
+    {
+        _ = accountId;
+        var shell = _shell;
+        if (shell is null)
+        {
+            return;
+        }
+
+        _ = Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            await shell.RefreshAfterAccountWorkAsync().ConfigureAwait(true);
+        });
+    }
 
     private void DisposeCore()
     {
@@ -76,6 +123,8 @@ public partial class App : Application
             return;
         }
 
+        _core.AccountWorkCompleted -= OnAccountWorkCompleted;
+        HostBootstrap.SetAppForeground = null;
         _core.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _core = null;
     }

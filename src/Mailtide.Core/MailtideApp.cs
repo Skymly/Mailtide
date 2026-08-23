@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
@@ -23,6 +24,12 @@ public sealed class MailtideApp : IAsyncDisposable
     private readonly object _statusGate = new();
     // DbContext is not thread-safe; serialize all store access on this single-user desktop app.
     private readonly SemaphoreSlim _dbGate = new(1, 1);
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _accountWorkGates = new();
+    private readonly object _foregroundGate = new();
+    public event EventHandler<Guid>? AccountWorkCompleted;
+    private CancellationTokenSource? _foregroundCts;
+    private Task? _foregroundTask;
+    public static readonly TimeSpan DefaultForegroundSyncInterval = TimeSpan.FromMinutes(5);
 
     private MailtideApp(
         string appDataDirectory,
@@ -359,8 +366,86 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    public void StartForegroundSync(TimeSpan? interval = null)
+    {
+        lock (_foregroundGate)
+        {
+            if (_foregroundCts is not null)
+            {
+                return;
+            }
+
+            _foregroundCts = new CancellationTokenSource();
+            var cancellationToken = _foregroundCts.Token;
+            var period = interval ?? DefaultForegroundSyncInterval;
+            _foregroundTask = Task.Run(
+                () => RunForegroundSyncAsync(period, cancellationToken),
+                CancellationToken.None);
+        }
+    }
+
+    public async Task StopForegroundSyncAsync()
+    {
+        Task? running;
+        CancellationTokenSource? cts;
+        lock (_foregroundGate)
+        {
+            cts = _foregroundCts;
+            running = _foregroundTask;
+            _foregroundCts = null;
+            _foregroundTask = null;
+        }
+
+        if (cts is null)
+        {
+            return;
+        }
+
+        await cts.CancelAsync().ConfigureAwait(false);
+        if (running is not null)
+        {
+            try
+            {
+                await running.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        cts.Dispose();
+    }
+
+    private async Task RunForegroundSyncAsync(TimeSpan interval, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(interval);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var accounts = await ListAccountsAsync(cancellationToken).ConfigureAwait(false);
+            await Task.WhenAll(
+                    accounts.Select(account => SyncAndSendAccountAsync(account.Id, cancellationToken)))
+                .ConfigureAwait(false);
+
+            if (!await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+            {
+                break;
+            }
+        }
+    }
+
+    private async Task SyncAndSendAccountAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        await SyncNowAsync(accountId, cancellationToken).ConfigureAwait(false);
+        await SendNowAsync(accountId, cancellationToken).ConfigureAwait(false);
+        AccountWorkCompleted?.Invoke(this, accountId);
+    }
+
     public async Task SyncNowAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
+        var workGate = AccountWorkGate(accountId);
+        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
         string imapHost;
         int imapPort;
         string emailAddress;
@@ -488,6 +573,11 @@ public sealed class MailtideApp : IAsyncDisposable
         {
             await ClearTrackerAsync(CancellationToken.None).ConfigureAwait(false);
             SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+        }
+        }
+        finally
+        {
+            workGate.Release();
         }
     }
 
@@ -877,6 +967,10 @@ public sealed class MailtideApp : IAsyncDisposable
 
     public async Task SendNowAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
+        var workGate = AccountWorkGate(accountId);
+        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
         AccountInfo account;
         string credentialHandle;
         CredentialKind credentialKind;
@@ -1099,6 +1193,11 @@ public sealed class MailtideApp : IAsyncDisposable
                 await client.DisposeAsync().ConfigureAwait(false);
             }
         }
+        }
+        finally
+        {
+            workGate.Release();
+        }
     }
 
     public async Task RetryOutboxItemAsync(
@@ -1167,6 +1266,7 @@ public sealed class MailtideApp : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await StopForegroundSyncAsync().ConfigureAwait(false);
         await _dbGate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -1580,6 +1680,9 @@ public sealed class MailtideApp : IAsyncDisposable
             _dbGate.Release();
         }
     }
+
+    private SemaphoreSlim AccountWorkGate(Guid accountId) =>
+        _accountWorkGates.GetOrAdd(accountId, static _ => new SemaphoreSlim(1, 1));
 
     private void SetStatus(Guid accountId, AccountStatus status)
     {

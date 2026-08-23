@@ -27,6 +27,18 @@ public partial class MailShellView : UserControl
         InitializeComponent();
     }
 
+    public async Task RefreshAfterAccountWorkAsync()
+    {
+        var browse = RequireBrowse();
+        await browse.RefreshAfterAccountWorkAsync().ConfigureAwait(true);
+        var compose = RequireCompose();
+        if (compose.SelectedAccountId is { } composeAccountId)
+        {
+            await compose.SelectAccountAsync(composeAccountId).ConfigureAwait(true);
+        }
+
+        BindLists();
+    }
     public async Task InitializeBrowseAsync()
     {
         var browse = RequireBrowse();

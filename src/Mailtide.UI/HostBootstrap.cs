@@ -22,4 +22,9 @@ public static class HostBootstrap
     /// Desktop-only: open the Person's update download / release page.
     /// </summary>
     public static Func<UpdateCheckResult, CancellationToken, Task>? OpenDesktopUpdateAsync { get; set; }
+
+    /// <summary>
+    /// Hosts report process foreground/background so Core self-drive stays foreground-only.
+    /// </summary>
+    public static Action<bool>? SetAppForeground { get; set; }
 }
