@@ -131,6 +131,8 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastSetSeenRemoteId { get; private set; }
 
+    public List<string> FetchedRemoteIds { get; } = [];
+
     public void SeedMailboxes(params RemoteMailbox[] mailboxes)
     {
         _mailboxes.Clear();
@@ -211,6 +213,37 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             }
 
             return Task.FromResult<IReadOnlyList<RemoteMessage>>(messages.ToList());
+        }
+
+        public Task<IReadOnlyList<RemoteMessageSummary>> FetchMessageSummariesAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                messages = [];
+            }
+
+            return Task.FromResult<IReadOnlyList<RemoteMessageSummary>>(
+                messages.Select(m => new RemoteMessageSummary(m.RemoteId, m.IsRead, m.Subject, m.FromAddress, m.ReceivedAt)).ToList());
+        }
+
+        public Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
+            string mailboxPath,
+            IReadOnlyList<string> remoteIds,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                messages = [];
+            }
+
+            var wanted = remoteIds.ToHashSet(StringComparer.Ordinal);
+            var fetched = messages.Where(m => wanted.Contains(m.RemoteId)).ToList();
+            _factory.FetchedRemoteIds.AddRange(fetched.Select(m => m.RemoteId));
+            return Task.FromResult<IReadOnlyList<RemoteMessage>>(fetched);
         }
 
         public Task SetSeenAsync(

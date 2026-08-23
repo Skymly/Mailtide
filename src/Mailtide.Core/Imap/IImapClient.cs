@@ -28,11 +28,27 @@ public interface IImapClient : IAsyncDisposable
         string mailboxPath,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<RemoteMessageSummary>> FetchMessageSummariesAsync(
+        string mailboxPath,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
+        string mailboxPath,
+        IReadOnlyList<string> remoteIds,
+        CancellationToken cancellationToken = default);
+
     Task SetSeenAsync(
         string mailboxPath,
         string remoteId,
         CancellationToken cancellationToken = default);
 }
+
+public sealed record RemoteMessageSummary(
+    string RemoteId,
+    bool IsRead,
+    string Subject,
+    string FromAddress,
+    DateTimeOffset ReceivedAt);
 
 public sealed record RemoteMailbox(
     string Name,

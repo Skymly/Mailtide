@@ -531,7 +531,18 @@ public sealed class MailtideApp : IAsyncDisposable
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            var snapshot = await FetchRemoteSnapshotAsync(client, cancellationToken)
+            IReadOnlyDictionary<string, HashSet<string>> knownRemoteIds;
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                knownRemoteIds = await LoadKnownRemoteIdsByPathAsync(accountId, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+
+            var snapshot = await FetchRemoteSnapshotAsync(client, knownRemoteIds, cancellationToken)
                 .ConfigureAwait(false);
 
             await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -1649,8 +1660,43 @@ public sealed class MailtideApp : IAsyncDisposable
         }
     }
 
+    private async Task<IReadOnlyDictionary<string, HashSet<string>>> LoadKnownRemoteIdsByPathAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        var mailboxes = await _db.Mailboxes
+            .AsNoTracking()
+            .Where(m => m.AccountId == accountId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var messages = await _db.Messages
+            .AsNoTracking()
+            .Where(m => m.AccountId == accountId)
+            .Select(m => new { m.MailboxId, m.RemoteId })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var byId = mailboxes.ToDictionary(m => m.Id, m => m.Path);
+        var known = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var mailbox in mailboxes)
+        {
+            known[mailbox.Path] = new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        foreach (var message in messages)
+        {
+            if (byId.TryGetValue(message.MailboxId, out var path))
+            {
+                known[path].Add(message.RemoteId);
+            }
+        }
+
+        return known;
+    }
+
     private static async Task<IReadOnlyList<RemoteMailboxSnapshot>> FetchRemoteSnapshotAsync(
         IImapClient client,
+        IReadOnlyDictionary<string, HashSet<string>> knownRemoteIds,
         CancellationToken cancellationToken)
     {
         var remoteMailboxes = await client
@@ -1660,94 +1706,163 @@ public sealed class MailtideApp : IAsyncDisposable
         var snapshot = new List<RemoteMailboxSnapshot>(remoteMailboxes.Count);
         foreach (var mailbox in remoteMailboxes)
         {
-            var messages = await client
-                .FetchMessagesAsync(mailbox.Path, cancellationToken)
+            var summaries = await client
+                .FetchMessageSummariesAsync(mailbox.Path, cancellationToken)
                 .ConfigureAwait(false);
-            snapshot.Add(new RemoteMailboxSnapshot(mailbox, messages));
+            knownRemoteIds.TryGetValue(mailbox.Path, out var known);
+            var missing = summaries
+                .Select(s => s.RemoteId)
+                .Where(id => known is null || !known.Contains(id))
+                .ToList();
+            var fetched = missing.Count == 0
+                ? Array.Empty<RemoteMessage>()
+                : await client
+                    .FetchMessagesAsync(mailbox.Path, missing, cancellationToken)
+                    .ConfigureAwait(false);
+            snapshot.Add(new RemoteMailboxSnapshot(
+                mailbox,
+                summaries,
+                fetched.ToDictionary(m => m.RemoteId, StringComparer.Ordinal)));
         }
 
         return snapshot;
     }
-
     private async Task PersistSnapshotAsync(
         Guid accountId,
         IReadOnlyList<RemoteMailboxSnapshot> snapshot,
         CancellationToken cancellationToken)
     {
-        var existingAttachments = await _db.Attachments
-            .Where(a => a.AccountId == accountId)
+        var existingMailboxes = await _db.Mailboxes
+            .Where(m => m.AccountId == accountId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        _db.Attachments.RemoveRange(existingAttachments);
+        var mailboxByPath = existingMailboxes.ToDictionary(m => m.Path, StringComparer.Ordinal);
 
         var existingMessages = await _db.Messages
             .Where(m => m.AccountId == accountId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        _db.Messages.RemoveRange(existingMessages);
 
-        var existingMailboxes = await _db.Mailboxes
-            .Where(m => m.AccountId == accountId)
+        var existingAttachments = await _db.Attachments
+            .Where(a => a.AccountId == accountId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        _db.Mailboxes.RemoveRange(existingMailboxes);
 
-        ResetBlobArea(accountId);
+        var seenMailboxIds = new HashSet<Guid>();
+        var seenMessageIds = new HashSet<Guid>();
 
         foreach (var entry in snapshot)
         {
-            var mailboxId = Guid.NewGuid();
-            _db.Mailboxes.Add(new MailboxRecord
+            if (!mailboxByPath.TryGetValue(entry.Mailbox.Path, out var mailbox))
             {
-                Id = mailboxId,
-                AccountId = accountId,
-                Name = entry.Mailbox.Name,
-                Path = entry.Mailbox.Path,
-                Role = entry.Mailbox.Role,
-            });
-
-            foreach (var remoteMessage in entry.Messages)
-            {
-                var messageId = Guid.NewGuid();
-                _db.Messages.Add(new MessageRecord
+                mailbox = new MailboxRecord
                 {
-                    Id = messageId,
+                    Id = Guid.NewGuid(),
                     AccountId = accountId,
-                    MailboxId = mailboxId,
-                    RemoteId = remoteMessage.RemoteId,
-                    Subject = remoteMessage.Subject,
-                    FromAddress = remoteMessage.FromAddress,
-                    ReceivedAt = remoteMessage.ReceivedAt,
-                    IsRead = remoteMessage.IsRead,
-                    BodyText = remoteMessage.BodyText,
-                });
+                    Name = entry.Mailbox.Name,
+                    Path = entry.Mailbox.Path,
+                    Role = entry.Mailbox.Role,
+                };
+                _db.Mailboxes.Add(mailbox);
+                mailboxByPath[entry.Mailbox.Path] = mailbox;
+            }
+            else
+            {
+                mailbox.Name = entry.Mailbox.Name;
+                mailbox.Role = entry.Mailbox.Role;
+            }
 
-                foreach (var remoteAttachment in remoteMessage.Attachments)
+            seenMailboxIds.Add(mailbox.Id);
+
+            var messagesByRemote = existingMessages
+                .Where(m => m.MailboxId == mailbox.Id)
+                .ToDictionary(m => m.RemoteId, StringComparer.Ordinal);
+
+            foreach (var summary in entry.Summaries)
+            {
+                entry.FetchedByRemoteId.TryGetValue(summary.RemoteId, out var fetched);
+                if (!messagesByRemote.TryGetValue(summary.RemoteId, out var message))
                 {
-                    var attachmentId = Guid.NewGuid();
-                    var blobRelativePath = BlobRelativePath(accountId, attachmentId);
-                    var blobAbsolutePath = Path.Combine(_appDataDirectory, blobRelativePath);
-                    Directory.CreateDirectory(Path.GetDirectoryName(blobAbsolutePath)!);
-                    await File
-                        .WriteAllBytesAsync(blobAbsolutePath, remoteAttachment.Content, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    _db.Attachments.Add(new AttachmentRecord
+                    if (fetched is null)
                     {
-                        Id = attachmentId,
+                        continue;
+                    }
+
+                    var messageId = Guid.NewGuid();
+                    message = new MessageRecord
+                    {
+                        Id = messageId,
                         AccountId = accountId,
-                        MessageId = messageId,
-                        FileName = remoteAttachment.FileName,
-                        ContentType = remoteAttachment.ContentType,
-                        BlobRelativePath = blobRelativePath,
-                    });
+                        MailboxId = mailbox.Id,
+                        RemoteId = fetched.RemoteId,
+                        Subject = fetched.Subject,
+                        FromAddress = fetched.FromAddress,
+                        ReceivedAt = fetched.ReceivedAt,
+                        IsRead = summary.IsRead,
+                        BodyText = fetched.BodyText,
+                    };
+                    _db.Messages.Add(message);
+
+                    foreach (var remoteAttachment in fetched.Attachments)
+                    {
+                        var attachmentId = Guid.NewGuid();
+                        var blobRelativePath = BlobRelativePath(accountId, attachmentId);
+                        var blobAbsolutePath = Path.Combine(_appDataDirectory, blobRelativePath);
+                        Directory.CreateDirectory(Path.GetDirectoryName(blobAbsolutePath)!);
+                        await File
+                            .WriteAllBytesAsync(blobAbsolutePath, remoteAttachment.Content, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        _db.Attachments.Add(new AttachmentRecord
+                        {
+                            Id = attachmentId,
+                            AccountId = accountId,
+                            MessageId = messageId,
+                            FileName = remoteAttachment.FileName,
+                            ContentType = remoteAttachment.ContentType,
+                            BlobRelativePath = blobRelativePath,
+                        });
+                    }
                 }
+                else
+                {
+                    message.IsRead = summary.IsRead;
+                    message.Subject = summary.Subject;
+                    message.FromAddress = summary.FromAddress;
+                    message.ReceivedAt = summary.ReceivedAt;
+                    if (fetched is not null)
+                    {
+                        message.BodyText = fetched.BodyText;
+                    }
+                }
+
+                seenMessageIds.Add(message.Id);
             }
         }
 
+        var messagesToRemove = existingMessages
+            .Where(m => !seenMessageIds.Contains(m.Id))
+            .ToList();
+        var removedMessageIds = messagesToRemove.Select(m => m.Id).ToHashSet();
+        var attachmentsToRemove = existingAttachments
+            .Where(a => removedMessageIds.Contains(a.MessageId))
+            .ToList();
+
+        foreach (var attachment in attachmentsToRemove)
+        {
+            var blobAbsolutePath = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
+            if (File.Exists(blobAbsolutePath))
+            {
+                File.Delete(blobAbsolutePath);
+            }
+        }
+
+        _db.Attachments.RemoveRange(attachmentsToRemove);
+        _db.Messages.RemoveRange(messagesToRemove);
+        _db.Mailboxes.RemoveRange(existingMailboxes.Where(m => !seenMailboxIds.Contains(m.Id)));
+
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
-
     private void ResetBlobArea(Guid accountId)
     {
         var blobsDirectory = BlobAreaPath(accountId);
@@ -2023,5 +2138,6 @@ public sealed class MailtideApp : IAsyncDisposable
 
     private sealed record RemoteMailboxSnapshot(
         RemoteMailbox Mailbox,
-        IReadOnlyList<RemoteMessage> Messages);
+        IReadOnlyList<RemoteMessageSummary> Summaries,
+        IReadOnlyDictionary<string, RemoteMessage> FetchedByRemoteId);
 }
