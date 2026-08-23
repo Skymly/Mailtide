@@ -141,6 +141,12 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public bool? LastSetFlaggedValue { get; private set; }
 
+    public string? LastMoveSourcePath { get; private set; }
+
+    public string? LastMoveDestinationPath { get; private set; }
+
+    public string? LastMoveRemoteId { get; private set; }
+
 
 
     public List<string> FetchedRemoteIds { get; } = [];
@@ -331,6 +337,31 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
                 _factory._messagesByPath[mailboxPath] = messages
                     .Select(m => m.RemoteId == remoteId ? m with { IsFlagged = flagged } : m)
                     .ToList();
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task MoveAsync(
+            string sourceMailboxPath,
+            string destinationMailboxPath,
+            string remoteId,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            _factory.LastMoveSourcePath = sourceMailboxPath;
+            _factory.LastMoveDestinationPath = destinationMailboxPath;
+            _factory.LastMoveRemoteId = remoteId;
+            if (_factory._messagesByPath.TryGetValue(sourceMailboxPath, out var source))
+            {
+                var moved = source.Where(m => m.RemoteId == remoteId).ToList();
+                _factory._messagesByPath[sourceMailboxPath] = source.Where(m => m.RemoteId != remoteId).ToList();
+                if (!_factory._messagesByPath.TryGetValue(destinationMailboxPath, out var dest))
+                {
+                    dest = [];
+                }
+
+                _factory._messagesByPath[destinationMailboxPath] = dest.Concat(moved).ToList();
             }
 
             return Task.CompletedTask;

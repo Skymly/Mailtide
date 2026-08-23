@@ -381,6 +381,38 @@ internal sealed class MailKitImapClient : IImapClient
         }
     }
 
+    public async Task MoveAsync(
+        string sourceMailboxPath,
+        string destinationMailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceMailboxPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationMailboxPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(remoteId);
+        var client = EnsureAuthenticated();
+        try
+        {
+            if (!uint.TryParse(remoteId, out var uidValue))
+            {
+                throw new ImapProtocolException("IMAP protocol failure.", new FormatException($"RemoteId '{remoteId}' is not a UID."));
+            }
+
+            var source = await client.GetFolderAsync(sourceMailboxPath, cancellationToken).ConfigureAwait(false);
+            await source.OpenAsync(FolderAccess.ReadWrite, cancellationToken).ConfigureAwait(false);
+            var destination = await client.GetFolderAsync(destinationMailboxPath, cancellationToken).ConfigureAwait(false);
+            await source.MoveToAsync(new UniqueId(uidValue), destination, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException and not ImapProtocolException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
     public async Task WaitForMailboxChangeAsync(
         string mailboxPath,
         CancellationToken cancellationToken = default)
