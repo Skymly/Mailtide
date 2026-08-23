@@ -947,14 +947,13 @@ public sealed class MailtideApp : IAsyncDisposable
     }
 
     private static bool MessageMatches(MessageRecord record, string query) =>
-        ContainsIgnoreCase(record.Subject, query)
-        || ContainsIgnoreCase(record.FromAddress, query)
-        || ContainsIgnoreCase(record.BodyText, query)
-        || ContainsIgnoreCase(record.BodyHtml, query);
-
-    private static bool ContainsIgnoreCase(string? value, string query) =>
-        !string.IsNullOrEmpty(value)
-        && value.Contains(query, StringComparison.OrdinalIgnoreCase);
+        MessageSearch.Matches(
+            record.IsFlagged,
+            record.Subject,
+            record.FromAddress,
+            record.BodyText,
+            record.BodyHtml,
+            query);
 
     public async Task<string?> GetMessageBodyAsync(
         Guid accountId,
