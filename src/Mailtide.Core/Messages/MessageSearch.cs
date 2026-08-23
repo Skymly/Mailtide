@@ -3,9 +3,11 @@ namespace Mailtide.Core;
 public static class MessageSearch
 {
     public const string FlaggedOperator = "is:flagged";
+    public const string UnreadOperator = "is:unread";
 
     public static bool Matches(
         bool isFlagged,
+        bool isRead,
         string subject,
         string fromAddress,
         string? bodyText,
@@ -14,6 +16,11 @@ public static class MessageSearch
     {
         var parsed = Parse(query);
         if (parsed.FlaggedOnly && !isFlagged)
+        {
+            return false;
+        }
+
+        if (parsed.UnreadOnly && isRead)
         {
             return false;
         }
@@ -29,14 +36,15 @@ public static class MessageSearch
             || ContainsIgnoreCase(bodyHtml, parsed.Text);
     }
 
-    public static (bool FlaggedOnly, string Text) Parse(string query)
+    public static (bool FlaggedOnly, bool UnreadOnly, string Text) Parse(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
-            return (false, string.Empty);
+            return (false, false, string.Empty);
         }
 
         var flaggedOnly = false;
+        var unreadOnly = false;
         var textParts = new List<string>();
         foreach (var token in query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -46,10 +54,16 @@ public static class MessageSearch
                 continue;
             }
 
+            if (token.Equals(UnreadOperator, StringComparison.OrdinalIgnoreCase))
+            {
+                unreadOnly = true;
+                continue;
+            }
+
             textParts.Add(token);
         }
 
-        return (flaggedOnly, string.Join(' ', textParts));
+        return (flaggedOnly, unreadOnly, string.Join(' ', textParts));
     }
 
     private static bool ContainsIgnoreCase(string? value, string query) =>

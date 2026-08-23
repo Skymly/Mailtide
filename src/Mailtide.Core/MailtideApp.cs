@@ -949,6 +949,7 @@ public sealed class MailtideApp : IAsyncDisposable
     private static bool MessageMatches(MessageRecord record, string query) =>
         MessageSearch.Matches(
             record.IsFlagged,
+            record.IsRead,
             record.Subject,
             record.FromAddress,
             record.BodyText,
