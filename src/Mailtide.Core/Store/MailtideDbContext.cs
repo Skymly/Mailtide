@@ -19,6 +19,8 @@ internal sealed class MailtideDbContext : DbContext
 
     public DbSet<DraftRecord> Drafts => Set<DraftRecord>();
 
+    public DbSet<DraftAttachmentRecord> DraftAttachments => Set<DraftAttachmentRecord>();
+
     public DbSet<OutboxItemRecord> OutboxItems => Set<OutboxItemRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -70,6 +72,14 @@ internal sealed class MailtideDbContext : DbContext
         draft.Property(d => d.Subject).IsRequired();
         draft.Property(d => d.BodyText).IsRequired();
         draft.HasIndex(d => d.AccountId);
+
+        var draftAttachment = modelBuilder.Entity<DraftAttachmentRecord>();
+        draftAttachment.ToTable("DraftAttachments");
+        draftAttachment.HasKey(a => a.Id);
+        draftAttachment.Property(a => a.FileName).IsRequired();
+        draftAttachment.Property(a => a.ContentType).IsRequired();
+        draftAttachment.Property(a => a.BlobRelativePath).IsRequired();
+        draftAttachment.HasIndex(a => new { a.AccountId, a.DraftId });
 
         var outbox = modelBuilder.Entity<OutboxItemRecord>();
         outbox.ToTable("OutboxItems");

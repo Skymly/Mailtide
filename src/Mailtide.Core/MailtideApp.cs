@@ -339,6 +339,10 @@ public sealed class MailtideApp : IAsyncDisposable
                 .Where(d => d.AccountId == accountId)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var draftAttachments = await _db.DraftAttachments
+                .Where(a => a.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
             var outboxItems = await _db.OutboxItems
                 .Where(o => o.AccountId == accountId)
                 .ToListAsync(cancellationToken)
@@ -346,6 +350,7 @@ public sealed class MailtideApp : IAsyncDisposable
             _db.Attachments.RemoveRange(attachments);
             _db.Messages.RemoveRange(messages);
             _db.Mailboxes.RemoveRange(mailboxes);
+            _db.DraftAttachments.RemoveRange(draftAttachments);
             _db.Drafts.RemoveRange(drafts);
             _db.OutboxItems.RemoveRange(outboxItems);
 
@@ -2201,6 +2206,7 @@ public sealed class MailtideApp : IAsyncDisposable
                 return;
             }
 
+            await DeleteDraftAttachmentsLockedAsync(accountId, draftId, cancellationToken).ConfigureAwait(false);
             _db.Drafts.Remove(draft);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -2208,6 +2214,133 @@ public sealed class MailtideApp : IAsyncDisposable
         {
             _dbGate.Release();
         }
+    }
+
+    public async Task<DraftAttachmentInfo> AddDraftAttachmentAsync(
+        Guid accountId,
+        Guid draftId,
+        string fileName,
+        string contentType,
+        byte[] content,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+        ArgumentNullException.ThrowIfNull(content);
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var draftExists = await _db.Drafts
+                .AsNoTracking()
+                .AnyAsync(d => d.AccountId == accountId && d.Id == draftId, cancellationToken)
+                .ConfigureAwait(false);
+            if (!draftExists)
+            {
+                throw new InvalidOperationException($"Draft '{draftId}' was not found.");
+            }
+
+            var attachmentId = Guid.NewGuid();
+            var blobRelativePath = BlobRelativePath(accountId, attachmentId);
+            var blobPath = Path.Combine(_appDataDirectory, blobRelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(blobPath)!);
+            await File.WriteAllBytesAsync(blobPath, content, cancellationToken).ConfigureAwait(false);
+
+            var record = new DraftAttachmentRecord
+            {
+                Id = attachmentId,
+                AccountId = accountId,
+                DraftId = draftId,
+                FileName = fileName,
+                ContentType = contentType,
+                BlobRelativePath = blobRelativePath,
+            };
+            _db.DraftAttachments.Add(record);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return new DraftAttachmentInfo(record.Id, record.DraftId, record.AccountId, record.FileName, record.ContentType);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<DraftAttachmentInfo>> ListDraftAttachmentsAsync(
+        Guid accountId,
+        Guid draftId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.DraftAttachments
+                .AsNoTracking()
+                .Where(a => a.AccountId == accountId && a.DraftId == draftId)
+                .OrderBy(a => a.FileName)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return records
+                .Select(a => new DraftAttachmentInfo(a.Id, a.DraftId, a.AccountId, a.FileName, a.ContentType))
+                .ToList();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public async Task RemoveDraftAttachmentAsync(
+        Guid accountId,
+        Guid attachmentId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var record = await _db.DraftAttachments
+                .SingleOrDefaultAsync(
+                    a => a.AccountId == accountId && a.Id == attachmentId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (record is null)
+            {
+                return;
+            }
+
+            var blobPath = Path.Combine(_appDataDirectory, record.BlobRelativePath);
+            if (File.Exists(blobPath))
+            {
+                File.Delete(blobPath);
+            }
+
+            _db.DraftAttachments.Remove(record);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    private async Task DeleteDraftAttachmentsLockedAsync(
+        Guid accountId,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        var attachments = await _db.DraftAttachments
+            .Where(a => a.AccountId == accountId && a.DraftId == draftId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var attachment in attachments)
+        {
+            var blobPath = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
+            if (File.Exists(blobPath))
+            {
+                File.Delete(blobPath);
+            }
+        }
+
+        _db.DraftAttachments.RemoveRange(attachments);
     }
 
     public async Task SendAsync(
@@ -2805,6 +2938,29 @@ public sealed class MailtideApp : IAsyncDisposable
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "DraftAttachments" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_DraftAttachments" PRIMARY KEY,
+                    "AccountId" TEXT NOT NULL,
+                    "DraftId" TEXT NOT NULL,
+                    "FileName" TEXT NOT NULL,
+                    "ContentType" TEXT NOT NULL,
+                    "BlobRelativePath" TEXT NOT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE INDEX IF NOT EXISTS "IX_DraftAttachments_AccountId_DraftId"
+                ON "DraftAttachments" ("AccountId", "DraftId")
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
 
         await db.Database.ExecuteSqlRawAsync(
                 """
