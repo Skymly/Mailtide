@@ -1210,6 +1210,7 @@ public sealed class MailtideApp : IAsyncDisposable
     public async Task<DraftInfo> SaveDraftAsync(
         Guid accountId,
         DraftContent content,
+        Guid? draftId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(content);
@@ -1229,6 +1230,27 @@ public sealed class MailtideApp : IAsyncDisposable
             }
 
             var now = DateTimeOffset.UtcNow;
+            if (draftId is { } existingId)
+            {
+                var existing = await _db.Drafts
+                    .SingleOrDefaultAsync(
+                        d => d.AccountId == accountId && d.Id == existingId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (existing is null)
+                {
+                    throw new InvalidOperationException($"Draft '{existingId}' was not found.");
+                }
+
+                existing.ToAddresses = EncodeAddresses(content.ToAddresses);
+                existing.CcAddresses = EncodeAddresses(content.CcAddresses);
+                existing.Subject = content.Subject;
+                existing.BodyText = content.BodyText;
+                existing.UpdatedAt = now;
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return ToDraftInfo(existing);
+            }
+
             var record = new DraftRecord
             {
                 Id = Guid.NewGuid(),
