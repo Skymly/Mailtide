@@ -176,6 +176,34 @@ public sealed class BrowseShell
             .ConfigureAwait(false);
     }
 
+    public async Task RefreshAfterAccountWorkAsync(CancellationToken cancellationToken = default)
+    {
+        var mailboxId = SelectedMailboxId;
+        var messageId = SelectedMessageId;
+        var accountId = SelectedAccountId;
+        var unified = ShowingUnifiedInbox;
+
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+
+        if (unified)
+        {
+            await ShowUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (accountId is { } selectedAccountId)
+        {
+            await SelectAccountAsync(selectedAccountId, cancellationToken).ConfigureAwait(false);
+            if (mailboxId is { } selectedMailboxId)
+            {
+                await SelectMailboxAsync(selectedMailboxId, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (messageId is { } selectedMessageId
+            && Messages.Any(message => message.Id == selectedMessageId))
+        {
+            await SelectMessageAsync(selectedMessageId, cancellationToken).ConfigureAwait(false);
+        }
+    }
     public async Task OpenAttachmentAsync(
         Guid attachmentId,
         CancellationToken cancellationToken = default)

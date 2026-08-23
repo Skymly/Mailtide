@@ -579,6 +579,40 @@ public sealed class BrowseShellTests
         Assert.IsNull(row.Status.ErrorMessage);
     }
 
+    [TestMethod]
+    public async Task BrowseShell_refreshes_Unified_Inbox_after_AccountWorkCompleted()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "fg-ui-1",
+                Subject: "Self-driven",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 3, 8, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "hi"));
+        await using var app = await fixture.OpenAppAsync();
+        await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var browse = new BrowseShell(app);
+        await browse.ShowUnifiedInboxAsync();
+        Assert.IsEmpty(browse.Messages);
+
+        var refreshed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        app.AccountWorkCompleted += async (_, _) =>
+        {
+            await browse.RefreshAfterAccountWorkAsync();
+            refreshed.TrySetResult();
+        };
+        app.StartForegroundSync(TimeSpan.FromHours(1));
+        await refreshed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.HasCount(1, browse.Messages);
+        Assert.AreEqual("Self-driven", browse.Messages[0].Subject);
+        Assert.IsTrue(browse.ShowingUnifiedInbox);
+    }
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));

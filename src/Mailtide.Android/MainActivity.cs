@@ -4,6 +4,7 @@ using Android.Content.PM;
 using Android.OS;
 using Avalonia.Android;
 using Mailtide.Android.Host;
+using Mailtide.UI;
 
 namespace Mailtide.Android;
 
@@ -33,6 +34,19 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnNewIntent(intent);
         HandleOauthIntent(intent);
+    }
+
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+        HostBootstrap.SetAppForeground?.Invoke(true);
+    }
+
+    protected override void OnPause()
+    {
+        HostBootstrap.SetAppForeground?.Invoke(false);
+        base.OnPause();
     }
 
     private static void HandleOauthIntent(Intent? intent)

@@ -124,6 +124,10 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastPassword { get; private set; }
 
+    private int _activeConnects;
+
+    public int MaxActiveConnects { get; private set; }
+
     public void SeedMailboxes(params RemoteMailbox[] mailboxes)
     {
         _mailboxes.Clear();
@@ -156,6 +160,14 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             string password,
             CancellationToken cancellationToken = default)
         {
+            var active = Interlocked.Increment(ref _factory._activeConnects);
+            if (active > _factory.MaxActiveConnects)
+            {
+                _factory.MaxActiveConnects = active;
+            }
+
+            try
+            {
             if (_factory.BlockConnectUntil is not null)
             {
                 await _factory.BlockConnectUntil.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -171,6 +183,11 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             _ = username;
             _factory.LastPassword = password;
             _authenticated = true;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _factory._activeConnects);
+            }
         }
 
         public Task<IReadOnlyList<RemoteMailbox>> ListMailboxesAsync(
