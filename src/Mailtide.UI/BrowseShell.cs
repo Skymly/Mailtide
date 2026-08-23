@@ -220,6 +220,8 @@ public sealed class BrowseShell
                     .ListMailboxesAsync(mailboxAccountId, cancellationToken)
                     .ConfigureAwait(false);
             }
+
+            await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 

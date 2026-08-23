@@ -13,7 +13,12 @@ public sealed record AccountInfo(
     CredentialKind CredentialKind,
     string CredentialHandle,
     OAuthProvider? OAuthProvider = null,
-    string? OAuthAuthority = null);
+    string? OAuthAuthority = null)
+{
+    public int UnreadCount { get; init; }
+
+    public bool HasUnread => UnreadCount > 0;
+}
 
 public enum CredentialKind
 {
