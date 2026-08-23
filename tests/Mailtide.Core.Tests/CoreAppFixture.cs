@@ -127,6 +127,9 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
     private int _activeConnects;
 
     public int MaxActiveConnects { get; private set; }
+    public string? LastSetSeenMailboxPath { get; private set; }
+
+    public string? LastSetSeenRemoteId { get; private set; }
 
     public void SeedMailboxes(params RemoteMailbox[] mailboxes)
     {
@@ -208,6 +211,17 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             }
 
             return Task.FromResult<IReadOnlyList<RemoteMessage>>(messages.ToList());
+        }
+
+        public Task SetSeenAsync(
+            string mailboxPath,
+            string remoteId,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            _factory.LastSetSeenMailboxPath = mailboxPath;
+            _factory.LastSetSeenRemoteId = remoteId;
+            return Task.CompletedTask;
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

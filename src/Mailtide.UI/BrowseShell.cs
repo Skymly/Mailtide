@@ -174,6 +174,16 @@ public sealed class BrowseShell
         Attachments = await _app
             .ListAttachmentsAsync(message.AccountId, messageId, cancellationToken)
             .ConfigureAwait(false);
+
+        if (!message.IsRead)
+        {
+            await _app
+                .MarkReadAsync(message.AccountId, messageId, cancellationToken)
+                .ConfigureAwait(false);
+            Messages = Messages
+                .Select(item => item.Id == messageId ? item with { IsRead = true } : item)
+                .ToList();
+        }
     }
 
     public async Task RefreshAfterAccountWorkAsync(CancellationToken cancellationToken = default)

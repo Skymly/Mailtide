@@ -154,6 +154,37 @@ internal sealed class MailKitImapClient : IImapClient
         }
     }
 
+    public async Task SetSeenAsync(
+        string mailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mailboxPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(remoteId);
+        var client = EnsureAuthenticated();
+
+        try
+        {
+            if (!uint.TryParse(remoteId, out var uidValue))
+            {
+                throw new ImapProtocolException("IMAP protocol failure.", new FormatException($"RemoteId '{remoteId}' is not a UID."));
+            }
+
+            var folder = await client.GetFolderAsync(mailboxPath, cancellationToken).ConfigureAwait(false);
+            await folder.OpenAsync(FolderAccess.ReadWrite, cancellationToken).ConfigureAwait(false);
+            await folder
+                .AddFlagsAsync(new UniqueId(uidValue), MessageFlags.Seen, silent: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException and not ImapProtocolException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
     public async ValueTask DisposeAsync()
     {
         await DisposeClientAsync().ConfigureAwait(false);
