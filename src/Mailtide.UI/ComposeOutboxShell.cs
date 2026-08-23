@@ -17,12 +17,19 @@ public sealed class ComposeOutboxShell
 
     public Guid? SelectedAccountId { get; private set; }
 
+    public Guid? SelectedDraftId { get; private set; }
+
     public IReadOnlyList<DraftInfo> Drafts { get; private set; } = [];
 
     public IReadOnlyList<OutboxItemInfo> OutboxItems { get; private set; } = [];
 
     public async Task SelectAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
+        if (SelectedAccountId != accountId)
+        {
+            SelectedDraftId = null;
+        }
+
         SelectedAccountId = accountId;
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
@@ -30,6 +37,7 @@ public sealed class ComposeOutboxShell
     public void ClearSelection()
     {
         SelectedAccountId = null;
+        SelectedDraftId = null;
         Drafts = [];
         OutboxItems = [];
     }
@@ -44,12 +52,14 @@ public sealed class ComposeOutboxShell
         var accountId = RequireSelectedAccount();
         var addresses = ParseAddresses(toAddresses);
         var cc = ParseAddresses(ccAddresses);
-        await _app
+        var saved = await _app
             .SaveDraftAsync(
                 accountId,
                 new DraftContent(addresses, subject, bodyText) { CcAddresses = cc },
+                SelectedDraftId,
                 cancellationToken)
             .ConfigureAwait(false);
+        SelectedDraftId = saved.Id;
         Drafts = await _app.ListDraftsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -63,6 +73,7 @@ public sealed class ComposeOutboxShell
             .StartForwardAsync(accountId, messageId, cancellationToken)
             .ConfigureAwait(false);
         SelectedAccountId = accountId;
+        SelectedDraftId = draft.Id;
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
         return draft;
     }
@@ -75,6 +86,7 @@ public sealed class ComposeOutboxShell
             .StartReplyAllAsync(accountId, messageId, cancellationToken)
             .ConfigureAwait(false);
         SelectedAccountId = accountId;
+        SelectedDraftId = draft.Id;
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
         return draft;
     }
@@ -88,6 +100,7 @@ public sealed class ComposeOutboxShell
             .StartReplyAsync(accountId, messageId, cancellationToken)
             .ConfigureAwait(false);
         SelectedAccountId = accountId;
+        SelectedDraftId = draft.Id;
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
         return draft;
     }
@@ -96,6 +109,11 @@ public sealed class ComposeOutboxShell
     {
         var accountId = RequireSelectedAccount();
         await _app.SendAsync(accountId, draftId, cancellationToken).ConfigureAwait(false);
+        if (SelectedDraftId == draftId)
+        {
+            SelectedDraftId = null;
+        }
+
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
 

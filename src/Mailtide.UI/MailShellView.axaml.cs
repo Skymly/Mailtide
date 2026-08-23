@@ -199,20 +199,15 @@ public partial class MailShellView : UserControl
             return;
         }
 
-        var draft = DraftsList.SelectedItem as DraftInfo;
-        if (draft is null)
+        await compose
+            .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty)
+            .ConfigureAwait(true);
+        if (compose.SelectedDraftId is not { } draftId)
         {
-            await compose
-                .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty)
-                .ConfigureAwait(true);
-            draft = compose.Drafts.FirstOrDefault();
-            if (draft is null)
-            {
-                return;
-            }
+            return;
         }
 
-        await compose.SendAsync(draft.Id).ConfigureAwait(true);
+        await compose.SendAsync(draftId).ConfigureAwait(true);
         ClearComposeFields();
         BindLists();
     }
