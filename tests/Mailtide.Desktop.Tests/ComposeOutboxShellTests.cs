@@ -412,6 +412,21 @@ public sealed class ComposeOutboxShellTests
     }
 
     [TestMethod]
+    public async Task ComposeOutboxShell_add_and_remove_Draft_attachments()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SaveDraftAsync("bob@example.com", "Hello", "Body");
+        await shell.AddDraftAttachmentAsync("notes.txt", "text/plain", "hello"u8.ToArray());
+        Assert.AreEqual("notes.txt", shell.DraftAttachments.Single().FileName);
+        await shell.RemoveDraftAttachmentAsync(shell.DraftAttachments.Single().Id);
+        Assert.IsEmpty(shell.DraftAttachments);
+    }
+
+    [TestMethod]
     public async Task ComposeOutboxShell_SaveDraft_keeps_Bcc_separate()
     {
         using var fixture = new DesktopAppFixture();

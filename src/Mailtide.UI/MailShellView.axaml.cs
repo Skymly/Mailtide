@@ -1,6 +1,8 @@
+using System.IO;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Mailtide.Core;
 using Mailtide.Core.Updates;
 
@@ -202,6 +204,59 @@ public partial class MailShellView : UserControl
             .ConfigureAwait(true);
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault();
+    }
+
+    private async void OnAttachDraftClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (compose.SelectedAccountId is null)
+        {
+            return;
+        }
+
+        if (compose.SelectedDraftId is null)
+        {
+            await compose
+                .SaveDraftAsync(ComposeToBox.Text ?? string.Empty, ComposeSubjectBox.Text ?? string.Empty, ComposeBodyBox.Text ?? string.Empty, ComposeCcBox.Text ?? string.Empty, ComposeBccBox.Text ?? string.Empty)
+                .ConfigureAwait(true);
+        }
+
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null)
+        {
+            return;
+        }
+
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            AllowMultiple = false,
+            Title = "Attach file",
+        }).ConfigureAwait(true);
+        var file = files.FirstOrDefault();
+        if (file is null)
+        {
+            return;
+        }
+
+        await using var stream = await file.OpenReadAsync().ConfigureAwait(true);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory).ConfigureAwait(true);
+        await compose
+            .AddDraftAttachmentAsync(file.Name, "application/octet-stream", memory.ToArray())
+            .ConfigureAwait(true);
+        BindLists();
+    }
+
+    private async void OnRemoveDraftAttachmentClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (DraftAttachmentsList.SelectedItem is not DraftAttachmentInfo attachment)
+        {
+            return;
+        }
+
+        await compose.RemoveDraftAttachmentAsync(attachment.Id).ConfigureAwait(true);
+        BindLists();
     }
 
     private async void OnSendDraftClick(object? sender, RoutedEventArgs e)
@@ -663,6 +718,7 @@ public partial class MailShellView : UserControl
             MessagesList.ItemsSource = browse.Messages;
             AttachmentsList.ItemsSource = browse.Attachments;
             DraftsList.ItemsSource = compose.Drafts;
+            DraftAttachmentsList.ItemsSource = compose.DraftAttachments;
             OutboxList.ItemsSource = compose.OutboxItems;
             DraftsList.SelectedItem = compose.SelectedDraftId is { } selectedDraftId
                 ? compose.Drafts.FirstOrDefault(d => d.Id == selectedDraftId)
