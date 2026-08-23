@@ -1127,6 +1127,132 @@ public sealed class MailtideApp : IAsyncDisposable
             SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
         }
     }
+
+    public async Task MarkUnreadAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        string imapHost;
+        int imapPort;
+        string emailAddress;
+        string mailboxPath;
+        string remoteId;
+        string credentialHandle;
+        CredentialKind credentialKind;
+        OAuthTokenMetadata? oauthMetadata = null;
+        string? secret;
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var message = await _db.Messages
+                .SingleOrDefaultAsync(
+                    m => m.AccountId == accountId && m.Id == messageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (message is null)
+            {
+                throw new InvalidOperationException($"Message '{messageId}' was not found.");
+            }
+
+            if (!message.IsRead)
+            {
+                return;
+            }
+
+            var mailbox = await _db.Mailboxes
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    m => m.AccountId == accountId && m.Id == message.MailboxId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (mailbox is null)
+            {
+                throw new InvalidOperationException($"Mailbox '{message.MailboxId}' was not found.");
+            }
+
+            var account = await _db.Accounts
+                .AsNoTracking()
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (account is null)
+            {
+                throw new InvalidOperationException($"Account '{accountId}' was not found.");
+            }
+
+            message.IsRead = false;
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            imapHost = account.ImapHost;
+            imapPort = account.ImapPort;
+            emailAddress = account.EmailAddress;
+            mailboxPath = mailbox.Path;
+            remoteId = message.RemoteId;
+            credentialHandle = account.CredentialHandle;
+            credentialKind = account.CredentialKind;
+            if (account.CredentialKind == CredentialKind.OAuth)
+            {
+                oauthMetadata = RequireOAuthMetadata(account);
+            }
+
+            secret = await _auth
+                .RetrieveCredentialSecretAsync(account.CredentialHandle, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        if (secret is null)
+        {
+            SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+            return;
+        }
+
+        try
+        {
+            var protocolSecret = await ResolveProtocolSecretAsync(
+                    credentialKind,
+                    oauthMetadata,
+                    secret,
+                    credentialHandle,
+                    invalidateOnAuthFailure: true,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (protocolSecret is null)
+            {
+                SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+                return;
+            }
+
+            await using var client = _imapClientFactory.Create();
+            await client
+                .ConnectAndAuthenticateAsync(
+                    imapHost,
+                    imapPort,
+                    emailAddress,
+                    protocolSecret,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await client
+                .SetUnseenAsync(mailboxPath, remoteId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+        }
+    }
     public async Task<IReadOnlyList<AttachmentInfo>> ListAttachmentsAsync(
         Guid accountId,
         Guid messageId,

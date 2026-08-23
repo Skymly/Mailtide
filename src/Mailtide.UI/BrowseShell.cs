@@ -225,6 +225,32 @@ public sealed class BrowseShell
         }
     }
 
+    public async Task MarkSelectedUnreadAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedMessageId is not { } messageId)
+        {
+            throw new InvalidOperationException("Select a Message before marking it unread.");
+        }
+
+        var message = Messages.FirstOrDefault(m => m.Id == messageId)
+            ?? throw new InvalidOperationException("Message is not in the current list.");
+
+        await _app
+            .MarkUnreadAsync(message.AccountId, messageId, cancellationToken)
+            .ConfigureAwait(false);
+        Messages = Messages
+            .Select(item => item.Id == messageId ? item with { IsRead = false } : item)
+            .ToList();
+        if (SelectedAccountId is { } mailboxAccountId)
+        {
+            Mailboxes = await _app
+                .ListMailboxesAsync(mailboxAccountId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task RefreshAfterAccountWorkAsync(CancellationToken cancellationToken = default)
     {
         var mailboxId = SelectedMailboxId;

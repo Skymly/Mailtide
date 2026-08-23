@@ -362,6 +362,38 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_MarkSelectedUnread_restores_unread_row()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "read-1",
+                Subject: "Was read",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "old"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        Assert.IsTrue(shell.Messages[0].IsRead);
+        await shell.MarkSelectedUnreadAsync();
+
+        Assert.IsFalse(shell.Messages[0].IsRead);
+        Assert.AreEqual(1, shell.Mailboxes.Single().UnreadCount);
+        Assert.AreEqual(1, shell.Accounts.Single().UnreadCount);
+    }
+
+    [TestMethod]
     public async Task BrowseShell_SelectMessage_loads_plain_text_body_and_attachments()
     {
         using var fixture = new DesktopAppFixture();

@@ -131,6 +131,11 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastSetSeenRemoteId { get; private set; }
 
+    public string? LastSetUnseenMailboxPath { get; private set; }
+
+    public string? LastSetUnseenRemoteId { get; private set; }
+
+
     public List<string> FetchedRemoteIds { get; } = [];
 
     private TaskCompletionSource _mailboxChange =
@@ -290,6 +295,17 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             EnsureAuthenticated();
             _factory.LastSetSeenMailboxPath = mailboxPath;
             _factory.LastSetSeenRemoteId = remoteId;
+            return Task.CompletedTask;
+        }
+
+        public Task SetUnseenAsync(
+            string mailboxPath,
+            string remoteId,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            _factory.LastSetUnseenMailboxPath = mailboxPath;
+            _factory.LastSetUnseenRemoteId = remoteId;
             return Task.CompletedTask;
         }
 

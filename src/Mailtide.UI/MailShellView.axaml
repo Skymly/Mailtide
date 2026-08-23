@@ -197,6 +197,11 @@
                 Content="Forward"
                 Margin="0,0,0,8"
                 Click="OnForwardClick" />
+        <Button Name="MarkUnreadButton"
+                DockPanel.Dock="Top"
+                Content="Mark Unread"
+                Margin="0,0,0,8"
+                Click="OnMarkUnreadClick" />
         <TextBlock DockPanel.Dock="Top" Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,8" />
         <TextBlock Name="AttachmentOpenErrorText"
                    DockPanel.Dock="Top"

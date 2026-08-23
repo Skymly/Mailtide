@@ -293,13 +293,21 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
             else if (upper.Contains("STORE", StringComparison.Ordinal))
             {
                 var mailbox = FindMailbox(selectedPath);
-                var match = System.Text.RegularExpressions.Regex.Match(
+                var add = System.Text.RegularExpressions.Regex.Match(
                     command,
                     @"(?:UID\s+)?STORE\s+(\d+)\s+\+FLAGS",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (mailbox is not null && match.Success && uint.TryParse(match.Groups[1].Value, out var storedUid))
+                var remove = System.Text.RegularExpressions.Regex.Match(
+                    command,
+                    @"(?:UID\s+)?STORE\s+(\d+)\s+-FLAGS",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (mailbox is not null && add.Success && uint.TryParse(add.Groups[1].Value, out var storedUid))
                 {
                     _seen.Add((mailbox.Path, storedUid));
+                }
+                else if (mailbox is not null && remove.Success && uint.TryParse(remove.Groups[1].Value, out var unseenUid))
+                {
+                    _seen.Remove((mailbox.Path, unseenUid));
                 }
 
                 await writer.WriteLineAsync($"{tag} OK STORE completed").ConfigureAwait(false);
