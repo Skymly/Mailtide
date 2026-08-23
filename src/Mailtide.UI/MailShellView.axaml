@@ -150,6 +150,11 @@
                  TextWrapping="Wrap"
                  MinHeight="120"
                  Margin="0,0,0,8" />
+        <Button Name="ReplyButton"
+                DockPanel.Dock="Top"
+                Content="Reply"
+                Margin="0,0,0,8"
+                Click="OnReplyClick" />
         <TextBlock DockPanel.Dock="Top" Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,8" />
         <TextBlock Name="AttachmentOpenErrorText"
                    DockPanel.Dock="Top"
