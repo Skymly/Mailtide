@@ -474,6 +474,9 @@ public partial class MailShellView : UserControl
             case MailShellShortcut.NextUnread:
                 OnNextUnreadClick(sender, e);
                 return;
+            case MailShellShortcut.PreviousUnread:
+                OnPreviousUnreadClick(sender, e);
+                return;
         }
     }
 
@@ -676,6 +679,13 @@ public partial class MailShellView : UserControl
     {
         var browse = RequireBrowse();
         await browse.SelectNextUnreadAsync().ConfigureAwait(true);
+        BindLists();
+    }
+
+    private async void OnPreviousUnreadClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        await browse.SelectPreviousUnreadAsync().ConfigureAwait(true);
         BindLists();
     }
 

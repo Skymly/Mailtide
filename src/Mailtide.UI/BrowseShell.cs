@@ -272,6 +272,47 @@ public sealed class BrowseShell
         await SelectMessageAsync(next.Id, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task SelectPreviousUnreadAsync(CancellationToken cancellationToken = default)
+    {
+        if (Messages.Count == 0)
+        {
+            return;
+        }
+
+        var start = Messages.Count - 1;
+        if (SelectedMessageId is { } selectedId)
+        {
+            var index = -1;
+            for (var i = 0; i < Messages.Count; i++)
+            {
+                if (Messages[i].Id == selectedId)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            start = index - 1;
+        }
+
+        MessageInfo? previous = null;
+        for (var i = start; i >= 0; i--)
+        {
+            if (!Messages[i].IsRead)
+            {
+                previous = Messages[i];
+                break;
+            }
+        }
+
+        if (previous is null)
+        {
+            return;
+        }
+
+        await SelectMessageAsync(previous.Id, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task MarkCurrentReadAsync(CancellationToken cancellationToken = default)
     {
         if (ShowingUnifiedInbox)
