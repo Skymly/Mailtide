@@ -34,12 +34,61 @@ public sealed partial class MailtideApp
         return (endpoint, secret);
     }
 
+    private readonly record struct PreparedImap(
+        AccountImapEndpoint Endpoint,
+        string ProtocolSecret);
+
+    private async Task<PreparedImap?> TryPrepareImapAsync(
+        Guid accountId,
+        bool reportStatus,
+        bool invalidateOnAuthFailure,
+        bool catchResolveFailures,
+        CancellationToken cancellationToken)
+    {
+        AccountImapEndpoint endpoint;
+        string? secret;
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var account = await RequireAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
+            (endpoint, secret) = await BindImapEndpointAsync(account, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        try
+        {
+            var protocolSecret = await ResolveImapSecretAsync(
+                    endpoint,
+                    secret,
+                    reportStatus,
+                    accountId,
+                    cancellationToken,
+                    invalidateOnAuthFailure)
+                .ConfigureAwait(false);
+            if (protocolSecret is null)
+            {
+                return null;
+            }
+
+            return new PreparedImap(endpoint, protocolSecret);
+        }
+        catch (Exception ex) when (catchResolveFailures && ex is not OperationCanceledException)
+        {
+            SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+            return null;
+        }
+    }
+
     private async Task<string?> ResolveImapSecretAsync(
         AccountImapEndpoint endpoint,
         string? secret,
         bool reportStatus,
         Guid accountId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool invalidateOnAuthFailure = true)
     {
         if (secret is null)
         {
@@ -57,7 +106,7 @@ public sealed partial class MailtideApp
                 endpoint.OAuthMetadata,
                 secret,
                 endpoint.CredentialHandle,
-                invalidateOnAuthFailure: true,
+                invalidateOnAuthFailure: invalidateOnAuthFailure,
                 cancellationToken)
             .ConfigureAwait(false);
 
