@@ -435,3 +435,6 @@ FodyWeavers.xsd
 *.jks
 *.keystore
 packaging/tools/
+
+# Local agent scratch (patches, issue drafts, PR bodies)
+.scratch/
