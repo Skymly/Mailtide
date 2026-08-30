@@ -65,14 +65,13 @@ cd Mailtide
 Nuke entrypoints (preferred; same path CI uses):
 
 ```bash
-# Linux / macOS CI runners
+# Linux / bash
 ./build.sh Test
 
 # Windows
 .\build.ps1 Test
 # or: build.cmd Test
 ```
-
 Useful targets:
 
 | Target | Purpose |
