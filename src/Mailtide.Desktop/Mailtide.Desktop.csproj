@@ -8,6 +8,21 @@
     <Version Condition="'$(Version)' == ''">0.0.0</Version>
   </PropertyGroup>
 
+  <!-- Bake public OAuth client IDs from publish -p: properties into assembly metadata.
+       BakedOAuthEnvironment copies them into process env at startup when unset. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute"
+                       Condition="'$(MAILTIDE_GOOGLE_OAUTH_CLIENT_ID)' != ''">
+      <_Parameter1>MAILTIDE_GOOGLE_OAUTH_CLIENT_ID</_Parameter1>
+      <_Parameter2>$(MAILTIDE_GOOGLE_OAUTH_CLIENT_ID)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute"
+                       Condition="'$(MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID)' != ''">
+      <_Parameter1>MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID</_Parameter1>
+      <_Parameter2>$(MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Mailtide.Core\Mailtide.Core.csproj" />
     <ProjectReference Include="..\Mailtide.UI\Mailtide.UI.csproj" />

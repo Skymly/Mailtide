@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\build\ReleaseArtifacts.cs" Link="ReleaseArtifacts.cs" />
+    <Compile Include="..\..\build\OAuthClientIdPublish.cs" Link="OAuthClientIdPublish.cs" />
   </ItemGroup>
 
 </Project>

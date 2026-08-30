@@ -13,6 +13,11 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Release packs may bake public OAuth client IDs into assembly metadata.
+        // Copy them into process env (without overriding Person-exported values)
+        // before DesktopOAuthOptions.FromEnvironment runs.
+        BakedOAuthEnvironment.ApplyToProcessEnvironment();
+
         HostBootstrap.OpenCoreAsync = DesktopComposition.OpenCoreAsync;
         HostBootstrap.OpenDownloadedAttachment = new DesktopOpenDownloadedAttachment();
 
