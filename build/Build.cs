@@ -120,7 +120,7 @@ sealed class Build : NukeBuild
         .Executes(() =>
         {
             DesktopPublishWin.CreateDirectory();
-            DotNetPublish(s => s
+            DotNetPublish(s => ApplyOAuthClientIdProperties(s
                 .SetProject(DesktopHostProject)
                 .SetConfiguration(Configuration.Release)
                 .SetRuntime("win-x64")
@@ -128,7 +128,7 @@ sealed class Build : NukeBuild
                 .SetOutput(DesktopPublishWin)
                 .SetProperty("PublishTrimmed", true)
                 .SetProperty("Version", NormalizedVersion)
-                .SetProperty("InformationalVersion", NormalizedVersion));
+                .SetProperty("InformationalVersion", NormalizedVersion)));
         });
 
     Target PackWindowsInstaller => _ => _
@@ -158,7 +158,7 @@ sealed class Build : NukeBuild
         .Executes(() =>
         {
             DesktopPublishLinux.CreateDirectory();
-            DotNetPublish(s => s
+            DotNetPublish(s => ApplyOAuthClientIdProperties(s
                 .SetProject(DesktopHostProject)
                 .SetConfiguration(Configuration.Release)
                 .SetRuntime("linux-x64")
@@ -166,7 +166,7 @@ sealed class Build : NukeBuild
                 .SetOutput(DesktopPublishLinux)
                 .SetProperty("PublishTrimmed", true)
                 .SetProperty("Version", NormalizedVersion)
-                .SetProperty("InformationalVersion", NormalizedVersion));
+                .SetProperty("InformationalVersion", NormalizedVersion)));
         });
 
     Target PackAppImage => _ => _
@@ -255,6 +255,7 @@ sealed class Build : NukeBuild
             }
 
             publishSettings = ApplyAndroidSigning(publishSettings);
+            publishSettings = ApplyOAuthClientIdProperties(publishSettings);
 
             DotNetPublish(publishSettings);
 
@@ -363,6 +364,22 @@ sealed class Build : NukeBuild
             .SetProperty("AndroidSigningStorePass", keystorePassword)
             .SetProperty("AndroidSigningKeyAlias", keyAlias)
             .SetProperty("AndroidSigningKeyPass", keyPassword);
+    }
+
+    /// <summary>
+    /// When GitHub Actions (or a local shell) exports public OAuth client IDs,
+    /// pass them as MSBuild properties so Desktop AssemblyMetadata / Android
+    /// RuntimeEnvironmentVariable can bake them. Missing values are omitted.
+    /// </summary>
+    static DotNetPublishSettings ApplyOAuthClientIdProperties(DotNetPublishSettings settings)
+    {
+        foreach (var (name, value) in OAuthClientIdPublish.MsBuildPropertiesFromEnvironment())
+        {
+            settings = settings.SetProperty(name, value);
+            Serilog.Log.Information("Baking OAuth client ID property {Property} into publish.", name);
+        }
+
+        return settings;
     }
 
     static string FindInnoSetupCompiler()

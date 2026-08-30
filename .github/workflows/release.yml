@@ -46,6 +46,9 @@ jobs:
 
       - name: Pack Windows installer
         shell: cmd
+        env:
+          MAILTIDE_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.MAILTIDE_GOOGLE_OAUTH_CLIENT_ID }}
+          MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID: ${{ secrets.MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID }}
         run: build.cmd PackWindowsInstaller --Version ${{ needs.version.outputs.version }}
 
       - name: Upload Windows artifact
@@ -89,6 +92,8 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MAILTIDE_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.MAILTIDE_GOOGLE_OAUTH_CLIENT_ID }}
+          MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID: ${{ secrets.MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID }}
         run: ./build.sh PackAppImage PublishAndroidApk --Version ${{ needs.version.outputs.version }}
 
       - name: Upload Linux artifacts

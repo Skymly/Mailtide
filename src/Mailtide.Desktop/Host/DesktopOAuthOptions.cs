@@ -5,6 +5,8 @@ namespace Mailtide.Desktop.Host;
 /// <summary>
 /// Public OAuth client IDs for Desktop system-browser flows.
 /// Set via env: MAILTIDE_GOOGLE_OAUTH_CLIENT_ID, MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID.
+/// Release packs may bake those into assembly metadata; <c>BakedOAuthEnvironment</c>
+/// copies them into process env at startup when unset.
 /// </summary>
 public sealed class DesktopOAuthOptions
 {
