@@ -374,6 +374,172 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Updates display fields and optionally the password Credential on a Password Account.
+    /// Blank/omitted <see cref="ManualAccountDraft.Password"/> keeps the existing secret.
+    /// Missing Account is a no-op (returns null), matching <see cref="RemoveAccountAsync"/>.
+    /// </summary>
+    public async Task<AccountInfo?> UpdateManualAccountAsync(
+        Guid accountId,
+        ManualAccountDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var record = await _db.Accounts
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (record is null)
+            {
+                return null;
+            }
+
+            if (record.CredentialKind != CredentialKind.Password)
+            {
+                throw new InvalidOperationException(
+                    $"Account '{accountId}' is not a Password Account.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.Password))
+            {
+                await _secureStorage
+                    .StoreSecretAsync(record.CredentialHandle, draft.Password, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            record.DisplayName = draft.DisplayName;
+            record.EmailAddress = draft.EmailAddress;
+            record.ImapHost = draft.ImapHost;
+            record.ImapPort = draft.ImapPort;
+            record.SmtpHost = draft.SmtpHost;
+            record.SmtpPort = draft.SmtpPort;
+
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return ToInfo(record);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Updates a QQ Mail Password Account. Endpoints stay <see cref="QqMailPreset"/>.
+    /// Blank/omitted <see cref="QqMailAccountDraft.AuthorizationCode"/> keeps the existing secret.
+    /// Missing Account is a no-op (returns null), matching <see cref="RemoveAccountAsync"/>.
+    /// </summary>
+    public Task<AccountInfo?> UpdateQqMailAccountAsync(
+        Guid accountId,
+        QqMailAccountDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+
+        return UpdateManualAccountAsync(
+            accountId,
+            new ManualAccountDraft(
+                DisplayName: draft.DisplayName,
+                EmailAddress: draft.EmailAddress,
+                ImapHost: QqMailPreset.ImapHost,
+                ImapPort: QqMailPreset.ImapPort,
+                SmtpHost: QqMailPreset.SmtpHost,
+                SmtpPort: QqMailPreset.SmtpPort,
+                Password: draft.AuthorizationCode),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Re-runs OAuth obtain for an OAuth Account, replaces the refresh secret under the same
+    /// CredentialHandle, and updates EmailAddress when the provider returns a different one.
+    /// Missing Account is a no-op (returns null), matching <see cref="RemoveAccountAsync"/>.
+    /// </summary>
+    public async Task<AccountInfo?> ReauthorizeAccountAsync(
+        Guid accountId,
+        CancellationToken cancellationToken = default)
+    {
+        AccountRecord? record;
+        OAuthProvider provider;
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            record = await _db.Accounts
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (record is null)
+            {
+                return null;
+            }
+
+            if (record.CredentialKind != CredentialKind.OAuth || record.OAuthProvider is null)
+            {
+                throw new InvalidOperationException(
+                    $"Account '{accountId}' is not an OAuth Account.");
+            }
+
+            provider = record.OAuthProvider.Value;
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        var authorization = await _auth
+            .ObtainAsync(provider, cancellationToken)
+            .ConfigureAwait(false);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(authorization.EmailAddress);
+        ArgumentException.ThrowIfNullOrWhiteSpace(authorization.RefreshSecret);
+        ArgumentNullException.ThrowIfNull(authorization.Metadata);
+
+        if (authorization.Metadata.Provider != provider)
+        {
+            throw new InvalidOperationException(
+                $"OAuth provider mismatch: expected '{provider}', got '{authorization.Metadata.Provider}'.");
+        }
+
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            record = await _db.Accounts
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (record is null)
+            {
+                return null;
+            }
+
+            if (record.CredentialKind != CredentialKind.OAuth
+                || record.OAuthProvider != provider)
+            {
+                throw new InvalidOperationException(
+                    $"Account '{accountId}' is not an OAuth Account.");
+            }
+
+            await _auth
+                .StoreRefreshSecretAsync(
+                    record.CredentialHandle,
+                    authorization.RefreshSecret,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            record.EmailAddress = authorization.EmailAddress;
+
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return ToInfo(record);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     public AccountStatus GetAccountStatus(Guid accountId)
     {
         lock (_statusGate)

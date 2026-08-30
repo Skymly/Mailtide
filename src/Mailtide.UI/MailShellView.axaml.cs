@@ -360,6 +360,52 @@ public partial class MailShellView : UserControl
         }
     }
 
+    private async void OnEditAccountClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        AccountActionStatus.Text = string.Empty;
+        if (AccountsList.SelectedItem is not AccountStatusRow row)
+        {
+            AccountActionStatus.Text = "Select an Account to edit.";
+            return;
+        }
+
+        var dialog = new EditAccountDialog(browse, row.Account);
+        bool edited;
+        try
+        {
+            edited = await AvaloniaOverlayDialog.ShowAsync(this, dialog, dialog.Completion).ConfigureAwait(true);
+        }
+        catch (InvalidOperationException)
+        {
+            AccountActionStatus.Text = "Unable to open Edit Account dialog.";
+            return;
+        }
+
+        if (!edited)
+        {
+            return;
+        }
+
+        try
+        {
+            await browse.LoadAccountsAsync().ConfigureAwait(true);
+            if (browse.SelectedAccountId is { } selectedId)
+            {
+                await browse.SelectAccountAsync(selectedId).ConfigureAwait(true);
+                await RequireCompose().SelectAccountAsync(selectedId).ConfigureAwait(true);
+            }
+
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            await browse.LoadAccountsAsync().ConfigureAwait(true);
+            BindLists();
+            AccountActionStatus.Text = ex.Message;
+        }
+    }
+
     private async void OnRemoveAccountClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();

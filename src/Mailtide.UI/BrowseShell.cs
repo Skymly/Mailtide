@@ -86,6 +86,41 @@ public sealed class BrowseShell
             ct => _app.AddManualAccountAsync(draft, ct),
             cancellationToken);
 
+    public async Task<AccountInfo?> UpdateManualAccountAsync(
+        Guid accountId,
+        ManualAccountDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await _app
+            .UpdateManualAccountAsync(accountId, draft, cancellationToken)
+            .ConfigureAwait(false);
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    public async Task<AccountInfo?> UpdateQqMailAccountAsync(
+        Guid accountId,
+        QqMailAccountDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await _app
+            .UpdateQqMailAccountAsync(accountId, draft, cancellationToken)
+            .ConfigureAwait(false);
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    public async Task<AccountInfo?> ReauthorizeAccountAsync(
+        Guid accountId,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await _app
+            .ReauthorizeAccountAsync(accountId, cancellationToken)
+            .ConfigureAwait(false);
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
     private async Task<AccountInfo> AddThenReloadAsync(
         Func<CancellationToken, Task<AccountInfo>> add,
         CancellationToken cancellationToken)

@@ -265,6 +265,162 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_UpdateManual_keeps_secret_when_Password_blank_and_reloads()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var updated = await shell.UpdateManualAccountAsync(
+            account.Id,
+            new ManualAccountDraft(
+                DisplayName: "Renamed",
+                EmailAddress: "alice@example.com",
+                ImapHost: "imap.example.com",
+                ImapPort: 993,
+                SmtpHost: "smtp.example.com",
+                SmtpPort: 587,
+                Password: ""));
+
+        Assert.IsNotNull(updated);
+        Assert.AreEqual("Renamed", updated.DisplayName);
+        Assert.AreEqual(account.Id, shell.Accounts.Single().Id);
+        Assert.AreEqual("Renamed", shell.Accounts.Single().DisplayName);
+        Assert.AreEqual(
+            "s3cret-password",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_UpdateManual_replaces_secret_when_Password_set()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        await shell.UpdateManualAccountAsync(
+            account.Id,
+            new ManualAccountDraft(
+                DisplayName: "Personal",
+                EmailAddress: "alice@example.com",
+                ImapHost: "imap.example.com",
+                ImapPort: 993,
+                SmtpHost: "smtp.example.com",
+                SmtpPort: 587,
+                Password: "rotated-password"));
+
+        Assert.AreEqual(
+            "rotated-password",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_UpdateQqMail_keeps_preset_and_blank_code_keeps_secret()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddQqMailAccountAsync(
+            new QqMailAccountDraft("QQ", "123456789@qq.com", "abcdefghijklmnop"));
+
+        var updated = await shell.UpdateQqMailAccountAsync(
+            account.Id,
+            new QqMailAccountDraft("QQ Home", "123456789@qq.com", ""));
+
+        Assert.IsNotNull(updated);
+        Assert.AreEqual("QQ Home", updated.DisplayName);
+        Assert.AreEqual(QqMailPreset.ImapHost, updated.ImapHost);
+        Assert.AreEqual(QqMailPreset.SmtpPort, updated.SmtpPort);
+        Assert.AreEqual(
+            "abcdefghijklmnop",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Reauthorize_replaces_refresh_keeps_Id_and_handle()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "alice@gmail.com",
+            RefreshSecret: "old-refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.Google,
+                Authority: GoogleMailPreset.Authority,
+                ClientId: "test-google-client"));
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddGoogleAccountAsync("Gmail");
+        var handle = account.CredentialHandle;
+
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "alice.new@gmail.com",
+            RefreshSecret: "new-refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.Google,
+                Authority: GoogleMailPreset.Authority,
+                ClientId: "test-google-client"));
+
+        var updated = await shell.ReauthorizeAccountAsync(account.Id);
+
+        Assert.IsNotNull(updated);
+        Assert.AreEqual(account.Id, updated.Id);
+        Assert.AreEqual(handle, updated.CredentialHandle);
+        Assert.AreEqual("alice.new@gmail.com", updated.EmailAddress);
+        Assert.AreEqual("new-refresh", await fixture.SecureStorage.RetrieveSecretAsync(handle));
+        Assert.AreEqual(account.Id, shell.Accounts.Single().Id);
+        Assert.AreEqual("alice.new@gmail.com", shell.Accounts.Single().EmailAddress);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_UpdateManual_on_OAuth_is_an_error()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "alice@gmail.com",
+            RefreshSecret: "refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.Google,
+                Authority: GoogleMailPreset.Authority,
+                ClientId: "test-google-client"));
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddGoogleAccountAsync("Gmail");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await shell.UpdateManualAccountAsync(
+                account.Id,
+                ValidDraft("Nope", "alice@gmail.com") with { Password = "" }));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Reauthorize_on_Password_is_an_error()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await shell.ReauthorizeAccountAsync(account.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Update_missing_Account_is_a_no_op()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+
+        Assert.IsNull(await shell.UpdateManualAccountAsync(
+            Guid.NewGuid(),
+            ValidDraft("X", "x@example.com") with { Password = "" }));
+        Assert.IsNull(await shell.ReauthorizeAccountAsync(Guid.NewGuid()));
+        Assert.IsEmpty(shell.Accounts);
+    }
+
+    [TestMethod]
     public async Task BrowseShell_Search_filters_current_Mailbox_by_Subject()
     {
         using var fixture = new DesktopAppFixture();
