@@ -9,6 +9,8 @@ public sealed class BrowseShell
 {
     private readonly MailtideApp _app;
 
+    private readonly HashSet<Guid> _dismissedAuthenticationFailureAccountIds = [];
+
     public BrowseShell(MailtideApp app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -50,12 +52,26 @@ public sealed class BrowseShell
 
     public string? AttachmentOpenError { get; private set; }
 
+    public AuthenticationFailurePrompt? AuthenticationFailurePrompt { get; private set; }
+
     public async Task LoadAccountsAsync(CancellationToken cancellationToken = default)
     {
         Accounts = await _app.ListAccountsAsync(cancellationToken).ConfigureAwait(false);
         AccountStatuses = Accounts
             .Select(account => new AccountStatusRow(account, _app.GetAccountStatus(account.Id)))
             .ToList();
+        RefreshAuthenticationFailurePrompt();
+    }
+
+    public void DismissAuthenticationFailurePrompt()
+    {
+        if (AuthenticationFailurePrompt is not { } prompt)
+        {
+            return;
+        }
+
+        _dismissedAuthenticationFailureAccountIds.Add(prompt.AccountId);
+        AuthenticationFailurePrompt = null;
     }
 
     public Task<AccountInfo> AddGoogleAccountAsync(
@@ -569,6 +585,28 @@ public sealed class BrowseShell
         }
     }
 
+    private void RefreshAuthenticationFailurePrompt()
+    {
+        var requiring = AccountStatuses
+            .Where(row => row.Status.RequiresSignIn)
+            .ToList();
+
+        _dismissedAuthenticationFailureAccountIds.RemoveWhere(
+            id => requiring.All(row => row.Account.Id != id));
+
+        var next = requiring.FirstOrDefault(row =>
+            !_dismissedAuthenticationFailureAccountIds.Contains(row.Account.Id));
+
+        AuthenticationFailurePrompt = next is null
+            ? null
+            : new AuthenticationFailurePrompt(
+                next.Account.Id,
+                next.Account.DisplayName,
+                next.Account.CredentialKind == CredentialKind.OAuth
+                    ? AuthenticationFailureAction.Reauthorize
+                    : AuthenticationFailureAction.EditAccount);
+    }
+
     private void ClearMessageDetail()
     {
         SelectedMessageId = null;
@@ -583,3 +621,14 @@ public sealed class BrowseShell
 }
 
 public sealed record AccountStatusRow(AccountInfo Account, AccountStatus Status);
+
+public enum AuthenticationFailureAction
+{
+    Reauthorize = 0,
+    EditAccount = 1,
+}
+
+public sealed record AuthenticationFailurePrompt(
+    Guid AccountId,
+    string DisplayName,
+    AuthenticationFailureAction Action);

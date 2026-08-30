@@ -77,7 +77,7 @@ public sealed partial class MailtideApp
         }
         catch (Exception ex) when (catchResolveFailures && ex is not OperationCanceledException)
         {
-            SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+            SetStatus(accountId, MapSyncError(ex));
             return null;
         }
     }
@@ -94,7 +94,7 @@ public sealed partial class MailtideApp
         {
             if (reportStatus)
             {
-                SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+                SetStatus(accountId, AccountStatus.AuthenticationFailed());
                 return null;
             }
 
@@ -114,7 +114,7 @@ public sealed partial class MailtideApp
         {
             if (reportStatus)
             {
-                SetStatus(accountId, AccountStatus.Error(AuthenticationFailedMessage));
+                SetStatus(accountId, AccountStatus.AuthenticationFailed());
                 return null;
             }
 

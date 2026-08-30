@@ -333,6 +333,61 @@ public sealed class UpdateAccountTests
         Assert.IsEmpty(await app.ListAccountsAsync());
     }
 
+    [TestMethod]
+    public async Task UpdateManual_clears_authentication_error_status()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.FailWith = new ImapAuthenticationException("NO [AUTHENTICATIONFAILED]");
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(new ManualAccountDraft(
+            DisplayName: "Personal",
+            EmailAddress: "alice@example.com",
+            ImapHost: "imap.example.com",
+            ImapPort: 993,
+            SmtpHost: "smtp.example.com",
+            SmtpPort: 587,
+            Password: "old-password"));
+
+        await app.SyncNowAsync(account.Id);
+        Assert.IsTrue(app.GetAccountStatus(account.Id).RequiresSignIn);
+
+        var updated = await app.UpdateManualAccountAsync(
+            account.Id,
+            new ManualAccountDraft(
+                DisplayName: "Personal",
+                EmailAddress: "alice@example.com",
+                ImapHost: "imap.example.com",
+                ImapPort: 993,
+                SmtpHost: "smtp.example.com",
+                SmtpPort: 587,
+                Password: "new-password"));
+
+        Assert.IsNotNull(updated);
+        Assert.AreEqual(AccountSyncState.Idle, app.GetAccountStatus(account.Id).State);
+        Assert.IsFalse(app.GetAccountStatus(account.Id).RequiresSignIn);
+    }
+
+    [TestMethod]
+    public async Task Reauthorize_clears_authentication_error_status()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.OAuth.AuthorizeResult = GoogleAuthorization("alice@gmail.com", "old-refresh");
+        fixture.OAuth.RefreshFailWith = new OAuthAuthenticationException("invalid_grant");
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddGoogleAccountAsync("Gmail");
+
+        await app.SyncNowAsync(account.Id);
+        Assert.IsTrue(app.GetAccountStatus(account.Id).RequiresSignIn);
+
+        fixture.OAuth.RefreshFailWith = null;
+        fixture.OAuth.AuthorizeResult = GoogleAuthorization("alice@gmail.com", "new-refresh");
+        var updated = await app.ReauthorizeAccountAsync(account.Id);
+
+        Assert.IsNotNull(updated);
+        Assert.AreEqual(AccountSyncState.Idle, app.GetAccountStatus(account.Id).State);
+        Assert.IsFalse(app.GetAccountStatus(account.Id).RequiresSignIn);
+    }
+
     private static OAuthAuthorizationResult GoogleAuthorization(string email, string refreshSecret) =>
         new(
             EmailAddress: email,

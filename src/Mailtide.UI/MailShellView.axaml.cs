@@ -120,6 +120,72 @@ public partial class MailShellView : UserControl
         }
     }
 
+    private void BindAuthFailureBanner()
+    {
+        if (AuthFailureBanner is null)
+        {
+            return;
+        }
+
+        var prompt = _browse?.AuthenticationFailurePrompt;
+        if (prompt is null)
+        {
+            AuthFailureBanner.IsVisible = false;
+            return;
+        }
+
+        AuthFailureBannerText.Text =
+            $"Authentication failed for {prompt.DisplayName}. Sign in again.";
+        AuthFailureActionButton.Content = prompt.Action == AuthenticationFailureAction.Reauthorize
+            ? "Reauthorize"
+            : "Edit";
+        AuthFailureBanner.IsVisible = true;
+    }
+
+    private async void OnAuthFailureActionClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        var prompt = browse.AuthenticationFailurePrompt;
+        if (prompt is null)
+        {
+            BindAuthFailureBanner();
+            return;
+        }
+
+        AccountActionStatus.Text = string.Empty;
+        if (prompt.Action == AuthenticationFailureAction.EditAccount)
+        {
+            var account = browse.AccountStatuses
+                .FirstOrDefault(row => row.Account.Id == prompt.AccountId)
+                ?.Account;
+            if (account is null)
+            {
+                BindAuthFailureBanner();
+                return;
+            }
+
+            await EditAccountAsync(account).ConfigureAwait(true);
+            return;
+        }
+
+        try
+        {
+            await browse.ReauthorizeAccountAsync(prompt.AccountId).ConfigureAwait(true);
+            await RefreshAfterAccountWorkAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            AccountActionStatus.Text = ex.Message;
+            BindLists();
+        }
+    }
+
+    private void OnDismissAuthFailureClick(object? sender, RoutedEventArgs e)
+    {
+        RequireBrowse().DismissAuthenticationFailurePrompt();
+        BindAuthFailureBanner();
+    }
+
     private async void OnRefreshClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();
@@ -362,7 +428,6 @@ public partial class MailShellView : UserControl
 
     private async void OnEditAccountClick(object? sender, RoutedEventArgs e)
     {
-        var browse = RequireBrowse();
         AccountActionStatus.Text = string.Empty;
         if (AccountsList.SelectedItem is not AccountStatusRow row)
         {
@@ -370,7 +435,14 @@ public partial class MailShellView : UserControl
             return;
         }
 
-        var dialog = new EditAccountDialog(browse, row.Account);
+        await EditAccountAsync(row.Account).ConfigureAwait(true);
+    }
+
+    private async Task EditAccountAsync(AccountInfo account)
+    {
+        var browse = RequireBrowse();
+        AccountActionStatus.Text = string.Empty;
+        var dialog = new EditAccountDialog(browse, account);
         bool edited;
         try
         {
@@ -816,6 +888,7 @@ public partial class MailShellView : UserControl
             BodyUnavailableText.IsVisible = browse.BodyUnavailable;
             BindMessageBody(browse);
             AttachmentOpenErrorText.Text = browse.AttachmentOpenError ?? string.Empty;
+            BindAuthFailureBanner();
         }
         finally
         {

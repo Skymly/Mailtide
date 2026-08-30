@@ -44,7 +44,7 @@ public sealed partial class MailtideApp
             catch (Exception ex)
             {
                 await ClearTrackerAsync(CancellationToken.None).ConfigureAwait(false);
-                SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+                SetStatus(accountId, MapSyncError(ex));
             }
         }
         finally

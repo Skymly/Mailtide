@@ -7,11 +7,20 @@ public enum AccountSyncState
     Error = 2,
 }
 
-public sealed record AccountStatus(AccountSyncState State, string? ErrorMessage = null)
+public sealed record AccountStatus(
+    AccountSyncState State,
+    string? ErrorMessage = null,
+    bool RequiresSignIn = false)
 {
+    public const string AuthenticationFailedMessage = "Authentication failed. Sign in again.";
+
     public static AccountStatus Idle() => new(AccountSyncState.Idle);
 
     public static AccountStatus Syncing() => new(AccountSyncState.Syncing);
 
-    public static AccountStatus Error(string message) => new(AccountSyncState.Error, message);
+    public static AccountStatus Error(string message, bool requiresSignIn = false) =>
+        new(AccountSyncState.Error, message, requiresSignIn);
+
+    public static AccountStatus AuthenticationFailed() =>
+        Error(AuthenticationFailedMessage, requiresSignIn: true);
 }

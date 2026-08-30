@@ -113,6 +113,7 @@ public sealed class OAuthAccountTests
         var status = app.GetAccountStatus(account.Id);
         Assert.AreEqual(AccountSyncState.Error, status.State);
         Assert.AreEqual("Authentication failed. Sign in again.", status.ErrorMessage);
+        Assert.IsTrue(status.RequiresSignIn);
         Assert.IsNull(fixture.Imap.LastPassword);
         Assert.IsNull(await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
     }
