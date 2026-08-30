@@ -199,6 +199,100 @@ public sealed class BrowseShellTests
         Assert.AreEqual(
             "Authentication failed. Sign in again.",
             shell.AccountStatuses.Single(row => row.Account.Id == account.Id).Status.ErrorMessage);
+        Assert.IsTrue(shell.AccountStatuses.Single(row => row.Account.Id == account.Id).Status.RequiresSignIn);
+        Assert.IsNotNull(shell.AuthenticationFailurePrompt);
+        Assert.AreEqual(account.Id, shell.AuthenticationFailurePrompt.AccountId);
+        Assert.AreEqual(AuthenticationFailureAction.Reauthorize, shell.AuthenticationFailurePrompt.Action);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_prompts_Edit_Account_on_Password_authentication_failure()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.FailWith = new ImapAuthenticationException("NO [AUTHENTICATIONFAILED] Invalid credentials");
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        await shell.LoadAccountsAsync();
+
+        Assert.IsTrue(shell.GetAccountStatus(account.Id).RequiresSignIn);
+        Assert.IsNotNull(shell.AuthenticationFailurePrompt);
+        Assert.AreEqual(account.Id, shell.AuthenticationFailurePrompt.AccountId);
+        Assert.AreEqual("Personal", shell.AuthenticationFailurePrompt.DisplayName);
+        Assert.AreEqual(AuthenticationFailureAction.EditAccount, shell.AuthenticationFailurePrompt.Action);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_does_not_prompt_on_non_auth_sync_error()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.FailWith = new ImapProtocolException("BAD FETCH");
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        await shell.LoadAccountsAsync();
+
+        Assert.AreEqual(AccountSyncState.Error, shell.GetAccountStatus(account.Id).State);
+        Assert.IsFalse(shell.GetAccountStatus(account.Id).RequiresSignIn);
+        Assert.IsNull(shell.AuthenticationFailurePrompt);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_dismissing_auth_prompt_keeps_Error_row()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.FailWith = new ImapAuthenticationException("NO [AUTHENTICATIONFAILED]");
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        var account = await shell.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        await shell.LoadAccountsAsync();
+
+        shell.DismissAuthenticationFailurePrompt();
+        await shell.LoadAccountsAsync();
+
+        Assert.IsNull(shell.AuthenticationFailurePrompt);
+        Assert.AreEqual(AccountSyncState.Error, shell.GetAccountStatus(account.Id).State);
+        Assert.IsTrue(shell.GetAccountStatus(account.Id).RequiresSignIn);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Reauthorize_clears_auth_prompt()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "dave@gmail.com",
+            RefreshSecret: "shell-refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.Google,
+                GoogleMailPreset.Authority,
+                "test-google-client"));
+        fixture.OAuth.RefreshFailWith = new OAuthAuthenticationException("invalid_grant");
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+
+        var shell = new BrowseShell(app);
+        var account = await shell.AddGoogleAccountAsync("Gmail");
+        await app.SyncNowAsync(account.Id);
+        await shell.LoadAccountsAsync();
+        Assert.IsNotNull(shell.AuthenticationFailurePrompt);
+
+        fixture.OAuth.RefreshFailWith = null;
+        fixture.OAuth.AuthorizeResult = new OAuthAuthorizationResult(
+            EmailAddress: "dave@gmail.com",
+            RefreshSecret: "new-refresh",
+            Metadata: new OAuthTokenMetadata(
+                OAuthProvider.Google,
+                GoogleMailPreset.Authority,
+                "test-google-client"));
+
+        await shell.ReauthorizeAccountAsync(account.Id);
+
+        Assert.IsNull(shell.AuthenticationFailurePrompt);
+        Assert.AreEqual(AccountSyncState.Idle, shell.GetAccountStatus(account.Id).State);
+        Assert.IsFalse(shell.GetAccountStatus(account.Id).RequiresSignIn);
     }
 
     [TestMethod]

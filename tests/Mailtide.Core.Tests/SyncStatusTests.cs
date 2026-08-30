@@ -46,6 +46,7 @@ public sealed class SyncStatusTests
         var status = app.GetAccountStatus(account.Id);
         Assert.AreEqual(AccountSyncState.Error, status.State);
         Assert.AreEqual("Authentication failed. Sign in again.", status.ErrorMessage);
+        Assert.IsTrue(status.RequiresSignIn);
         Assert.DoesNotContain("AUTHENTICATIONFAILED", status.ErrorMessage!, StringComparison.Ordinal);
         Assert.DoesNotContain("NO [", status.ErrorMessage!, StringComparison.Ordinal);
     }
@@ -64,6 +65,7 @@ public sealed class SyncStatusTests
         var status = app.GetAccountStatus(account.Id);
         Assert.AreEqual(AccountSyncState.Error, status.State);
         Assert.AreEqual("Could not sync this Account. Try again later.", status.ErrorMessage);
+        Assert.IsFalse(status.RequiresSignIn);
         Assert.DoesNotContain("FETCH", status.ErrorMessage!, StringComparison.Ordinal);
         Assert.DoesNotContain("\\Seen", status.ErrorMessage!, StringComparison.Ordinal);
     }

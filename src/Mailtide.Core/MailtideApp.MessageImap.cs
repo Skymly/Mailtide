@@ -351,7 +351,7 @@ public sealed partial class MailtideApp
         }
         catch (Exception ex)
         {
-            SetStatus(accountId, AccountStatus.Error(MapSyncFailure(ex)));
+            SetStatus(accountId, MapSyncError(ex));
         }
     }
 

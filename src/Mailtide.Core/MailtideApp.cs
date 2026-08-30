@@ -419,6 +419,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
             record.SmtpPort = draft.SmtpPort;
 
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            SetStatus(accountId, AccountStatus.Idle());
             return ToInfo(record);
         }
         finally
@@ -532,6 +533,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
             record.EmailAddress = authorization.EmailAddress;
 
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            SetStatus(accountId, AccountStatus.Idle());
             return ToInfo(record);
         }
         finally
@@ -2258,14 +2260,14 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
-    private const string AuthenticationFailedMessage = "Authentication failed. Sign in again.";
+    private const string AuthenticationFailedMessage = AccountStatus.AuthenticationFailedMessage;
     private const string SyncFailedMessage = "Could not sync this Account. Try again later.";
     private const string SendFailedMessage = "Could not send this Message. Try again later.";
 
-    private static string MapSyncFailure(Exception ex) =>
+    private static AccountStatus MapSyncError(Exception ex) =>
         ex is ImapAuthenticationException
-            ? AuthenticationFailedMessage
-            : SyncFailedMessage;
+            ? AccountStatus.AuthenticationFailed()
+            : AccountStatus.Error(SyncFailedMessage);
 
     private static string MapSendFailure(Exception ex) =>
         ex is SmtpAuthenticationException

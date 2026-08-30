@@ -28,6 +28,25 @@
       </DockPanel>
     </Border>
 
+    <Border Name="AuthFailureBanner"
+            DockPanel.Dock="Top"
+            IsVisible="False"
+            Background="#FDECEC"
+            Padding="10,8"
+            Margin="0,0,0,12"
+            CornerRadius="4">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <Button Name="AuthFailureActionButton" Content="Reauthorize" Click="OnAuthFailureActionClick" />
+          <Button Name="DismissAuthFailureButton" Content="Dismiss" Click="OnDismissAuthFailureClick" />
+        </StackPanel>
+        <TextBlock Name="AuthFailureBannerText"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"
+                   Margin="0,0,12,0" />
+      </DockPanel>
+    </Border>
+
     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
       <TextBlock Text="Mailtide" FontSize="20" VerticalAlignment="Center" />
       <Button Name="UnifiedInboxButton" Content="Unified Inbox" Click="OnUnifiedInboxClick" />

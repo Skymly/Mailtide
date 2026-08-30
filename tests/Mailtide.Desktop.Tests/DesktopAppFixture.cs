@@ -62,6 +62,8 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
     private readonly Dictionary<string, List<RemoteMessage>> _messagesByPath =
         new(StringComparer.Ordinal);
 
+    public Exception? FailWith { get; set; }
+
     public TaskCompletionSource? BlockConnectUntil { get; set; }
 
     public void SeedMailboxes(params RemoteMailbox[] mailboxes)
@@ -97,6 +99,11 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             if (_factory.BlockConnectUntil is not null)
             {
                 await _factory.BlockConnectUntil.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (_factory.FailWith is not null)
+            {
+                throw _factory.FailWith;
             }
 
             _ = host;
@@ -234,6 +241,11 @@ internal sealed class FakeSmtpClientFactory : ISmtpClientFactory
             CancellationToken cancellationToken = default)
         {
             if (_factory.FailWith is SmtpAuthenticationException)
+            {
+                throw _factory.FailWith;
+            }
+
+            if (_factory.FailWith is not null)
             {
                 throw _factory.FailWith;
             }
