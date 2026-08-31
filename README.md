@@ -28,7 +28,7 @@ Build from source below when developing. Local `dotnet run` still needs OAuth en
 | Sync | In-process sync engine; per-Account parallel sync; drafts → Outbox → SMTP |
 | UI | Unified Inbox view, per-Mailbox browse, HTML Message view, compose with optional HTML, local search (`is:unread` / `is:flagged` + text) |
 | Security | Credentials only via OS-backed secure storage (Windows DPAPI, Linux libsecret, Android Keystore) — no plaintext fallback |
-| Updates | Desktop checks GitHub Releases; Android updates by installing a newer APK from Releases |
+| Updates | Desktop checks GitHub Releases (private repo: set `MAILTIDE_GITHUB_TOKEN`); Android updates by installing a newer APK from Releases |
 
 Domain vocabulary (Account, Person, Message, Mailbox, Unified Inbox, Outbox, Credential) is defined in [`CONTEXT.md`](CONTEXT.md).
 
@@ -134,6 +134,7 @@ Desktop and Android read **public** OAuth client IDs from the environment (no cl
 |----------|----------|
 | `MAILTIDE_GOOGLE_OAUTH_CLIENT_ID` | Google / Gmail OAuth |
 | `MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID` | Microsoft consumer (Outlook.com / Hotmail / Live) — not Entra work/school |
+| `MAILTIDE_GITHUB_TOKEN` | Desktop-only: optional PAT so the GitHub Releases update check works on a private repo. Never commit this token. Android has no in-app updater. |
 
 Register a public / native client with a loopback (Desktop) or custom-scheme / intent (Android) redirect that matches the Host OAuth client. Without these variables, Google and Microsoft Account add flows fail at authorize time; QQ Mail and manual IMAP/SMTP still work.
 

@@ -21,6 +21,8 @@ public sealed class GitHubReleasesUpdateSource : IReleaseUpdateSource, IDisposab
 
     public const string UserAgent = "Mailtide";
 
+    public const string TokenEnvironmentVariable = "MAILTIDE_GITHUB_TOKEN";
+
     private readonly DesktopReleasePlatform _platform;
     private readonly HttpClient _http;
     private readonly Uri _apiUrl;
@@ -28,7 +30,8 @@ public sealed class GitHubReleasesUpdateSource : IReleaseUpdateSource, IDisposab
     public GitHubReleasesUpdateSource(
         DesktopReleasePlatform platform,
         HttpMessageHandler? handler = null,
-        string? apiUrl = null)
+        string? apiUrl = null,
+        string? githubToken = null)
     {
         _platform = platform;
         _apiUrl = new Uri(apiUrl ?? DefaultApiUrl);
@@ -39,6 +42,11 @@ public sealed class GitHubReleasesUpdateSource : IReleaseUpdateSource, IDisposab
         _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(UserAgent, "1"));
         _http.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        if (!string.IsNullOrWhiteSpace(githubToken))
+        {
+            _http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", githubToken.Trim());
+        }
     }
 
     public static DesktopReleasePlatform DetectPlatform()

@@ -79,6 +79,79 @@ public sealed class GitHubReleasesUpdateSourceTests
     }
 
     [TestMethod]
+    public async Task GetLatestAsync_sends_Bearer_when_token_is_set()
+    {
+        using var handler = new FixedJsonHandler(SampleReleaseJson);
+        using var source = new GitHubReleasesUpdateSource(
+            DesktopReleasePlatform.WindowsX64,
+            handler,
+            githubToken: "ghs_test-token");
+
+        var remote = await source.GetLatestAsync();
+
+        Assert.IsNotNull(remote);
+        Assert.AreEqual("Bearer ghs_test-token", handler.LastAuthorization);
+        Assert.DoesNotContain("ghs_test-token", handler.LastRequestUri!, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public async Task GetLatestAsync_omits_Authorization_when_token_is_unset()
+    {
+        using var handler = new FixedJsonHandler(SampleReleaseJson);
+        using var source = new GitHubReleasesUpdateSource(
+            DesktopReleasePlatform.WindowsX64,
+            handler,
+            githubToken: "  ");
+
+        await source.GetLatestAsync();
+
+        Assert.IsNull(handler.LastAuthorization);
+    }
+
+    [TestMethod]
+    public async Task GetLatestAsync_maps_auth_and_missing_failures_to_null()
+    {
+        foreach (var status in new[]
+                 {
+                     HttpStatusCode.Unauthorized,
+                     HttpStatusCode.Forbidden,
+                     HttpStatusCode.NotFound,
+                 })
+        {
+            using var handler = new FixedJsonHandler(SampleReleaseJson, status);
+            using var source = new GitHubReleasesUpdateSource(
+                DesktopReleasePlatform.WindowsX64,
+                handler,
+                githubToken: "ghs_test-token");
+
+            var remote = await source.GetLatestAsync();
+            Assert.IsNull(remote, status.ToString());
+        }
+    }
+
+    [TestMethod]
+    public void Program_reads_MAILTIDE_GITHUB_TOKEN_for_update_source()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var program = Path.Combine(dir.FullName, "src", "Mailtide.Desktop", "Program.cs");
+            if (File.Exists(program))
+            {
+                var text = File.ReadAllText(program);
+                Assert.Contains("TokenEnvironmentVariable", text, StringComparison.Ordinal);
+                Assert.Contains("githubToken:", text, StringComparison.Ordinal);
+                Assert.DoesNotContain("ghs_", text, StringComparison.Ordinal);
+                return;
+            }
+
+            dir = dir.Parent;
+        }
+
+        Assert.Fail("Could not locate Desktop Program.cs");
+    }
+
+    [TestMethod]
     public async Task GetLatestAsync_allows_missing_platform_asset()
     {
         const string json = """
@@ -118,11 +191,17 @@ public sealed class GitHubReleasesUpdateSourceTests
 
         public string? LastUserAgent { get; private set; }
 
+        public string? LastAuthorization { get; private set; }
+
+        public string? LastRequestUri { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             LastUserAgent = request.Headers.UserAgent.ToString();
+            LastAuthorization = request.Headers.Authorization?.ToString();
+            LastRequestUri = request.RequestUri?.ToString();
             var response = new HttpResponseMessage(_status)
             {
                 Content = new StringContent(_json, Encoding.UTF8, "application/json"),
