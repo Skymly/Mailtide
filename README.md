@@ -13,6 +13,12 @@ People who keep several personal mail Accounts on one device and need mail to st
 **v1 platforms:** Windows · Linux (Ubuntu 24.04 x64 baseline) · Android  
 **Not in v1:** macOS · iOS · Microsoft Store / Play Store / Flatpak / deb as distribution channels
 
+## Status
+
+Current product is [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) on [GitHub Releases](https://github.com/Skymly/Mailtide/releases) (Windows installer, Linux AppImage, Android APK).
+
+Build from source below when developing. Local `dotnet run` still needs OAuth env vars unless a Release pack baked the public client IDs.
+
 ## Capabilities
 
 | Area | What ships |
@@ -133,7 +139,7 @@ Register a public / native client with a loopback (Desktop) or custom-scheme / i
 
 ## Distribution
 
-GitHub Releases ship:
+Install from [GitHub Releases](https://github.com/Skymly/Mailtide/releases):
 
 - Windows: `Mailtide-*-win-x64-setup.exe` (Inno Setup)
 - Linux: `Mailtide-*-linux-x64.AppImage`
