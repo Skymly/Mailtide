@@ -15,9 +15,9 @@ People who keep several personal mail Accounts on one device and need mail to st
 
 ## Status
 
-Current product is [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) on [GitHub Releases](https://github.com/Skymly/Mailtide/releases) (Windows installer, Linux AppImage, Android APK).
+Current product is **0.2** (move a Message to another Mailbox). GitHub Release assets are still [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) until a human cuts `v0.2.0`.
 
-Current target: **0.2** — the Person can move a selected Message into another Mailbox on the same Account ([plan](docs/plans/0.2.md)).
+Current target: none.
 
 Build from source below when developing. Local `dotnet run` still needs OAuth env vars unless a Release pack baked the public client IDs.
 
@@ -28,7 +28,7 @@ Build from source below when developing. Local `dotnet run` still needs OAuth en
 | Accounts | Google (OAuth), Microsoft consumer / Outlook.com (OAuth), QQ Mail (预设 + 授权码), manual IMAP/SMTP + password / app password |
 | Offline | Install-wide EF Core + SQLite store; attachment blobs on disk; read synced Messages without network |
 | Sync | In-process sync engine; per-Account parallel sync; drafts → Outbox → SMTP |
-| UI | Unified Inbox view, per-Mailbox browse, HTML Message view, compose with optional HTML, local search (`is:unread` / `is:flagged` + text) |
+| UI | Unified Inbox view, per-Mailbox browse, HTML Message view, compose with optional HTML, local search (`is:unread` / `is:flagged` + text), move a Message to another Mailbox |
 | Security | Credentials only via OS-backed secure storage (Windows DPAPI, Linux libsecret, Android Keystore) — no plaintext fallback |
 | Updates | Desktop checks GitHub Releases (private repo: set `MAILTIDE_GITHUB_TOKEN`); Android updates by installing a newer APK from Releases |
 
