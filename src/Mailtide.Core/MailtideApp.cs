@@ -741,6 +741,85 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<MailboxInfo> CreateMailboxAsync(
+        Guid accountId,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        name = name.Trim();
+
+        var workGate = AccountWorkGate(accountId);
+        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            AccountImapEndpoint endpoint;
+            string? secret;
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var account = await RequireAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
+                var exists = await _db.Mailboxes
+                    .AsNoTracking()
+                    .AnyAsync(
+                        m => m.AccountId == accountId
+                            && (m.Name == name || m.Path == name),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (exists)
+                {
+                    throw new InvalidOperationException(
+                        $"A Mailbox named '{name}' already exists on this Account.");
+                }
+
+                (endpoint, secret) = await BindImapEndpointAsync(account, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+
+            var createdPath = name;
+            await UsingAuthenticatedImapAsync(
+                    endpoint,
+                    secret,
+                    async client =>
+                    {
+                        createdPath = await client
+                            .CreateMailboxAsync(name, cancellationToken)
+                            .ConfigureAwait(false);
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var record = new MailboxRecord
+                {
+                    Id = Guid.NewGuid(),
+                    AccountId = accountId,
+                    Name = name,
+                    Path = createdPath,
+                    Role = null,
+                };
+                _db.Mailboxes.Add(record);
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return new MailboxInfo(record.Id, record.AccountId, record.Name, record.Path, record.Role);
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+        }
+        finally
+        {
+            workGate.Release();
+        }
+    }
+
     public async Task<IReadOnlyList<MessageInfo>> ListMessagesAsync(
         Guid accountId,
         Guid mailboxId,

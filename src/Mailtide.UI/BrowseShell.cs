@@ -192,6 +192,22 @@ public sealed class BrowseShell
         Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<MailboxInfo> CreateMailboxAsync(
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        if (SelectedAccountId is not { } accountId)
+        {
+            throw new InvalidOperationException("Select an Account before creating a Mailbox.");
+        }
+
+        var created = await _app
+            .CreateMailboxAsync(accountId, name, cancellationToken)
+            .ConfigureAwait(false);
+        Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
+        return created;
+    }
+
     public async Task SelectMailboxAsync(Guid mailboxId, CancellationToken cancellationToken = default)
     {
         if (SelectedAccountId is not { } accountId)

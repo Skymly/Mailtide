@@ -147,6 +147,8 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastMoveRemoteId { get; private set; }
 
+    public string? LastCreatedMailboxPath { get; set; }
+
     public string? LastExpungeMailboxPath { get; private set; }
 
 
@@ -367,6 +369,22 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             }
 
             return Task.CompletedTask;
+        }
+
+        public Task<string> CreateMailboxAsync(
+            string name,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (_factory.FailWith is not null)
+            {
+                throw _factory.FailWith;
+            }
+
+            var path = name.Trim();
+            _factory._mailboxes.Add(new RemoteMailbox(path, path, Role: null));
+            _factory.LastCreatedMailboxPath = path;
+            return Task.FromResult(path);
         }
 
         public Task ExpungeAllAsync(

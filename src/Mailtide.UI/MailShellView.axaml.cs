@@ -402,6 +402,35 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private async void OnNewMailboxClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        AccountActionStatus.Text = string.Empty;
+        if (browse.SelectedAccountId is null)
+        {
+            AccountActionStatus.Text = "Select an Account before creating a Mailbox.";
+            return;
+        }
+
+        try
+        {
+            var dialog = new NewMailboxDialog();
+            var name = await AvaloniaOverlayDialog.ShowAsync(this, dialog, dialog.Completion)
+                .ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return;
+            }
+
+            await browse.CreateMailboxAsync(name).ConfigureAwait(true);
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            AccountActionStatus.Text = ex.Message;
+        }
+    }
+
     private async void OnAddAccountClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();

@@ -414,6 +414,44 @@ internal sealed class MailKitImapClient : IImapClient
         }
     }
 
+    public async Task<string> CreateMailboxAsync(
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var client = EnsureAuthenticated();
+        try
+        {
+            IMailFolder parent;
+            if (client.PersonalNamespaces.Count > 0)
+            {
+                parent = client.GetFolder(client.PersonalNamespaces[0]);
+            }
+            else
+            {
+                parent = client.Inbox;
+            }
+
+            var created = await parent
+                .CreateAsync(name.Trim(), false, cancellationToken)
+                .ConfigureAwait(false);
+            if (created is null)
+            {
+                throw new ImapProtocolException("IMAP protocol failure.");
+            }
+
+            return created.FullName;
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException and not ImapProtocolException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
     public async Task ExpungeAllAsync(
         string mailboxPath,
         CancellationToken cancellationToken = default)
