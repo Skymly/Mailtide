@@ -157,6 +157,11 @@
 
       <DockPanel Grid.Column="1">
         <TextBlock DockPanel.Dock="Top" Text="Mailboxes" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <Button Name="NewMailboxButton"
+                DockPanel.Dock="Top"
+                Content="New Mailbox"
+                Margin="0,0,0,8"
+                Click="OnNewMailboxClick" />
         <ListBox Name="MailboxesList"
                  SelectionChanged="OnMailboxSelectionChanged">
           <ListBox.ItemTemplate>

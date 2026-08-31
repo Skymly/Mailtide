@@ -48,6 +48,33 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_CreateMailbox_adds_to_selected_Account()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        var created = await shell.CreateMailboxAsync("Projects");
+
+        Assert.AreEqual("Projects", created.Name);
+        Assert.IsTrue(shell.Mailboxes.Any(m => m.Id == created.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_CreateMailbox_requires_selected_Account()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => shell.CreateMailboxAsync("Projects"));
+    }
+
+    [TestMethod]
     public async Task BrowseShell_selecting_Mailbox_lists_its_Messages()
     {
         using var fixture = new DesktopAppFixture();
