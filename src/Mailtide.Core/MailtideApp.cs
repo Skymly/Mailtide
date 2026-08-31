@@ -27,6 +27,9 @@ public sealed partial class MailtideApp : IAsyncDisposable
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _accountWorkGates = new();
     private readonly object _foregroundGate = new();
     public event EventHandler<Guid>? AccountWorkCompleted;
+    public event EventHandler<InboxArrival>? InboxMessageArrived;
+    private readonly HashSet<Guid> _notifiedInboxMessageIds = [];
+    private readonly object _inboxArrivalGate = new();
     private CancellationTokenSource? _foregroundCts;
     private Task? _foregroundTask;
     public static readonly TimeSpan DefaultForegroundSyncInterval = TimeSpan.FromMinutes(5);
@@ -1992,7 +1995,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
         return snapshot;
     }
-    private async Task PersistSnapshotAsync(
+    private async Task<IReadOnlyList<InboxArrival>> PersistSnapshotAsync(
         Guid accountId,
         IReadOnlyList<RemoteMailboxSnapshot> snapshot,
         CancellationToken cancellationToken)
@@ -2013,6 +2016,17 @@ public sealed partial class MailtideApp : IAsyncDisposable
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        var existingInboxMailboxIds = existingMailboxes
+            .Where(m => m.Role == MailboxRole.Inbox)
+            .Select(m => m.Id)
+            .ToHashSet();
+        var accountDisplayName = await _db.Accounts
+            .AsNoTracking()
+            .Where(a => a.Id == accountId)
+            .Select(a => a.DisplayName)
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var arrivals = new List<InboxArrival>();
         var seenMailboxIds = new HashSet<Guid>();
         var seenMessageIds = new HashSet<Guid>();
 
@@ -2073,6 +2087,18 @@ public sealed partial class MailtideApp : IAsyncDisposable
                         CcAddresses = EncodeAddresses(fetched.CcAddresses),
                     };
                     _db.Messages.Add(message);
+                    if (mailbox.Role == MailboxRole.Inbox
+                        && existingInboxMailboxIds.Contains(mailbox.Id)
+                        && !summary.IsRead)
+                    {
+                        arrivals.Add(new InboxArrival(
+                            message.Id,
+                            accountId,
+                            mailbox.Id,
+                            message.Subject,
+                            message.FromAddress,
+                            accountDisplayName));
+                    }
 
                     foreach (var remoteAttachment in fetched.Attachments)
                     {
@@ -2140,6 +2166,23 @@ public sealed partial class MailtideApp : IAsyncDisposable
         _db.Mailboxes.RemoveRange(existingMailboxes.Where(m => !seenMailboxIds.Contains(m.Id)));
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return arrivals;
+    }
+
+    private void RaiseInboxArrivals(IReadOnlyList<InboxArrival> arrivals)
+    {
+        foreach (var arrival in arrivals)
+        {
+            lock (_inboxArrivalGate)
+            {
+                if (!_notifiedInboxMessageIds.Add(arrival.MessageId))
+                {
+                    continue;
+                }
+            }
+
+            InboxMessageArrived?.Invoke(this, arrival);
+        }
     }
     private void ResetBlobArea(Guid accountId)
     {

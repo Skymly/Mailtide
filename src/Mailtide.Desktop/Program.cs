@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Mailtide.Desktop.Host;
 using Mailtide.UI;
 using System;
@@ -20,6 +20,8 @@ class Program
 
         HostBootstrap.OpenCoreAsync = DesktopComposition.OpenCoreAsync;
         HostBootstrap.OpenDownloadedAttachment = new DesktopOpenDownloadedAttachment();
+        HostBootstrap.NotifyInboxArrival = new DesktopNotifyInboxArrival(
+            onActivated: n => HostBootstrap.InboxArrivalActivated?.Invoke(n));
 
         var updateSource = new GitHubReleasesUpdateSource(GitHubReleasesUpdateSource.DetectPlatform());
         var updateCoordinator = new DesktopUpdateCoordinator(updateSource);
