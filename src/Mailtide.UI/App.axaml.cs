@@ -81,7 +81,10 @@ public partial class App : Application
 
         _core.AccountWorkCompleted -= OnAccountWorkCompleted;
         _core.AccountWorkCompleted += OnAccountWorkCompleted;
+        _core.InboxMessageArrived -= OnInboxMessageArrived;
+        _core.InboxMessageArrived += OnInboxMessageArrived;
         HostBootstrap.SetAppForeground = OnHostForegroundChanged;
+        HostBootstrap.InboxArrivalActivated = OnInboxArrivalActivated;
         _core.StartForegroundSync();
     }
 
@@ -100,6 +103,62 @@ public partial class App : Application
 
         _ = _core.StopForegroundSyncAsync();
     }
+
+    private void OnInboxMessageArrived(object? sender, InboxArrival arrival)
+    {
+        var notify = HostBootstrap.NotifyInboxArrival;
+        if (notify is null)
+        {
+            return;
+        }
+
+        var notification = ToNotification(arrival);
+        _ = Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            try
+            {
+                await notify.ShowAsync(notification).ConfigureAwait(true);
+            }
+            catch
+            {
+                // OS notification is best-effort.
+            }
+        });
+    }
+
+    private void OnInboxArrivalActivated(InboxArrivalNotification notification)
+    {
+        var shell = _shell;
+        if (shell is null)
+        {
+            return;
+        }
+
+        _ = Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                desktop.MainWindow?.Show();
+                desktop.MainWindow?.Activate();
+            }
+
+            await shell
+                .OpenArrivedMessageAsync(
+                    notification.AccountId,
+                    notification.MailboxId,
+                    notification.MessageId)
+                .ConfigureAwait(true);
+        });
+    }
+
+    private static InboxArrivalNotification ToNotification(InboxArrival arrival) =>
+        new(
+            arrival.MessageId,
+            arrival.AccountId,
+            arrival.MailboxId,
+            string.IsNullOrWhiteSpace(arrival.Subject) ? "(no subject)" : arrival.Subject,
+            arrival.FromAddress,
+            arrival.AccountDisplayName);
 
     private void OnAccountWorkCompleted(object? sender, Guid accountId)
     {
@@ -124,7 +183,9 @@ public partial class App : Application
         }
 
         _core.AccountWorkCompleted -= OnAccountWorkCompleted;
+        _core.InboxMessageArrived -= OnInboxMessageArrived;
         HostBootstrap.SetAppForeground = null;
+        HostBootstrap.InboxArrivalActivated = null;
         _core.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _core = null;
     }

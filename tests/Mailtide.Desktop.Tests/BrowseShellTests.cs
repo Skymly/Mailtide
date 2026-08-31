@@ -1,6 +1,7 @@
 using Mailtide.Core;
 using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
+using Mailtide.Desktop;
 using Mailtide.UI;
 
 namespace Mailtide.Desktop.Tests;
@@ -1326,6 +1327,66 @@ public sealed class BrowseShellTests
         Assert.HasCount(1, browse.Messages);
         Assert.AreEqual("Self-driven", browse.Messages[0].Subject);
         Assert.IsTrue(browse.ShowingUnifiedInbox);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_OpenArrivedMessage_selects_the_Inbox_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "seed",
+                Subject: "Seed",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 4, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "old"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        InboxArrival? arrival = null;
+        app.InboxMessageArrived += (_, value) => arrival = value;
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "seed",
+                Subject: "Seed",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 4, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "old"),
+            new RemoteMessage(
+                RemoteId: "new-1",
+                Subject: "Just arrived",
+                FromAddress: "carol@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 4, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "hi"));
+        await app.SyncNowAsync(account.Id);
+        Assert.IsNotNull(arrival);
+
+        var shown = new List<InboxArrivalNotification>();
+        var notifier = new DesktopNotifyInboxArrival(show: shown.Add);
+        await notifier.ShowAsync(
+            new InboxArrivalNotification(
+                arrival.MessageId,
+                arrival.AccountId,
+                arrival.MailboxId,
+                arrival.Subject,
+                arrival.FromAddress,
+                arrival.AccountDisplayName));
+        Assert.HasCount(1, shown);
+
+        var shell = new BrowseShell(app);
+        await shell.OpenArrivedMessageAsync(arrival.AccountId, arrival.MailboxId, arrival.MessageId);
+
+        Assert.AreEqual(arrival.AccountId, shell.SelectedAccountId);
+        Assert.AreEqual(arrival.MailboxId, shell.SelectedMailboxId);
+        Assert.AreEqual(arrival.MessageId, shell.SelectedMessageId);
+        Assert.AreEqual("Just arrived", shell.Messages.Single(m => m.Id == arrival.MessageId).Subject);
     }
 
     [TestMethod]

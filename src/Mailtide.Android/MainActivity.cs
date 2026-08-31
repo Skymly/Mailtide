@@ -28,12 +28,14 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnCreate(savedInstanceState);
         HandleOauthIntent(Intent);
+        HandleInboxArrivalIntent(Intent);
     }
 
     protected override void OnNewIntent(Intent? intent)
     {
         base.OnNewIntent(intent);
         HandleOauthIntent(intent);
+        HandleInboxArrivalIntent(intent);
     }
 
 
@@ -63,5 +65,32 @@ public class MainActivity : AvaloniaMainActivity
         }
 
         IntentSystemBrowser.TryComplete(new System.Uri(data.ToString()!));
+    }
+
+    private static void HandleInboxArrivalIntent(Intent? intent)
+    {
+        var messageRaw = intent?.GetStringExtra(AndroidNotifyInboxArrival.ExtraMessageId);
+        var accountRaw = intent?.GetStringExtra(AndroidNotifyInboxArrival.ExtraAccountId);
+        var mailboxRaw = intent?.GetStringExtra(AndroidNotifyInboxArrival.ExtraMailboxId);
+        if (messageRaw is null || accountRaw is null || mailboxRaw is null)
+        {
+            return;
+        }
+
+        if (!Guid.TryParse(messageRaw, out var messageId)
+            || !Guid.TryParse(accountRaw, out var accountId)
+            || !Guid.TryParse(mailboxRaw, out var mailboxId))
+        {
+            return;
+        }
+
+        HostBootstrap.InboxArrivalActivated?.Invoke(
+            new InboxArrivalNotification(
+                messageId,
+                accountId,
+                mailboxId,
+                Title: string.Empty,
+                Body: string.Empty,
+                AccountDisplayName: null));
     }
 }

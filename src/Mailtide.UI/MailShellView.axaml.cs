@@ -42,6 +42,18 @@ public partial class MailShellView : UserControl
 
         BindLists();
     }
+
+    public async Task OpenArrivedMessageAsync(
+        Guid accountId,
+        Guid mailboxId,
+        Guid messageId)
+    {
+        var browse = RequireBrowse();
+        await browse.OpenArrivedMessageAsync(accountId, mailboxId, messageId).ConfigureAwait(true);
+        var compose = RequireCompose();
+        await compose.SelectAccountAsync(accountId).ConfigureAwait(true);
+        BindLists();
+    }
     public async Task InitializeBrowseAsync()
     {
         var browse = RequireBrowse();

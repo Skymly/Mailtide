@@ -323,6 +323,21 @@ public sealed class BrowseShell
         await SelectMessageAsync(next.Id, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task OpenArrivedMessageAsync(
+        Guid accountId,
+        Guid mailboxId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
+        await SelectAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
+        await SelectMailboxAsync(mailboxId, cancellationToken).ConfigureAwait(false);
+        if (Messages.Any(m => m.Id == messageId))
+        {
+            await SelectMessageAsync(messageId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public async Task SelectPreviousUnreadAsync(CancellationToken cancellationToken = default)
     {
         if (Messages.Count == 0)

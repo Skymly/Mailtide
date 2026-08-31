@@ -98,6 +98,7 @@ public sealed partial class MailtideApp
         var snapshot = await FetchRemoteSnapshotAsync(client, knownRemoteIds, cancellationToken)
             .ConfigureAwait(false);
 
+        IReadOnlyList<InboxArrival> arrivals = [];
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -117,12 +118,15 @@ public sealed partial class MailtideApp
                 return;
             }
 
-            await PersistSnapshotAsync(accountId, snapshot, cancellationToken).ConfigureAwait(false);
+            arrivals = await PersistSnapshotAsync(accountId, snapshot, cancellationToken)
+                .ConfigureAwait(false);
             SetStatus(accountId, AccountStatus.Idle());
         }
         finally
         {
             _dbGate.Release();
         }
+
+        RaiseInboxArrivals(arrivals);
     }
 }

@@ -13,6 +13,16 @@ public static class HostBootstrap
     public static IOpenDownloadedAttachment? OpenDownloadedAttachment { get; set; }
 
     /// <summary>
+    /// Host port: OS notification for a newly arrived Inbox Message.
+    /// </summary>
+    public static INotifyInboxArrival? NotifyInboxArrival { get; set; }
+
+    /// <summary>
+    /// Hosts invoke this when the Person opens an Inbox arrival notification.
+    /// </summary>
+    public static Action<InboxArrivalNotification>? InboxArrivalActivated { get; set; }
+
+    /// <summary>
     /// Desktop-only: check GitHub Releases for a newer build. Android leaves this null.
     /// Failures should resolve to <see cref="UpdateCheckStatus.Unavailable"/> rather than throw.
     /// </summary>

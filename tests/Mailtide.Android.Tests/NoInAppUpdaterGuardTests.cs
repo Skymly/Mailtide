@@ -47,6 +47,24 @@ public sealed class NoInAppUpdaterGuardTests
     }
 
     [TestMethod]
+    public void Android_host_wires_Inbox_OS_notification_and_not_FCM()
+    {
+        var androidDir = FindAndroidProjectDirectory();
+        var sources = Directory
+            .EnumerateFiles(androidDir, "*.cs", SearchOption.AllDirectories)
+            .Where(path => path.Contains(string.Concat(Path.DirectorySeparatorChar, "obj", Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) is false
+                && path.Contains(string.Concat(Path.DirectorySeparatorChar, "bin", Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) is false)
+            .Select(File.ReadAllText)
+            .ToList();
+        var joined = string.Concat(sources);
+
+        Assert.Contains("HostBootstrap.NotifyInboxArrival", joined, StringComparison.Ordinal);
+        Assert.Contains("AndroidNotifyInboxArrival", joined, StringComparison.Ordinal);
+        Assert.DoesNotContain("Firebase", joined, StringComparison.Ordinal);
+        Assert.DoesNotContain("WorkManager", joined, StringComparison.Ordinal);
+        Assert.DoesNotContain("FirebaseMessaging", joined, StringComparison.Ordinal);
+    }
+    [TestMethod]
     public void Android_host_does_not_set_desktop_update_HostBootstrap_hooks()
     {
         var androidDir = FindAndroidProjectDirectory();
