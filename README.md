@@ -17,6 +17,8 @@ People who keep several personal mail Accounts on one device and need mail to st
 
 Current product is [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) on [GitHub Releases](https://github.com/Skymly/Mailtide/releases) (Windows installer, Linux AppImage, Android APK).
 
+Current target: **0.2** — the Person can move a selected Message into another Mailbox on the same Account ([plan](docs/plans/0.2.md)).
+
 Build from source below when developing. Local `dotnet run` still needs OAuth env vars unless a Release pack baked the public client IDs.
 
 ## Capabilities

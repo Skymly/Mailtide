@@ -52,6 +52,79 @@ public sealed partial class MailtideApp
                 client.SetFlaggedAsync(mailboxPath, remoteId, flagged, ct),
             cancellationToken);
 
+    public async Task MoveMessageAsync(
+        Guid accountId,
+        Guid messageId,
+        Guid destinationMailboxId,
+        CancellationToken cancellationToken = default)
+    {
+        var workGate = AccountWorkGate(accountId);
+        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            string sourcePath;
+            string destinationPath;
+            string remoteId;
+            AccountImapEndpoint endpoint;
+            string? secret;
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var message = await RequireStoredMessageAsync(accountId, messageId, cancellationToken)
+                    .ConfigureAwait(false);
+                var source = await RequireMailboxAsync(accountId, message.MailboxId, cancellationToken)
+                    .ConfigureAwait(false);
+                var destination = await RequireMailboxAsync(accountId, destinationMailboxId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (source.Id == destination.Id)
+                {
+                    return;
+                }
+
+                var account = await RequireAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
+                sourcePath = source.Path;
+                destinationPath = destination.Path;
+                remoteId = message.RemoteId;
+                (endpoint, secret) = await BindImapEndpointAsync(account, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+
+            await UsingAuthenticatedImapAsync(
+                    endpoint,
+                    secret,
+                    client => client.MoveAsync(sourcePath, destinationPath, remoteId, cancellationToken),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var message = await _db.Messages
+                    .SingleOrDefaultAsync(
+                        m => m.AccountId == accountId && m.Id == messageId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (message is not null)
+                {
+                    message.MailboxId = destinationMailboxId;
+                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+        }
+        finally
+        {
+            workGate.Release();
+        }
+    }
+
     public async Task MoveToTrashAsync(
         Guid accountId,
         Guid messageId,

@@ -769,6 +769,37 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
+    private async void OnMoveClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        AccountActionStatus.Text = string.Empty;
+        if (browse.SelectedMessageId is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var destinations = await browse.ListMoveDestinationsAsync().ConfigureAwait(true);
+            var currentMailboxId = browse.Messages
+                .FirstOrDefault(m => m.Id == browse.SelectedMessageId)?.MailboxId;
+            var dialog = new MoveMailboxDialog(destinations, currentMailboxId);
+            var chosen = await AvaloniaOverlayDialog.ShowAsync(this, dialog, dialog.Completion)
+                .ConfigureAwait(true);
+            if (chosen is not { } destinationId)
+            {
+                return;
+            }
+
+            await browse.MoveSelectedToMailboxAsync(destinationId).ConfigureAwait(true);
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            AccountActionStatus.Text = ex.Message;
+        }
+    }
+
     private async void OnDeleteClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();

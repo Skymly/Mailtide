@@ -279,6 +279,11 @@
                 Content="Flag"
                 Margin="0,0,0,8"
                 Click="OnFlagClick" />
+        <Button Name="MoveButton"
+                DockPanel.Dock="Top"
+                Content="Move"
+                Margin="0,0,0,8"
+                Click="OnMoveClick" />
         <Button Name="DeleteButton"
                 DockPanel.Dock="Top"
                 Content="Delete"
