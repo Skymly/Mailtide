@@ -23,7 +23,10 @@ class Program
         HostBootstrap.NotifyInboxArrival = new DesktopNotifyInboxArrival(
             onActivated: n => HostBootstrap.InboxArrivalActivated?.Invoke(n));
 
-        var updateSource = new GitHubReleasesUpdateSource(GitHubReleasesUpdateSource.DetectPlatform());
+        var updateSource = new GitHubReleasesUpdateSource(
+            GitHubReleasesUpdateSource.DetectPlatform(),
+            githubToken: Environment.GetEnvironmentVariable(
+                GitHubReleasesUpdateSource.TokenEnvironmentVariable));
         var updateCoordinator = new DesktopUpdateCoordinator(updateSource);
         var updateLauncher = new DesktopUpdateLauncher();
         HostBootstrap.CheckForDesktopUpdateAsync = updateCoordinator.CheckAsync;
