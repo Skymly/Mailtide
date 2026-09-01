@@ -17,7 +17,7 @@ People who keep several personal mail Accounts on one device and need mail to st
 
 Current product is **0.6** (delete a Mailbox on an Account). GitHub Release assets are still [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) until a human cuts `v0.2.0`.
 
-Current target: none.
+Current target: **0.7** — the Person can browse a Mailbox's Messages grouped by reply thread ([plan](docs/plans/0.7.md)).
 
 Build from source below when developing. Local `dotnet run` still needs OAuth env vars unless a Release pack baked the public client IDs.
 

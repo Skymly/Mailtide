@@ -28,11 +28,15 @@ public sealed class BrowseShell
 
     public IReadOnlyList<MessageInfo> Messages { get; private set; } = [];
 
+    public IReadOnlyList<MessageThreadInfo> Threads { get; private set; } = [];
+
     public IReadOnlyList<AttachmentInfo> Attachments { get; private set; } = [];
 
     public Guid? SelectedAccountId { get; private set; }
 
     public Guid? SelectedMailboxId { get; private set; }
+
+    public Guid? SelectedThreadId { get; private set; }
 
     public Guid? SelectedMessageId { get; private set; }
 
@@ -188,6 +192,8 @@ public sealed class BrowseShell
         ShowingUnifiedInbox = false;
         SearchQuery = string.Empty;
         Messages = [];
+        Threads = [];
+        SelectedThreadId = null;
         ClearMessageDetail();
         Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
@@ -245,7 +251,9 @@ public sealed class BrowseShell
             .DeleteMailboxAsync(accountId, mailboxId, cancellationToken)
             .ConfigureAwait(false);
         SelectedMailboxId = null;
+        SelectedThreadId = null;
         Messages = [];
+        Threads = [];
         ClearMessageDetail();
         Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
@@ -260,19 +268,31 @@ public sealed class BrowseShell
         SelectedMailboxId = mailboxId;
         ShowingUnifiedInbox = false;
         SearchQuery = string.Empty;
+        SelectedThreadId = null;
         ClearMessageDetail();
-        Messages = await _app
-            .ListMessagesAsync(accountId, mailboxId, cancellationToken)
-            .ConfigureAwait(false);
+        await ReloadMailboxListingAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SelectThreadAsync(Guid latestMessageId, CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        var thread = Threads.FirstOrDefault(item => item.Latest.Id == latestMessageId)
+            ?? throw new InvalidOperationException("Thread is not in the current Mailbox list.");
+        SelectedThreadId = thread.Latest.Id;
+        SelectedMessageId = null;
+        ClearMessageDetail();
+        Messages = thread.Messages;
     }
 
     public async Task ShowUnifiedInboxAsync(CancellationToken cancellationToken = default)
     {
         SelectedAccountId = null;
         SelectedMailboxId = null;
+        SelectedThreadId = null;
         ShowingUnifiedInbox = true;
         SearchQuery = string.Empty;
         Mailboxes = [];
+        Threads = [];
         ClearMessageDetail();
         Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -280,8 +300,10 @@ public sealed class BrowseShell
     public async Task SearchAsync(string query, CancellationToken cancellationToken = default)
     {
         SearchQuery = query ?? string.Empty;
+        SelectedThreadId = null;
         if (ShowingUnifiedInbox)
         {
+            Threads = [];
             Messages = await _app.SearchUnifiedInboxAsync(SearchQuery, cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -289,9 +311,17 @@ public sealed class BrowseShell
         if (SelectedAccountId is not { } accountId || SelectedMailboxId is not { } mailboxId)
         {
             Messages = [];
+            Threads = [];
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            await ReloadMailboxListingAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        Threads = [];
         Messages = await _app
             .SearchMessagesAsync(accountId, mailboxId, SearchQuery, cancellationToken)
             .ConfigureAwait(false);
@@ -447,7 +477,7 @@ public sealed class BrowseShell
         else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
         {
             await _app.MarkMailboxReadAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
-            Messages = await _app.ListMessagesAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
+            await ReloadMailboxListingAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
             Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
         }
         else
@@ -526,12 +556,55 @@ public sealed class BrowseShell
             }
         }
 
-        if (messageId is { } selectedMessageId
-            && Messages.Any(message => message.Id == selectedMessageId))
+        if (messageId is { } selectedMessageId)
         {
-            await SelectMessageAsync(selectedMessageId, cancellationToken).ConfigureAwait(false);
+            await RestoreMessageInMailboxAsync(selectedMessageId, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    private async Task ReloadMailboxListingAsync(
+        Guid accountId,
+        Guid mailboxId,
+        CancellationToken cancellationToken)
+    {
+        Threads = await _app
+            .ListMailboxThreadsAsync(accountId, mailboxId, cancellationToken)
+            .ConfigureAwait(false);
+        if (SelectedThreadId is { } threadId)
+        {
+            var thread = Threads.FirstOrDefault(item => item.Latest.Id == threadId)
+                ?? Threads.FirstOrDefault(item => item.Messages.Any(message => message.Id == threadId));
+            if (thread is null)
+            {
+                SelectedThreadId = null;
+                Messages = Threads.Select(item => item.Latest).ToList();
+            }
+            else
+            {
+                SelectedThreadId = thread.Latest.Id;
+                Messages = thread.Messages;
+            }
+
+            return;
+        }
+
+        Messages = Threads.Select(item => item.Latest).ToList();
+    }
+
+    private async Task RestoreMessageInMailboxAsync(Guid messageId, CancellationToken cancellationToken)
+    {
+        var thread = Threads.FirstOrDefault(item => item.Messages.Any(message => message.Id == messageId));
+        if (thread is not null && SelectedThreadId is null)
+        {
+            await SelectThreadAsync(thread.Latest.Id, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (Messages.Any(message => message.Id == messageId))
+        {
+            await SelectMessageAsync(messageId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public async Task<IReadOnlyList<MailboxInfo>> ListMoveDestinationsAsync(
         CancellationToken cancellationToken = default)
     {
@@ -569,9 +642,7 @@ public sealed class BrowseShell
         }
         else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
         {
-            Messages = await _app
-                .ListMessagesAsync(accountId, mailboxId, cancellationToken)
-                .ConfigureAwait(false);
+            await ReloadMailboxListingAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
             Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -599,9 +670,7 @@ public sealed class BrowseShell
         }
         else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
         {
-            Messages = await _app
-                .ListMessagesAsync(accountId, mailboxId, cancellationToken)
-                .ConfigureAwait(false);
+            await ReloadMailboxListingAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
             Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -629,9 +698,7 @@ public sealed class BrowseShell
         }
         else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
         {
-            Messages = await _app
-                .ListMessagesAsync(accountId, mailboxId, cancellationToken)
-                .ConfigureAwait(false);
+            await ReloadMailboxListingAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
             Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -656,9 +723,7 @@ public sealed class BrowseShell
         }
         else if (SelectedMailboxId is { } mailboxId)
         {
-            Messages = await _app
-                .ListMessagesAsync(accountId, mailboxId, cancellationToken)
-                .ConfigureAwait(false);
+            await ReloadMailboxListingAsync(accountId, mailboxId, cancellationToken).ConfigureAwait(false);
             Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
         }
 
