@@ -17,7 +17,7 @@ People who keep several personal mail Accounts on one device and need mail to st
 
 Current product is **0.4** (rename a Mailbox on an Account). GitHub Release assets are still [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) until a human cuts `v0.2.0`.
 
-Current target: none.
+Current target: **0.5** — Mailbox create and rename share one Core lifecycle ritual ([plan](docs/plans/0.5.md)).
 
 Build from source below when developing. Local `dotnet run` still needs OAuth env vars unless a Release pack baked the public client IDs.
 
