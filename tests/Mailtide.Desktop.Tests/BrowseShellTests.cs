@@ -211,6 +211,57 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_Unified_Inbox_groups_reply_thread_until_selected()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.ShowUnifiedInboxAsync();
+
+        Assert.HasCount(1, shell.Messages);
+        Assert.AreEqual("Re: Root", shell.Messages[0].Subject);
+        Assert.IsNull(shell.SelectedThreadId);
+
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+
+        Assert.HasCount(2, shell.Messages);
+        Assert.AreEqual(shell.Messages[0].Id, shell.SelectedThreadId);
+
+        await shell.SelectAccountAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+        await shell.SelectMailboxAsync(inbox.Id);
+        Assert.HasCount(1, shell.Messages);
+        Assert.AreEqual("Re: Root", shell.Messages[0].Subject);
+    }
+
+    [TestMethod]
     public async Task BrowseShell_shows_Unified_Inbox_as_query_view_not_a_Mailbox()
     {
         using var fixture = new DesktopAppFixture();
