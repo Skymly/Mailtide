@@ -624,6 +624,11 @@ public sealed class BrowseShell
     public async Task<IReadOnlyList<MailboxInfo>> ListMoveDestinationsAsync(
         CancellationToken cancellationToken = default)
     {
+        if (!ShowingUnifiedInbox && SelectedAccountId is { } accountId)
+        {
+            return await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
+        }
+
         if (SelectedMessageId is not { } messageId)
         {
             throw new InvalidOperationException("Select a Message before moving it.");
@@ -639,17 +644,34 @@ public sealed class BrowseShell
         Guid destinationMailboxId,
         CancellationToken cancellationToken = default)
     {
-        if (SelectedMessageId is not { } messageId)
+        if (!ShowingUnifiedInbox
+            && SelectedThreadId is { } threadId
+            && SelectedAccountId is { } threadAccountId
+            && SelectedMailboxId is { } threadMailboxId)
         {
-            throw new InvalidOperationException("Select a Message before moving it.");
+            await _app
+                .MoveMailboxThreadAsync(
+                    threadAccountId,
+                    threadMailboxId,
+                    threadId,
+                    destinationMailboxId,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
+        else
+        {
+            if (SelectedMessageId is not { } messageId)
+            {
+                throw new InvalidOperationException("Select a Message before moving it.");
+            }
 
-        var message = Messages.FirstOrDefault(m => m.Id == messageId)
-            ?? throw new InvalidOperationException("Message is not in the current list.");
+            var message = Messages.FirstOrDefault(m => m.Id == messageId)
+                ?? throw new InvalidOperationException("Message is not in the current list.");
 
-        await _app
-            .MoveMessageAsync(message.AccountId, messageId, destinationMailboxId, cancellationToken)
-            .ConfigureAwait(false);
+            await _app
+                .MoveMessageAsync(message.AccountId, messageId, destinationMailboxId, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         ClearMessageDetail();
         if (ShowingUnifiedInbox)

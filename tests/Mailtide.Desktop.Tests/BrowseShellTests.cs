@@ -949,6 +949,54 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_MoveSelectedToMailbox_refiles_Mailbox_reply_thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Name == "Archive");
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.MoveSelectedToMailboxAsync(archive.Id);
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsNull(shell.SelectedThreadId);
+        Assert.HasCount(2, await app.ListMessagesAsync(account.Id, archive.Id));
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, inbox.Id));
+    }
+
+    [TestMethod]
     public async Task BrowseShell_MoveSelectedToMailbox_from_Unified_Inbox_leaves_Inbox_view()
     {
         using var fixture = new DesktopAppFixture();
