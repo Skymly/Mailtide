@@ -729,10 +729,9 @@ public partial class MailShellView : UserControl
             return;
         }
 
-        if (!_browse.ShowingUnifiedInbox
-            && _browse.SelectedMailboxId is not null
-            && _browse.SelectedThreadId is null
-            && string.IsNullOrEmpty(_browse.SearchQuery))
+        if (_browse.SelectedThreadId is null
+            && string.IsNullOrEmpty(_browse.SearchQuery)
+            && (_browse.ShowingUnifiedInbox || _browse.SelectedMailboxId is not null))
         {
             await _browse.SelectThreadAsync(message.Id).ConfigureAwait(true);
             BindLists();

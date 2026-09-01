@@ -277,7 +277,7 @@ public sealed class BrowseShell
     {
         _ = cancellationToken;
         var thread = Threads.FirstOrDefault(item => item.Latest.Id == latestMessageId)
-            ?? throw new InvalidOperationException("Thread is not in the current Mailbox list.");
+            ?? throw new InvalidOperationException("Thread is not in the current list.");
         SelectedThreadId = thread.Latest.Id;
         SelectedMessageId = null;
         ClearMessageDetail();
@@ -292,9 +292,8 @@ public sealed class BrowseShell
         ShowingUnifiedInbox = true;
         SearchQuery = string.Empty;
         Mailboxes = [];
-        Threads = [];
         ClearMessageDetail();
-        Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+        await ReloadUnifiedInboxListingAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SearchAsync(string query, CancellationToken cancellationToken = default)
@@ -303,6 +302,12 @@ public sealed class BrowseShell
         SelectedThreadId = null;
         if (ShowingUnifiedInbox)
         {
+            if (string.IsNullOrWhiteSpace(SearchQuery))
+            {
+                await ReloadUnifiedInboxListingAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             Threads = [];
             Messages = await _app.SearchUnifiedInboxAsync(SearchQuery, cancellationToken).ConfigureAwait(false);
             return;
@@ -472,7 +477,7 @@ public sealed class BrowseShell
         if (ShowingUnifiedInbox)
         {
             await _app.MarkUnifiedInboxReadAsync(cancellationToken).ConfigureAwait(false);
-            Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+            await ReloadUnifiedInboxListingAsync(cancellationToken).ConfigureAwait(false);
         }
         else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
         {
@@ -562,6 +567,12 @@ public sealed class BrowseShell
         }
     }
 
+    private async Task ReloadUnifiedInboxListingAsync(CancellationToken cancellationToken)
+    {
+        Threads = await _app.ListUnifiedInboxThreadsAsync(cancellationToken).ConfigureAwait(false);
+        ApplyThreadListing();
+    }
+
     private async Task ReloadMailboxListingAsync(
         Guid accountId,
         Guid mailboxId,
@@ -570,6 +581,11 @@ public sealed class BrowseShell
         Threads = await _app
             .ListMailboxThreadsAsync(accountId, mailboxId, cancellationToken)
             .ConfigureAwait(false);
+        ApplyThreadListing();
+    }
+
+    private void ApplyThreadListing()
+    {
         if (SelectedThreadId is { } threadId)
         {
             var thread = Threads.FirstOrDefault(item => item.Latest.Id == threadId)
@@ -638,7 +654,7 @@ public sealed class BrowseShell
         ClearMessageDetail();
         if (ShowingUnifiedInbox)
         {
-            Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+            await ReloadUnifiedInboxListingAsync(cancellationToken).ConfigureAwait(false);
         }
         else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
         {
@@ -666,7 +682,7 @@ public sealed class BrowseShell
         ClearMessageDetail();
         if (ShowingUnifiedInbox)
         {
-            Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+            await ReloadUnifiedInboxListingAsync(cancellationToken).ConfigureAwait(false);
         }
         else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
         {
@@ -694,7 +710,7 @@ public sealed class BrowseShell
         ClearMessageDetail();
         if (ShowingUnifiedInbox)
         {
-            Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+            await ReloadUnifiedInboxListingAsync(cancellationToken).ConfigureAwait(false);
         }
         else if (SelectedAccountId is { } accountId && SelectedMailboxId is { } mailboxId)
         {
@@ -719,7 +735,7 @@ public sealed class BrowseShell
         ClearMessageDetail();
         if (ShowingUnifiedInbox)
         {
-            Messages = await _app.ListUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
+            await ReloadUnifiedInboxListingAsync(cancellationToken).ConfigureAwait(false);
         }
         else if (SelectedMailboxId is { } mailboxId)
         {

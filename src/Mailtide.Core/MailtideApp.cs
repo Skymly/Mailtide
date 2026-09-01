@@ -828,6 +828,38 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<IReadOnlyList<MessageThreadInfo>> ListUnifiedInboxThreadsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var inboxMailboxIds = await _db.Mailboxes
+                .AsNoTracking()
+                .Where(m => m.Role == MailboxRole.Inbox)
+                .Select(m => m.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (inboxMailboxIds.Count == 0)
+            {
+                return [];
+            }
+
+            var records = await _db.Messages
+                .AsNoTracking()
+                .Where(m => inboxMailboxIds.Contains(m.MailboxId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return GroupMessagesByReplyThread(records);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     public async Task<string?> GetMessageBodyAsync(
         Guid accountId,
         Guid messageId,
