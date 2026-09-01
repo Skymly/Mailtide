@@ -149,6 +149,10 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastCreatedMailboxPath { get; set; }
 
+    public string? LastRenamedMailboxPath { get; set; }
+
+    public string? LastRenamedMailboxNewName { get; set; }
+
     public string? LastExpungeMailboxPath { get; private set; }
 
 
@@ -384,6 +388,38 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             var path = name.Trim();
             _factory._mailboxes.Add(new RemoteMailbox(path, path, Role: null));
             _factory.LastCreatedMailboxPath = path;
+            return Task.FromResult(path);
+        }
+
+        public Task<string> RenameMailboxAsync(
+            string mailboxPath,
+            string newName,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (_factory.FailWith is not null)
+            {
+                throw _factory.FailWith;
+            }
+
+            var path = newName.Trim();
+            for (var i = 0; i < _factory._mailboxes.Count; i++)
+            {
+                if (_factory._mailboxes[i].Path == mailboxPath)
+                {
+                    var current = _factory._mailboxes[i];
+                    _factory._mailboxes[i] = new RemoteMailbox(path, path, current.Role);
+                }
+            }
+
+            if (_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                _factory._messagesByPath.Remove(mailboxPath);
+                _factory._messagesByPath[path] = messages;
+            }
+
+            _factory.LastRenamedMailboxPath = mailboxPath;
+            _factory.LastRenamedMailboxNewName = path;
             return Task.FromResult(path);
         }
 

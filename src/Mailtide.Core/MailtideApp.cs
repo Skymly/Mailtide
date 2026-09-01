@@ -820,6 +820,92 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<MailboxInfo> RenameMailboxAsync(
+        Guid accountId,
+        Guid mailboxId,
+        string newName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(newName);
+        newName = newName.Trim();
+
+        var workGate = AccountWorkGate(accountId);
+        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            AccountImapEndpoint endpoint;
+            string? secret;
+            string oldPath;
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var account = await RequireAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
+                var mailbox = await RequireMailboxAsync(accountId, mailboxId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (mailbox.Name == newName)
+                {
+                    return new MailboxInfo(mailbox.Id, mailbox.AccountId, mailbox.Name, mailbox.Path, mailbox.Role);
+                }
+
+                var exists = await _db.Mailboxes
+                    .AsNoTracking()
+                    .AnyAsync(
+                        m => m.AccountId == accountId
+                            && m.Id != mailboxId
+                            && (m.Name == newName || m.Path == newName),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (exists)
+                {
+                    throw new InvalidOperationException(
+                        $"A Mailbox named '{newName}' already exists on this Account.");
+                }
+
+                (endpoint, secret) = await BindImapEndpointAsync(account, cancellationToken)
+                    .ConfigureAwait(false);
+                oldPath = mailbox.Path;
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+
+            var renamedPath = newName;
+            await UsingAuthenticatedImapAsync(
+                    endpoint,
+                    secret,
+                    async client =>
+                    {
+                        renamedPath = await client
+                            .RenameMailboxAsync(oldPath, newName, cancellationToken)
+                            .ConfigureAwait(false);
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var record = await _db.Mailboxes
+                    .SingleAsync(m => m.Id == mailboxId, cancellationToken)
+                    .ConfigureAwait(false);
+                record.Name = newName;
+                record.Path = renamedPath;
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return new MailboxInfo(record.Id, record.AccountId, record.Name, record.Path, record.Role);
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+        }
+        finally
+        {
+            workGate.Release();
+        }
+    }
+
     public async Task<IReadOnlyList<MessageInfo>> ListMessagesAsync(
         Guid accountId,
         Guid mailboxId,
