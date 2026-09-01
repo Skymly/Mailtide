@@ -767,6 +767,27 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<IReadOnlyList<MessageThreadInfo>> ListMailboxThreadsAsync(
+        Guid accountId,
+        Guid mailboxId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var records = await _db.Messages
+                .AsNoTracking()
+                .Where(m => m.AccountId == accountId && m.MailboxId == mailboxId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return GroupMessagesByReplyThread(records);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     /// <summary>
     /// Aggregates Messages from every Account's Inbox-role Mailbox as a query view —
     /// not a stored Mailbox/container.
@@ -2501,6 +2522,103 @@ public sealed partial class MailtideApp : IAsyncDisposable
             ToAddresses = DecodeAddresses(record.ToAddresses),
             CcAddresses = DecodeAddresses(record.CcAddresses),
         };
+
+    private static IReadOnlyList<MessageThreadInfo> GroupMessagesByReplyThread(
+        IReadOnlyList<MessageRecord> records)
+    {
+        if (records.Count == 0)
+        {
+            return [];
+        }
+
+        var parent = records.ToDictionary(record => record.Id, record => record.Id);
+
+        Guid Find(Guid id)
+        {
+            while (parent[id] != id)
+            {
+                parent[id] = parent[parent[id]];
+                id = parent[id];
+            }
+
+            return id;
+        }
+
+        void Union(Guid left, Guid right)
+        {
+            left = Find(left);
+            right = Find(right);
+            if (left != right)
+            {
+                parent[right] = left;
+            }
+        }
+
+        var tokenOwner = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in records)
+        {
+            foreach (var token in MessageThreadTokens(record))
+            {
+                if (tokenOwner.TryGetValue(token, out var owner))
+                {
+                    Union(record.Id, owner);
+                }
+                else
+                {
+                    tokenOwner[token] = record.Id;
+                }
+            }
+        }
+
+        return records
+            .GroupBy(record => Find(record.Id))
+            .Select(group =>
+            {
+                var ordered = group
+                    .Select(ToMessageInfo)
+                    .OrderByDescending(message => message.ReceivedAt)
+                    .ThenBy(message => message.Subject)
+                    .ToList();
+                return new MessageThreadInfo(ordered[0], ordered);
+            })
+            .OrderByDescending(thread => thread.Latest.ReceivedAt)
+            .ThenBy(thread => thread.Latest.Subject)
+            .ToList();
+    }
+
+    private static IEnumerable<string> MessageThreadTokens(MessageRecord record)
+    {
+        var own = NormalizeMessageId(record.InternetMessageId);
+        if (own is not null)
+        {
+            yield return own;
+        }
+
+        foreach (var reference in DecodeAddresses(record.ReferencesJson))
+        {
+            var token = NormalizeMessageId(reference);
+            if (token is not null)
+            {
+                yield return token;
+            }
+        }
+    }
+
+    private static string? NormalizeMessageId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length >= 2 && trimmed[0] == '<' && trimmed[^1] == '>')
+        {
+            trimmed = trimmed[1..^1];
+        }
+
+        return trimmed.Length == 0 ? null : trimmed;
+    }
 
     private sealed record RemoteMailboxSnapshot(
         RemoteMailbox Mailbox,

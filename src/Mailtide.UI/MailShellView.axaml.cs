@@ -729,6 +729,16 @@ public partial class MailShellView : UserControl
             return;
         }
 
+        if (!_browse.ShowingUnifiedInbox
+            && _browse.SelectedMailboxId is not null
+            && _browse.SelectedThreadId is null
+            && string.IsNullOrEmpty(_browse.SearchQuery))
+        {
+            await _browse.SelectThreadAsync(message.Id).ConfigureAwait(true);
+            BindLists();
+            return;
+        }
+
         await _browse.SelectMessageAsync(message.Id).ConfigureAwait(true);
         BindLists();
     }
@@ -951,10 +961,18 @@ public partial class MailShellView : UserControl
             await browse.SelectMailboxAsync(selectedMailboxId).ConfigureAwait(true);
         }
 
-        if (messageId is { } selectedMessageId
-            && browse.Messages.Any(m => m.Id == selectedMessageId))
+        if (messageId is { } selectedMessageId)
         {
-            await browse.SelectMessageAsync(selectedMessageId).ConfigureAwait(true);
+            var thread = browse.Threads.FirstOrDefault(item => item.Messages.Any(m => m.Id == selectedMessageId));
+            if (thread is not null && browse.SelectedThreadId is null)
+            {
+                await browse.SelectThreadAsync(thread.Latest.Id).ConfigureAwait(true);
+            }
+
+            if (browse.Messages.Any(m => m.Id == selectedMessageId))
+            {
+                await browse.SelectMessageAsync(selectedMessageId).ConfigureAwait(true);
+            }
         }
     }
 
