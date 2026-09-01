@@ -4,7 +4,7 @@ MailTide product ladder (`0.N`). Architecture minors at `0.5` / `0.10` / `0.15` 
 
 ## 进行中
 
-_(empty)_
+- 0.4 The Person can rename a Mailbox on an Account — [plan](plans/0.4.md), parent #165
 
 ## 排期
 
