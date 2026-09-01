@@ -4,7 +4,7 @@ MailTide product ladder (`0.N`). Architecture minors at `0.5` / `0.10` / `0.15` 
 
 ## 进行中
 
-_(empty)_
+- 0.7 The Person can browse a Mailbox's Messages grouped by reply thread — [plan](plans/0.7.md), parent #183
 
 ## 排期
 
