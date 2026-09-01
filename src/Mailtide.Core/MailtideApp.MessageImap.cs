@@ -12,6 +12,77 @@ public sealed partial class MailtideApp
         AccountImapEndpoint Endpoint,
         string? Secret);
 
+    private readonly record struct MessageRelocatePrep(
+        bool Unchanged,
+        string SourcePath,
+        string DestinationPath,
+        string RemoteId,
+        Guid DestinationMailboxId,
+        AccountImapEndpoint Endpoint,
+        string? Secret);
+
+    private async Task RelocateMessageAsync(
+        Guid accountId,
+        Guid messageId,
+        Func<CancellationToken, Task<MessageRelocatePrep>> prepare,
+        CancellationToken cancellationToken)
+    {
+        var workGate = AccountWorkGate(accountId);
+        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            MessageRelocatePrep prep;
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                prep = await prepare(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+
+            if (prep.Unchanged)
+            {
+                return;
+            }
+
+            await UsingAuthenticatedImapAsync(
+                    prep.Endpoint,
+                    prep.Secret,
+                    client => client.MoveAsync(
+                        prep.SourcePath,
+                        prep.DestinationPath,
+                        prep.RemoteId,
+                        cancellationToken),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var message = await _db.Messages
+                    .SingleOrDefaultAsync(
+                        m => m.AccountId == accountId && m.Id == messageId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (message is not null)
+                {
+                    message.MailboxId = prep.DestinationMailboxId;
+                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _dbGate.Release();
+            }
+        }
+        finally
+        {
+            workGate.Release();
+        }
+    }
+
     public Task MarkReadAsync(
         Guid accountId,
         Guid messageId,
@@ -58,71 +129,35 @@ public sealed partial class MailtideApp
         Guid destinationMailboxId,
         CancellationToken cancellationToken = default)
     {
-        var workGate = AccountWorkGate(accountId);
-        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            string sourcePath;
-            string destinationPath;
-            string remoteId;
-            AccountImapEndpoint endpoint;
-            string? secret;
-
-            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var message = await RequireStoredMessageAsync(accountId, messageId, cancellationToken)
-                    .ConfigureAwait(false);
-                var source = await RequireMailboxAsync(accountId, message.MailboxId, cancellationToken)
-                    .ConfigureAwait(false);
-                var destination = await RequireMailboxAsync(accountId, destinationMailboxId, cancellationToken)
-                    .ConfigureAwait(false);
-                if (source.Id == destination.Id)
+        await RelocateMessageAsync(
+                accountId,
+                messageId,
+                async ct =>
                 {
-                    return;
-                }
+                    var message = await RequireStoredMessageAsync(accountId, messageId, ct)
+                        .ConfigureAwait(false);
+                    var source = await RequireMailboxAsync(accountId, message.MailboxId, ct)
+                        .ConfigureAwait(false);
+                    var destination = await RequireMailboxAsync(accountId, destinationMailboxId, ct)
+                        .ConfigureAwait(false);
+                    if (source.Id == destination.Id)
+                    {
+                        return new MessageRelocatePrep(true, "", "", "", default, default, null);
+                    }
 
-                var account = await RequireAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
-                sourcePath = source.Path;
-                destinationPath = destination.Path;
-                remoteId = message.RemoteId;
-                (endpoint, secret) = await BindImapEndpointAsync(account, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                _dbGate.Release();
-            }
-
-            await UsingAuthenticatedImapAsync(
-                    endpoint,
-                    secret,
-                    client => client.MoveAsync(sourcePath, destinationPath, remoteId, cancellationToken),
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var message = await _db.Messages
-                    .SingleOrDefaultAsync(
-                        m => m.AccountId == accountId && m.Id == messageId,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (message is not null)
-                {
-                    message.MailboxId = destinationMailboxId;
-                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                _dbGate.Release();
-            }
-        }
-        finally
-        {
-            workGate.Release();
-        }
+                    var account = await RequireAccountAsync(accountId, ct).ConfigureAwait(false);
+                    var (endpoint, secret) = await BindImapEndpointAsync(account, ct).ConfigureAwait(false);
+                    return new MessageRelocatePrep(
+                        false,
+                        source.Path,
+                        destination.Path,
+                        message.RemoteId,
+                        destination.Id,
+                        endpoint,
+                        secret);
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task MoveMailboxThreadAsync(
@@ -150,77 +185,39 @@ public sealed partial class MailtideApp
         Guid messageId,
         CancellationToken cancellationToken = default)
     {
-        var workGate = AccountWorkGate(accountId);
-        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            string sourcePath;
-            string trashPath;
-            string remoteId;
-            AccountImapEndpoint endpoint;
-            string? secret;
-            Guid trashMailboxId;
-
-            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var message = await RequireStoredMessageAsync(accountId, messageId, cancellationToken)
-                    .ConfigureAwait(false);
-                var source = await RequireMailboxAsync(accountId, message.MailboxId, cancellationToken)
-                    .ConfigureAwait(false);
-                var trash = await RequireRoleMailboxAsync(
-                        accountId,
-                        MailboxRole.Trash,
-                        "This Account has no Trash Mailbox.",
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (source.Id == trash.Id)
+        await RelocateMessageAsync(
+                accountId,
+                messageId,
+                async ct =>
                 {
-                    return;
-                }
+                    var message = await RequireStoredMessageAsync(accountId, messageId, ct)
+                        .ConfigureAwait(false);
+                    var source = await RequireMailboxAsync(accountId, message.MailboxId, ct)
+                        .ConfigureAwait(false);
+                    var trash = await RequireRoleMailboxAsync(
+                            accountId,
+                            MailboxRole.Trash,
+                            "This Account has no Trash Mailbox.",
+                            ct)
+                        .ConfigureAwait(false);
+                    if (source.Id == trash.Id)
+                    {
+                        return new MessageRelocatePrep(true, "", "", "", default, default, null);
+                    }
 
-                var account = await RequireAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
-                sourcePath = source.Path;
-                trashPath = trash.Path;
-                remoteId = message.RemoteId;
-                trashMailboxId = trash.Id;
-                (endpoint, secret) = await BindImapEndpointAsync(account, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                _dbGate.Release();
-            }
-
-            await UsingAuthenticatedImapAsync(
-                    endpoint,
-                    secret,
-                    client => client.MoveAsync(sourcePath, trashPath, remoteId, cancellationToken),
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var message = await _db.Messages
-                    .SingleOrDefaultAsync(
-                        m => m.AccountId == accountId && m.Id == messageId,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (message is not null)
-                {
-                    message.MailboxId = trashMailboxId;
-                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                _dbGate.Release();
-            }
-        }
-        finally
-        {
-            workGate.Release();
-        }
+                    var account = await RequireAccountAsync(accountId, ct).ConfigureAwait(false);
+                    var (endpoint, secret) = await BindImapEndpointAsync(account, ct).ConfigureAwait(false);
+                    return new MessageRelocatePrep(
+                        false,
+                        source.Path,
+                        trash.Path,
+                        message.RemoteId,
+                        trash.Id,
+                        endpoint,
+                        secret);
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task RestoreFromTrashAsync(
@@ -228,83 +225,45 @@ public sealed partial class MailtideApp
         Guid messageId,
         CancellationToken cancellationToken = default)
     {
-        var workGate = AccountWorkGate(accountId);
-        await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            string trashPath;
-            string inboxPath;
-            string remoteId;
-            AccountImapEndpoint endpoint;
-            string? secret;
-            Guid inboxMailboxId;
-
-            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var message = await RequireStoredMessageAsync(accountId, messageId, cancellationToken)
-                    .ConfigureAwait(false);
-                var source = await RequireMailboxAsync(accountId, message.MailboxId, cancellationToken)
-                    .ConfigureAwait(false);
-                var trash = await RequireRoleMailboxAsync(
-                        accountId,
-                        MailboxRole.Trash,
-                        "This Account has no Trash Mailbox.",
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (source.Id != trash.Id)
+        await RelocateMessageAsync(
+                accountId,
+                messageId,
+                async ct =>
                 {
-                    throw new InvalidOperationException("Message is not in Trash.");
-                }
+                    var message = await RequireStoredMessageAsync(accountId, messageId, ct)
+                        .ConfigureAwait(false);
+                    var source = await RequireMailboxAsync(accountId, message.MailboxId, ct)
+                        .ConfigureAwait(false);
+                    var trash = await RequireRoleMailboxAsync(
+                            accountId,
+                            MailboxRole.Trash,
+                            "This Account has no Trash Mailbox.",
+                            ct)
+                        .ConfigureAwait(false);
+                    if (source.Id != trash.Id)
+                    {
+                        throw new InvalidOperationException("Message is not in Trash.");
+                    }
 
-                var inbox = await RequireRoleMailboxAsync(
-                        accountId,
-                        MailboxRole.Inbox,
-                        "This Account has no Inbox Mailbox.",
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                var account = await RequireAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
-                trashPath = trash.Path;
-                inboxPath = inbox.Path;
-                remoteId = message.RemoteId;
-                inboxMailboxId = inbox.Id;
-                (endpoint, secret) = await BindImapEndpointAsync(account, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                _dbGate.Release();
-            }
-
-            await UsingAuthenticatedImapAsync(
-                    endpoint,
-                    secret,
-                    client => client.MoveAsync(trashPath, inboxPath, remoteId, cancellationToken),
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var message = await _db.Messages
-                    .SingleOrDefaultAsync(
-                        m => m.AccountId == accountId && m.Id == messageId,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (message is not null)
-                {
-                    message.MailboxId = inboxMailboxId;
-                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                _dbGate.Release();
-            }
-        }
-        finally
-        {
-            workGate.Release();
-        }
+                    var inbox = await RequireRoleMailboxAsync(
+                            accountId,
+                            MailboxRole.Inbox,
+                            "This Account has no Inbox Mailbox.",
+                            ct)
+                        .ConfigureAwait(false);
+                    var account = await RequireAccountAsync(accountId, ct).ConfigureAwait(false);
+                    var (endpoint, secret) = await BindImapEndpointAsync(account, ct).ConfigureAwait(false);
+                    return new MessageRelocatePrep(
+                        false,
+                        trash.Path,
+                        inbox.Path,
+                        message.RemoteId,
+                        inbox.Id,
+                        endpoint,
+                        secret);
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task EmptyTrashAsync(
