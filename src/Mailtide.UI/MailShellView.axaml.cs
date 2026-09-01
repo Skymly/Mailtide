@@ -431,6 +431,35 @@ public partial class MailShellView : UserControl
         }
     }
 
+    private async void OnRenameMailboxClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        AccountActionStatus.Text = string.Empty;
+        if (browse.SelectedMailboxId is null)
+        {
+            AccountActionStatus.Text = "Select a Mailbox before renaming it.";
+            return;
+        }
+
+        try
+        {
+            var dialog = new RenameMailboxDialog();
+            var name = await AvaloniaOverlayDialog.ShowAsync(this, dialog, dialog.Completion)
+                .ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return;
+            }
+
+            await browse.RenameMailboxAsync(name).ConfigureAwait(true);
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            AccountActionStatus.Text = ex.Message;
+        }
+    }
+
     private async void OnAddAccountClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();

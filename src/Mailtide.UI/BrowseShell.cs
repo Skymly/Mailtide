@@ -208,6 +208,27 @@ public sealed class BrowseShell
         return created;
     }
 
+    public async Task<MailboxInfo> RenameMailboxAsync(
+        string newName,
+        CancellationToken cancellationToken = default)
+    {
+        if (SelectedAccountId is not { } accountId)
+        {
+            throw new InvalidOperationException("Select an Account before renaming a Mailbox.");
+        }
+
+        if (SelectedMailboxId is not { } mailboxId)
+        {
+            throw new InvalidOperationException("Select a Mailbox before renaming it.");
+        }
+
+        var renamed = await _app
+            .RenameMailboxAsync(accountId, mailboxId, newName, cancellationToken)
+            .ConfigureAwait(false);
+        Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
+        return renamed;
+    }
+
     public async Task SelectMailboxAsync(Guid mailboxId, CancellationToken cancellationToken = default)
     {
         if (SelectedAccountId is not { } accountId)

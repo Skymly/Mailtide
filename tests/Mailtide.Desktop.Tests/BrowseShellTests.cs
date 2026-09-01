@@ -75,6 +75,37 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_RenameMailbox_updates_selected_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        var created = await shell.CreateMailboxAsync("Projects");
+        await shell.SelectMailboxAsync(created.Id);
+
+        var renamed = await shell.RenameMailboxAsync("Work");
+
+        Assert.AreEqual("Work", renamed.Name);
+        Assert.IsTrue(shell.Mailboxes.Any(m => m.Id == created.Id && m.Name == "Work"));
+        Assert.IsFalse(shell.Mailboxes.Any(m => m.Name == "Projects"));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_RenameMailbox_requires_selected_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => shell.RenameMailboxAsync("Work"));
+    }
+
+    [TestMethod]
     public async Task BrowseShell_selecting_Mailbox_lists_its_Messages()
     {
         using var fixture = new DesktopAppFixture();
