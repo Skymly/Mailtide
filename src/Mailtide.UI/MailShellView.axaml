@@ -167,6 +167,11 @@
                 Content="Rename Mailbox"
                 Margin="0,0,0,8"
                 Click="OnRenameMailboxClick" />
+        <Button Name="DeleteMailboxButton"
+                DockPanel.Dock="Top"
+                Content="Delete Mailbox"
+                Margin="0,0,0,8"
+                Click="OnDeleteMailboxClick" />
         <ListBox Name="MailboxesList"
                  SelectionChanged="OnMailboxSelectionChanged">
           <ListBox.ItemTemplate>
