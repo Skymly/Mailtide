@@ -4,7 +4,7 @@ MailTide product ladder (`0.N`). Architecture minors at `0.5` / `0.10` / `0.15` 
 
 ## 进行中
 
-_(empty)_
+- 0.8 The Person can browse Unified Inbox Messages grouped by reply thread — [plan](plans/0.8.md), parent #189
 
 ## 排期
 
