@@ -460,6 +460,27 @@ public partial class MailShellView : UserControl
         }
     }
 
+    private async void OnDeleteMailboxClick(object? sender, RoutedEventArgs e)
+    {
+        var browse = RequireBrowse();
+        AccountActionStatus.Text = string.Empty;
+        if (browse.SelectedMailboxId is null)
+        {
+            AccountActionStatus.Text = "Select a Mailbox before deleting it.";
+            return;
+        }
+
+        try
+        {
+            await browse.DeleteMailboxAsync().ConfigureAwait(true);
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            AccountActionStatus.Text = ex.Message;
+        }
+    }
+
     private async void OnAddAccountClick(object? sender, RoutedEventArgs e)
     {
         var browse = RequireBrowse();

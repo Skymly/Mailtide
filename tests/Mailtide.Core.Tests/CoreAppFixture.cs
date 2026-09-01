@@ -153,6 +153,8 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastRenamedMailboxNewName { get; set; }
 
+    public string? LastDeletedMailboxPath { get; set; }
+
     public string? LastExpungeMailboxPath { get; private set; }
 
 
@@ -421,6 +423,22 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             _factory.LastRenamedMailboxPath = mailboxPath;
             _factory.LastRenamedMailboxNewName = path;
             return Task.FromResult(path);
+        }
+
+        public Task DeleteMailboxAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            if (_factory.FailWith is not null)
+            {
+                throw _factory.FailWith;
+            }
+
+            _factory._mailboxes.RemoveAll(m => m.Path == mailboxPath);
+            _factory._messagesByPath.Remove(mailboxPath);
+            _factory.LastDeletedMailboxPath = mailboxPath;
+            return Task.CompletedTask;
         }
 
         public Task ExpungeAllAsync(

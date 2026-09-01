@@ -90,6 +90,70 @@ public sealed partial class MailtideApp
             .ConfigureAwait(false);
     }
 
+    public async Task DeleteMailboxAsync(
+        Guid accountId,
+        Guid mailboxId,
+        CancellationToken cancellationToken = default)
+    {
+        var mailboxPath = string.Empty;
+        await WithMailboxLifecycleAsync(
+                accountId,
+                async ct =>
+                {
+                    var account = await RequireAccountAsync(accountId, ct).ConfigureAwait(false);
+                    var mailbox = await RequireMailboxAsync(accountId, mailboxId, ct).ConfigureAwait(false);
+                    if (mailbox.Role is MailboxRole.Inbox
+                        or MailboxRole.Sent
+                        or MailboxRole.Drafts
+                        or MailboxRole.Trash
+                        or MailboxRole.Junk)
+                    {
+                        throw new InvalidOperationException(
+                            $"Cannot delete a Mailbox with role '{mailbox.Role}'.");
+                    }
+
+                    var (endpoint, secret) = await BindImapEndpointAsync(account, ct).ConfigureAwait(false);
+                    mailboxPath = mailbox.Path;
+                    return new MailboxLifecyclePrep(Unchanged: null, endpoint, secret);
+                },
+                async (client, ct) =>
+                {
+                    await client.DeleteMailboxAsync(mailboxPath, ct).ConfigureAwait(false);
+                    return mailboxPath;
+                },
+                async (_, ct) =>
+                {
+                    var messages = await _db.Messages
+                        .Where(m => m.AccountId == accountId && m.MailboxId == mailboxId)
+                        .ToListAsync(ct)
+                        .ConfigureAwait(false);
+                    var messageIds = messages.Select(m => m.Id).ToList();
+                    var attachments = await _db.Attachments
+                        .Where(a => a.AccountId == accountId && messageIds.Contains(a.MessageId))
+                        .ToListAsync(ct)
+                        .ConfigureAwait(false);
+                    foreach (var attachment in attachments)
+                    {
+                        var blobPath = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
+                        if (File.Exists(blobPath))
+                        {
+                            File.Delete(blobPath);
+                        }
+                    }
+
+                    _db.Attachments.RemoveRange(attachments);
+                    _db.Messages.RemoveRange(messages);
+                    var record = await _db.Mailboxes
+                        .SingleAsync(m => m.Id == mailboxId, ct)
+                        .ConfigureAwait(false);
+                    _db.Mailboxes.Remove(record);
+                    await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                    return ToMailboxInfo(record);
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private async Task<MailboxInfo> WithMailboxLifecycleAsync(
         Guid accountId,
         Func<CancellationToken, Task<MailboxLifecyclePrep>> prepare,

@@ -229,6 +229,27 @@ public sealed class BrowseShell
         return renamed;
     }
 
+    public async Task DeleteMailboxAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedAccountId is not { } accountId)
+        {
+            throw new InvalidOperationException("Select an Account before deleting a Mailbox.");
+        }
+
+        if (SelectedMailboxId is not { } mailboxId)
+        {
+            throw new InvalidOperationException("Select a Mailbox before deleting it.");
+        }
+
+        await _app
+            .DeleteMailboxAsync(accountId, mailboxId, cancellationToken)
+            .ConfigureAwait(false);
+        SelectedMailboxId = null;
+        Messages = [];
+        ClearMessageDetail();
+        Mailboxes = await _app.ListMailboxesAsync(accountId, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task SelectMailboxAsync(Guid mailboxId, CancellationToken cancellationToken = default)
     {
         if (SelectedAccountId is not { } accountId)

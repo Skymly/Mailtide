@@ -198,6 +198,11 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default) =>
             Task.FromResult(newName);
 
+        public Task DeleteMailboxAsync(
+            string mailboxPath,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
         public Task ExpungeAllAsync(
             string mailboxPath,
             CancellationToken cancellationToken = default) =>

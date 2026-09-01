@@ -72,6 +72,10 @@ public interface IImapClient : IAsyncDisposable
         string newName,
         CancellationToken cancellationToken = default);
 
+    Task DeleteMailboxAsync(
+        string mailboxPath,
+        CancellationToken cancellationToken = default);
+
     Task ExpungeAllAsync(
         string mailboxPath,
         CancellationToken cancellationToken = default);
