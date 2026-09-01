@@ -4,7 +4,7 @@ MailTide product ladder (`0.N`). Architecture minors at `0.5` / `0.10` / `0.15` 
 
 ## 进行中
 
-_(empty)_
+- 0.5 Mailbox create and rename share one Core lifecycle ritual — [plan](plans/0.5.md), parent #171
 
 ## 排期
 
