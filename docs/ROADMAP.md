@@ -4,7 +4,7 @@ MailTide product ladder (`0.N`). Architecture minors at `0.5` / `0.10` / `0.15` 
 
 ## 进行中
 
-_(empty)_
+- 0.10 Message move, Move-to-Trash, and Restore-from-Trash share one Core relocate ritual — [plan](plans/0.10.md), parent #201
 
 ## 排期
 
