@@ -15,9 +15,9 @@ People who keep several personal mail Accounts on one device and need mail to st
 
 ## Status
 
-Current product is **0.9** (move a Mailbox reply thread's Messages to another Mailbox). GitHub Release assets are still [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) until a human cuts `v0.2.0`.
+Current product is **0.10** (Message move, Trash, and Restore share one Core relocate ritual). GitHub Release assets are still [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) until a human cuts `v0.2.0`.
 
-Current target: **0.10** — Message move, Move-to-Trash, and Restore-from-Trash share one Core relocate ritual ([plan](docs/plans/0.10.md)).
+Current target: none.
 
 Build from source below when developing. Local `dotnet run` still needs OAuth env vars unless a Release pack baked the public client IDs.
 
