@@ -15,7 +15,7 @@ People who keep several personal mail Accounts on one device and need mail to st
 
 ## Status
 
-Current product is **0.8** (browse Unified Inbox Messages grouped by reply thread). GitHub Release assets are still [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) until a human cuts `v0.2.0`.
+Current product is **0.9** (move a Mailbox reply thread's Messages to another Mailbox). GitHub Release assets are still [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) until a human cuts `v0.2.0`.
 
 Current target: none.
 
@@ -28,7 +28,7 @@ Build from source below when developing. Local `dotnet run` still needs OAuth en
 | Accounts | Google (OAuth), Microsoft consumer / Outlook.com (OAuth), QQ Mail (预设 + 授权码), manual IMAP/SMTP + password / app password |
 | Offline | Install-wide EF Core + SQLite store; attachment blobs on disk; read synced Messages without network |
 | Sync | In-process sync engine; per-Account parallel sync; drafts → Outbox → SMTP |
-| UI | Unified Inbox view (reply-thread groups), per-Mailbox browse (reply-thread groups), HTML Message view, compose with optional HTML, local search (`is:unread` / `is:flagged` + text), move a Message to another Mailbox, create a Mailbox, rename a Mailbox, delete a Mailbox |
+| UI | Unified Inbox view (reply-thread groups), per-Mailbox browse (reply-thread groups), HTML Message view, compose with optional HTML, local search (`is:unread` / `is:flagged` + text), move a Message or Mailbox reply thread to another Mailbox, create a Mailbox, rename a Mailbox, delete a Mailbox |
 | Security | Credentials only via OS-backed secure storage (Windows DPAPI, Linux libsecret, Android Keystore) — no plaintext fallback |
 | Updates | Desktop checks GitHub Releases (private repo: set `MAILTIDE_GITHUB_TOKEN`); Android updates by installing a newer APK from Releases |
 

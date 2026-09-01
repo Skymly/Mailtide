@@ -4,7 +4,7 @@ MailTide product ladder (`0.N`). Architecture minors at `0.5` / `0.10` / `0.15` 
 
 ## 进行中
 
-- 0.9 The Person can move a selected Mailbox reply thread's Messages into another Mailbox on the same Account — [plan](plans/0.9.md), parent #195
+_(empty)_
 
 ## 排期
 
@@ -12,6 +12,7 @@ _(empty until the next PlanRoadmap)_
 
 ## 已完成
 
+- 0.9 The Person can move a selected Mailbox reply thread's Messages into another Mailbox on the same Account — [plan](plans/0.9.md) (#197)
 - 0.8 The Person can browse Unified Inbox Messages grouped by reply thread — [plan](plans/0.8.md) (#191)
 - 0.7 The Person can browse a Mailbox's Messages grouped by reply thread — [plan](plans/0.7.md) (#185)
 - 0.6 The Person can delete a Mailbox on an Account — [plan](plans/0.6.md) (#179)
