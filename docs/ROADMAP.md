@@ -4,7 +4,7 @@ MailTide product ladder (`0.N`). Architecture minors at `0.5` / `0.10` / `0.15` 
 
 ## 进行中
 
-- 0.6 The Person can delete a Mailbox on an Account — [plan](plans/0.6.md), parent #177
+_(empty)_
 
 ## 排期
 
@@ -12,6 +12,7 @@ _(empty until the next PlanRoadmap)_
 
 ## 已完成
 
+- 0.6 The Person can delete a Mailbox on an Account — [plan](plans/0.6.md) (#179)
 - 0.5 Mailbox create and rename share one Core lifecycle ritual — [plan](plans/0.5.md) (#173)
 - 0.4 The Person can rename a Mailbox on an Account — [plan](plans/0.4.md) (#167)
 - 0.3 The Person can create a Mailbox on an Account — [plan](plans/0.3.md) (#161)
