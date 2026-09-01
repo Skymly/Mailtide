@@ -125,6 +125,26 @@ public sealed partial class MailtideApp
         }
     }
 
+    public async Task MoveMailboxThreadAsync(
+        Guid accountId,
+        Guid mailboxId,
+        Guid latestMessageId,
+        Guid destinationMailboxId,
+        CancellationToken cancellationToken = default)
+    {
+        var threads = await ListMailboxThreadsAsync(accountId, mailboxId, cancellationToken)
+            .ConfigureAwait(false);
+        var thread = threads.FirstOrDefault(item => item.Latest.Id == latestMessageId)
+            ?? threads.FirstOrDefault(item => item.Messages.Any(message => message.Id == latestMessageId))
+            ?? throw new InvalidOperationException("Thread is not in the current Mailbox.");
+
+        foreach (var message in thread.Messages)
+        {
+            await MoveMessageAsync(accountId, message.Id, destinationMailboxId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
     public async Task MoveToTrashAsync(
         Guid accountId,
         Guid messageId,

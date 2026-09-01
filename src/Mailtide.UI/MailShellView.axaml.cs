@@ -861,7 +861,7 @@ public partial class MailShellView : UserControl
     {
         var browse = RequireBrowse();
         AccountActionStatus.Text = string.Empty;
-        if (browse.SelectedMessageId is null)
+        if (browse.SelectedMessageId is null && browse.SelectedThreadId is null)
         {
             return;
         }
@@ -869,8 +869,8 @@ public partial class MailShellView : UserControl
         try
         {
             var destinations = await browse.ListMoveDestinationsAsync().ConfigureAwait(true);
-            var currentMailboxId = browse.Messages
-                .FirstOrDefault(m => m.Id == browse.SelectedMessageId)?.MailboxId;
+            var currentMailboxId = browse.SelectedMailboxId
+                ?? browse.Messages.FirstOrDefault(m => m.Id == browse.SelectedMessageId)?.MailboxId;
             var dialog = new MoveMailboxDialog(destinations, currentMailboxId);
             var chosen = await AvaloniaOverlayDialog.ShowAsync(this, dialog, dialog.Completion)
                 .ConfigureAwait(true);
