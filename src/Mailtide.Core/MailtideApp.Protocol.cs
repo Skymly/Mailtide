@@ -124,23 +124,20 @@ public sealed partial class MailtideApp
         return protocolSecret;
     }
 
-    private async Task UsingImapClientAsync(
+    private Task UsingImapClientAsync(
         AccountImapEndpoint endpoint,
         string protocolSecret,
         Func<IImapClient, Task> action,
-        CancellationToken cancellationToken)
-    {
-        await using var client = _imapClientFactory.Create();
-        await client
-            .ConnectAndAuthenticateAsync(
-                endpoint.Host,
-                endpoint.Port,
-                endpoint.EmailAddress,
-                protocolSecret,
-                cancellationToken)
-            .ConfigureAwait(false);
-        await action(client).ConfigureAwait(false);
-    }
+        CancellationToken cancellationToken,
+        ImapSessionPool.Kind kind = ImapSessionPool.Kind.Command) =>
+        _imapSessions.UseAsync(
+            kind,
+            endpoint.Host,
+            endpoint.Port,
+            endpoint.EmailAddress,
+            protocolSecret,
+            action,
+            cancellationToken);
 
     private async Task UsingAuthenticatedImapAsync(
         AccountImapEndpoint endpoint,

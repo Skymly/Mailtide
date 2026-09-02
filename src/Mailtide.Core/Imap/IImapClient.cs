@@ -92,7 +92,10 @@ public sealed record RemoteMessageSummary(
 public sealed record RemoteMailbox(
     string Name,
     string Path,
-    MailboxRole? Role);
+    MailboxRole? Role)
+{
+    public uint UidValidity { get; init; }
+}
 
 public sealed record RemoteAttachment(
     string FileName,

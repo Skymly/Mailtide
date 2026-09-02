@@ -1,4 +1,5 @@
 using Mailtide.Core.Imap;
+using Mailtide.Core.Sync;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mailtide.Core;
@@ -74,7 +75,8 @@ public sealed partial class MailtideApp
                 prepared.Value.Endpoint,
                 prepared.Value.ProtocolSecret,
                 client => client.WaitForMailboxChangeAsync(mailboxPath, cancellationToken),
-                cancellationToken)
+                cancellationToken,
+                ImapSessionPool.Kind.Idle)
             .ConfigureAwait(false);
     }
 
@@ -83,11 +85,11 @@ public sealed partial class MailtideApp
         IImapClient client,
         CancellationToken cancellationToken)
     {
-        IReadOnlyDictionary<string, HashSet<string>> knownRemoteIds;
+        IReadOnlyDictionary<string, KnownRemoteMailbox> known;
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            knownRemoteIds = await LoadKnownRemoteIdsByPathAsync(accountId, cancellationToken)
+            known = await _snapshotSync.LoadKnownAsync(accountId, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
@@ -95,7 +97,7 @@ public sealed partial class MailtideApp
             _dbGate.Release();
         }
 
-        var snapshot = await FetchRemoteSnapshotAsync(client, knownRemoteIds, cancellationToken)
+        var snapshot = await RemoteSnapshotSync.FetchAsync(client, known, cancellationToken)
             .ConfigureAwait(false);
 
         IReadOnlyList<InboxArrival> arrivals = [];
@@ -118,7 +120,7 @@ public sealed partial class MailtideApp
                 return;
             }
 
-            arrivals = await PersistSnapshotAsync(accountId, snapshot, cancellationToken)
+            arrivals = await _snapshotSync.PersistAsync(accountId, snapshot, cancellationToken)
                 .ConfigureAwait(false);
             SetStatus(accountId, AccountStatus.Idle());
         }

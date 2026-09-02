@@ -11,3 +11,7 @@ Default five-role vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `
 ### Domain docs
 
 Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+### Scratch
+
+Local agent trash can: `.scratch/` (gitignored). See `docs/agents/scratch.md`.

@@ -33,7 +33,7 @@ internal sealed class MailKitSmtpClient : ISmtpClient
         try
         {
             await _client
-                .ConnectAsync(host, port, SocketOptionsForPort(port), cancellationToken)
+                .ConnectAsync(host, port, MailTls.SocketOptions(host, port), cancellationToken)
                 .ConfigureAwait(false);
             await _client
                 .AuthenticateAsync(username, password, cancellationToken)
@@ -161,11 +161,4 @@ internal sealed class MailKitSmtpClient : ISmtpClient
         return _client;
     }
 
-    private static SecureSocketOptions SocketOptionsForPort(int port) =>
-        port switch
-        {
-            993 or 465 => SecureSocketOptions.SslOnConnect,
-            143 or 587 => SecureSocketOptions.StartTlsWhenAvailable,
-            _ => SecureSocketOptions.None,
-        };
 }

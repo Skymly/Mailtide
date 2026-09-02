@@ -97,38 +97,51 @@ public sealed partial class MailtideApp
             scoped = scoped.Where(m => !m.IsRead);
         }
 
-        var records = await scoped.ToListAsync(cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(parsed.Text))
+        if (!string.IsNullOrEmpty(parsed.Text))
         {
-            return records
-                .OrderByDescending(m => m.ReceivedAt)
-                .ThenBy(m => m.Subject)
-                .Select(ToMessageInfo)
-                .ToList();
+            var needle = parsed.Text.ToLowerInvariant();
+            IReadOnlyList<Guid> ftsIds = [];
+            await _db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ftsIds = await MessageSearchIndex.SearchIdsAsync(_db, parsed.Text, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                await _db.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
+
+            scoped = scoped.Where(m =>
+                ftsIds.Contains(m.Id)
+                || m.Subject.ToLower().Contains(needle)
+                || m.FromAddress.ToLower().Contains(needle)
+                || m.BodyText.ToLower().Contains(needle));
         }
 
-        return FilterMessages(records, query);
-    }
+        var records = await scoped
+            .Select(m => new MessageRecord
+            {
+                Id = m.Id,
+                AccountId = m.AccountId,
+                MailboxId = m.MailboxId,
+                RemoteId = m.RemoteId,
+                Subject = m.Subject,
+                FromAddress = m.FromAddress,
+                ReceivedAt = m.ReceivedAt,
+                IsRead = m.IsRead,
+                IsFlagged = m.IsFlagged,
+                BodyText = m.BodyText,
+                ToAddresses = m.ToAddresses,
+                CcAddresses = m.CcAddresses,
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
 
-    private static IReadOnlyList<MessageInfo> FilterMessages(
-        IReadOnlyList<MessageRecord> records,
-        string query)
-    {
         return records
-            .Where(record => MessageMatches(record, query))
             .OrderByDescending(m => m.ReceivedAt)
             .ThenBy(m => m.Subject)
             .Select(ToMessageInfo)
             .ToList();
     }
-
-    private static bool MessageMatches(MessageRecord record, string query) =>
-        MessageSearch.Matches(
-            record.IsFlagged,
-            record.IsRead,
-            record.Subject,
-            record.FromAddress,
-            record.BodyText,
-            record.BodyHtml,
-            query);
 }

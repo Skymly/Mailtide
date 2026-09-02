@@ -35,7 +35,7 @@ internal sealed class MailKitImapClient : IImapClient
         try
         {
             await _client
-                .ConnectAsync(host, port, SocketOptionsForPort(port), cancellationToken)
+                .ConnectAsync(host, port, MailTls.SocketOptions(host, port), cancellationToken)
                 .ConfigureAwait(false);
             await _client
                 .AuthenticateAsync(username, password, cancellationToken)
@@ -79,11 +79,28 @@ internal sealed class MailKitImapClient : IImapClient
                 }
             }
 
+            foreach (var folder in folders.Values)
+            {
+                try
+                {
+                    await folder.StatusAsync(StatusItems.UidValidity, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Leave UidValidity at 0 when STATUS UIDVALIDITY is unavailable.
+                    _ = ex;
+                }
+            }
+
             return folders.Values
                 .Select(folder => new RemoteMailbox(
                     Name: folder.Name,
                     Path: folder.FullName,
-                    Role: MapRole(folder.Attributes)))
+                    Role: MapRole(folder.Attributes))
+                {
+                    UidValidity = folder.UidValidity,
+                })
                 .OrderBy(m => m.Path, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -628,14 +645,6 @@ internal sealed class MailKitImapClient : IImapClient
 
         return _client;
     }
-
-    private static SecureSocketOptions SocketOptionsForPort(int port) =>
-        port switch
-        {
-            993 or 465 => SecureSocketOptions.SslOnConnect,
-            143 or 587 => SecureSocketOptions.StartTlsWhenAvailable,
-            _ => SecureSocketOptions.None,
-        };
 
     private static MailboxRole? MapRole(FolderAttributes attributes)
     {
