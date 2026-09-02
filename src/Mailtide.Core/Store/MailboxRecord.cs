@@ -11,4 +11,6 @@ internal sealed class MailboxRecord
     public required string Path { get; set; }
 
     public MailboxRole? Role { get; set; }
+
+    public uint UidValidity { get; set; }
 }

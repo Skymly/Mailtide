@@ -12,6 +12,7 @@ _(empty until the next PlanRoadmap)_
 
 ## 已完成
 
+- 0.20 IMAP UIDVALIDITY, forced TLS, session reuse, versioned store migrations, FTS search, internal Core modules, reading/compose main surface — [plan](plans/0.20.md)
 - 0.10 Message move, Move-to-Trash, and Restore-from-Trash share one Core relocate ritual — [plan](plans/0.10.md) (#203)
 - 0.9 The Person can move a selected Mailbox reply thread's Messages into another Mailbox on the same Account — [plan](plans/0.9.md) (#197)
 - 0.8 The Person can browse Unified Inbox Messages grouped by reply thread — [plan](plans/0.8.md) (#191)

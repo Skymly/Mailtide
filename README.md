@@ -15,7 +15,7 @@ People who keep several personal mail Accounts on one device and need mail to st
 
 ## Status
 
-Current product is **0.10** (Message move, Trash, and Restore share one Core relocate ritual). GitHub Release assets are still [v0.1.1](https://github.com/Skymly/Mailtide/releases/tag/v0.1.1) until a human cuts `v0.2.0`.
+Current product is **0.10** plus IMAP UIDVALIDITY / forced TLS / session reuse, versioned store migrations, FTS search, and a reading/compose main surface. Distribution tag: **v0.2.0**.
 
 Current target: none.
 

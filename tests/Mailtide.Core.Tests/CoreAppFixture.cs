@@ -201,7 +201,13 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public void ClearMessages() => _messagesByPath.Clear();
 
-    public IImapClient Create() => new FakeImapClient(this);
+    public int CreateCount { get; private set; }
+
+    public IImapClient Create()
+    {
+        CreateCount++;
+        return new FakeImapClient(this);
+    }
 
     private sealed class FakeImapClient : IImapClient
     {
@@ -211,6 +217,14 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
         public FakeImapClient(FakeImapClientFactory factory)
         {
             _factory = factory;
+        }
+
+        private void ThrowIfFailed()
+        {
+            if (_factory.FailWith is not null)
+            {
+                throw _factory.FailWith;
+            }
         }
 
         public async Task ConnectAndAuthenticateAsync(
@@ -233,10 +247,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
                 await _factory.BlockConnectUntil.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (_factory.FailWith is not null)
-            {
-                throw _factory.FailWith;
-            }
+            ThrowIfFailed();
 
             _ = host;
             _ = port;
@@ -254,6 +265,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             return Task.FromResult<IReadOnlyList<RemoteMailbox>>(_factory._mailboxes.ToList());
         }
 
@@ -262,6 +274,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
             {
                 messages = [];
@@ -275,6 +288,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
             {
                 messages = [];
@@ -290,6 +304,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             if (!_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
             {
                 messages = [];
@@ -306,6 +321,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             _ = mailboxPath;
             return _factory.WaitForMailboxChangeAsync(cancellationToken);
         }
@@ -316,6 +332,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             _factory.LastSetSeenMailboxPath = mailboxPath;
             _factory.LastSetSeenRemoteId = remoteId;
             return Task.CompletedTask;
@@ -327,6 +344,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             _factory.LastSetUnseenMailboxPath = mailboxPath;
             _factory.LastSetUnseenRemoteId = remoteId;
             return Task.CompletedTask;
@@ -339,6 +357,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             _factory.LastSetFlaggedMailboxPath = mailboxPath;
             _factory.LastSetFlaggedRemoteId = remoteId;
             _factory.LastSetFlaggedValue = flagged;
@@ -359,6 +378,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             _factory.LastMoveSourcePath = sourceMailboxPath;
             _factory.LastMoveDestinationPath = destinationMailboxPath;
             _factory.LastMoveRemoteId = remoteId;
@@ -382,10 +402,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
-            if (_factory.FailWith is not null)
-            {
-                throw _factory.FailWith;
-            }
+            ThrowIfFailed();
 
             var path = name.Trim();
             _factory._mailboxes.Add(new RemoteMailbox(path, path, Role: null));
@@ -399,10 +416,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
-            if (_factory.FailWith is not null)
-            {
-                throw _factory.FailWith;
-            }
+            ThrowIfFailed();
 
             var path = newName.Trim();
             for (var i = 0; i < _factory._mailboxes.Count; i++)
@@ -430,10 +444,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
-            if (_factory.FailWith is not null)
-            {
-                throw _factory.FailWith;
-            }
+            ThrowIfFailed();
 
             _factory._mailboxes.RemoveAll(m => m.Path == mailboxPath);
             _factory._messagesByPath.Remove(mailboxPath);
@@ -446,6 +457,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default)
         {
             EnsureAuthenticated();
+            ThrowIfFailed();
             _factory.LastExpungeMailboxPath = mailboxPath;
             _factory._messagesByPath[mailboxPath] = [];
             return Task.CompletedTask;

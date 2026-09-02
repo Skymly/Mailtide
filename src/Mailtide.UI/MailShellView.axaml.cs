@@ -266,6 +266,7 @@ public partial class MailShellView : UserControl
 
         compose.StartNewDraft();
         ClearComposeFields();
+        ShowComposeSurface();
         BindLists();
     }
 
@@ -620,12 +621,7 @@ public partial class MailShellView : UserControl
 
         var compose = RequireCompose();
         var loaded = await compose.SelectDraftAsync(draft.Id).ConfigureAwait(true);
-        ComposeToBox.Text = string.Join(", ", loaded.ToAddresses);
-        ComposeCcBox.Text = string.Join(", ", loaded.CcAddresses);
-        ComposeBccBox.Text = string.Join(", ", loaded.BccAddresses);
-        ComposeSubjectBox.Text = loaded.Subject;
-        ComposeBodyBox.Text = loaded.BodyText;
-        ComposeHtmlBox.Text = loaded.BodyHtml ?? string.Empty;
+        FillComposeFromDraft(loaded);
     }
 
     private async void OnAccountSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -734,11 +730,13 @@ public partial class MailShellView : UserControl
             && (_browse.ShowingUnifiedInbox || _browse.SelectedMailboxId is not null))
         {
             await _browse.SelectThreadAsync(message.Id).ConfigureAwait(true);
+            ShowReadSurface();
             BindLists();
             return;
         }
 
         await _browse.SelectMessageAsync(message.Id).ConfigureAwait(true);
+        ShowReadSurface();
         BindLists();
     }
 
@@ -761,12 +759,7 @@ public partial class MailShellView : UserControl
             .StartReplyAllAsync(message.AccountId, messageId)
             .ConfigureAwait(true);
 
-        ComposeToBox.Text = string.Join(", ", draft.ToAddresses);
-        ComposeCcBox.Text = string.Join(", ", draft.CcAddresses);
-        ComposeBccBox.Text = string.Join(", ", draft.BccAddresses);
-        ComposeSubjectBox.Text = draft.Subject;
-        ComposeBodyBox.Text = draft.BodyText;
-        ComposeHtmlBox.Text = draft.BodyHtml ?? string.Empty;
+        FillComposeFromDraft(draft);
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault(d => d.Id == draft.Id);
     }
@@ -789,12 +782,7 @@ public partial class MailShellView : UserControl
             .StartReplyAsync(message.AccountId, messageId)
             .ConfigureAwait(true);
 
-        ComposeToBox.Text = string.Join(", ", draft.ToAddresses);
-        ComposeCcBox.Text = string.Join(", ", draft.CcAddresses);
-        ComposeBccBox.Text = string.Join(", ", draft.BccAddresses);
-        ComposeSubjectBox.Text = draft.Subject;
-        ComposeBodyBox.Text = draft.BodyText;
-        ComposeHtmlBox.Text = draft.BodyHtml ?? string.Empty;
+        FillComposeFromDraft(draft);
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault(d => d.Id == draft.Id);
     }
@@ -817,12 +805,7 @@ public partial class MailShellView : UserControl
             .StartForwardAsync(message.AccountId, messageId)
             .ConfigureAwait(true);
 
-        ComposeToBox.Text = string.Join(", ", draft.ToAddresses);
-        ComposeCcBox.Text = string.Join(", ", draft.CcAddresses);
-        ComposeBccBox.Text = string.Join(", ", draft.BccAddresses);
-        ComposeSubjectBox.Text = draft.Subject;
-        ComposeBodyBox.Text = draft.BodyText;
-        ComposeHtmlBox.Text = draft.BodyHtml ?? string.Empty;
+        FillComposeFromDraft(draft);
         BindLists();
         DraftsList.SelectedItem = compose.Drafts.FirstOrDefault(d => d.Id == draft.Id);
     }
@@ -973,6 +956,50 @@ public partial class MailShellView : UserControl
                 await browse.SelectMessageAsync(selectedMessageId).ConfigureAwait(true);
             }
         }
+    }
+
+    private void OnComposeSurfaceClick(object? sender, RoutedEventArgs e)
+    {
+        var compose = RequireCompose();
+        if (compose.SelectedAccountId is null)
+        {
+            AccountActionStatus.Text = "Select an Account before composing.";
+            return;
+        }
+
+        ShowComposeSurface();
+    }
+
+    private void ShowComposeSurface()
+    {
+        if (ReadSurface is not null)
+        {
+            ReadSurface.IsVisible = false;
+        }
+
+        if (ComposeSurface is not null)
+        {
+            ComposeSurface.IsVisible = true;
+        }
+    }
+
+    private void ShowReadSurface()
+    {
+        if (ComposeSurface is not null)
+        {
+            ComposeSurface.IsVisible = false;
+        }
+
+        if (ReadSurface is not null)
+        {
+            ReadSurface.IsVisible = true;
+        }
+    }
+
+    private void FillComposeFromDraft(DraftInfo draft)
+    {
+        FillComposeFromDraft(draft);
+        ShowComposeSurface();
     }
 
     private void ClearComposeFields()

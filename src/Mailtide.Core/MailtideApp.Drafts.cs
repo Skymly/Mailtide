@@ -36,10 +36,10 @@ public sealed partial class MailtideApp
             {
                 var self = account.EmailAddress;
                 var to = DistinctAddresses(
-                    [message.FromAddress, ..DecodeAddresses(message.ToAddresses)],
+                    [message.FromAddress, ..PackedStringList.Decode(message.ToAddresses)],
                     except: [self]);
                 var cc = DistinctAddresses(
-                    DecodeAddresses(message.CcAddresses),
+                    PackedStringList.Decode(message.CcAddresses),
                     except: [self, ..to]);
                 return NewOriginDraft(
                     accountId,
@@ -102,9 +102,9 @@ public sealed partial class MailtideApp
             {
                 Id = Guid.NewGuid(),
                 AccountId = accountId,
-                ToAddresses = EncodeAddresses(content.ToAddresses),
-                CcAddresses = EncodeAddresses(content.CcAddresses),
-                BccAddresses = EncodeAddresses(content.BccAddresses),
+                ToAddresses = PackedStringList.Encode(content.ToAddresses),
+                CcAddresses = PackedStringList.Encode(content.CcAddresses),
+                BccAddresses = PackedStringList.Encode(content.BccAddresses),
                 Subject = content.Subject,
                 BodyText = content.BodyText,
                 BodyHtml = content.BodyHtml,
@@ -179,8 +179,8 @@ public sealed partial class MailtideApp
         {
             Id = Guid.NewGuid(),
             AccountId = accountId,
-            ToAddresses = EncodeAddresses(to),
-            CcAddresses = EncodeAddresses(cc),
+            ToAddresses = PackedStringList.Encode(to),
+            CcAddresses = PackedStringList.Encode(cc),
             Subject = subject,
             BodyText = bodyText,
             InReplyTo = message.InternetMessageId,
@@ -190,9 +190,9 @@ public sealed partial class MailtideApp
 
     private static void ApplyDraftContent(DraftRecord record, DraftContent content, DateTimeOffset now)
     {
-        record.ToAddresses = EncodeAddresses(content.ToAddresses);
-        record.CcAddresses = EncodeAddresses(content.CcAddresses);
-        record.BccAddresses = EncodeAddresses(content.BccAddresses);
+        record.ToAddresses = PackedStringList.Encode(content.ToAddresses);
+        record.CcAddresses = PackedStringList.Encode(content.CcAddresses);
+        record.BccAddresses = PackedStringList.Encode(content.BccAddresses);
         record.Subject = content.Subject;
         record.BodyText = content.BodyText;
         record.BodyHtml = content.BodyHtml;

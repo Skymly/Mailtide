@@ -1,10 +1,11 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 using Mailtide.Core.Auth;
 using Mailtide.Core.Imap;
 using Mailtide.Core.Security;
 using Mailtide.Core.Smtp;
+using Mailtide.Core.Outbox;
 using Mailtide.Core.Store;
+using Mailtide.Core.Sync;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mailtide.Core;
@@ -20,6 +21,9 @@ public sealed partial class MailtideApp : IAsyncDisposable
     private readonly IImapClientFactory _imapClientFactory;
     private readonly ISmtpClientFactory _smtpClientFactory;
     private readonly MailtideDbContext _db;
+    private readonly ImapSessionPool _imapSessions;
+    private readonly RemoteSnapshotSync _snapshotSync;
+    private readonly OutboxStateMachine _outbox;
     private readonly Dictionary<Guid, AccountStatus> _accountStatuses = new();
     private readonly object _statusGate = new();
     // DbContext is not thread-safe; serialize all store access on this single-user desktop app.
@@ -48,6 +52,9 @@ public sealed partial class MailtideApp : IAsyncDisposable
         _imapClientFactory = imapClientFactory;
         _smtpClientFactory = smtpClientFactory;
         _db = db;
+        _imapSessions = new ImapSessionPool(imapClientFactory);
+        _snapshotSync = new RemoteSnapshotSync(db, appDataDirectory);
+        _outbox = new OutboxStateMachine(db);
     }
 
     public static async Task<MailtideApp> OpenAsync(
@@ -72,7 +79,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
             .Options;
 
         var db = new MailtideDbContext(options);
-        await EnsureStoreSchemaAsync(db, cancellationToken).ConfigureAwait(false);
+        await StoreMigrator.ApplyAsync(db, cancellationToken).ConfigureAwait(false);
 
         return new MailtideApp(
             appDataDirectory,
@@ -780,7 +787,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 .Where(m => m.AccountId == accountId && m.MailboxId == mailboxId)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
-            return GroupMessagesByReplyThread(records);
+            return ReplyThreadIndex.Group(records, ToMessageInfo);
         }
         finally
         {
@@ -852,7 +859,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            return GroupMessagesByReplyThread(records);
+            return ReplyThreadIndex.Group(records, ToMessageInfo);
         }
         finally
         {
@@ -1448,14 +1455,14 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
                     outbound = new OutboundMessage(
                         account.EmailAddress,
-                        DecodeAddresses(item.ToAddresses),
+                        PackedStringList.Decode(item.ToAddresses),
                         item.Subject,
                         item.BodyText)
                     {
-                        CcAddresses = DecodeAddresses(item.CcAddresses),
-                        BccAddresses = DecodeAddresses(item.BccAddresses),
+                        CcAddresses = PackedStringList.Decode(item.CcAddresses),
+                        BccAddresses = PackedStringList.Decode(item.BccAddresses),
                         InReplyTo = item.InReplyTo,
-                        References = DecodeAddresses(item.ReferencesJson),
+                        References = PackedStringList.Decode(item.ReferencesJson),
                         Attachments = outboundAttachments,
                         BodyHtml = item.BodyHtml,
                     };
@@ -1617,6 +1624,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopForegroundSyncAsync().ConfigureAwait(false);
+        await _imapSessions.DisposeAsync().ConfigureAwait(false);
         await _dbGate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -1629,623 +1637,22 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// EnsureCreated only creates a missing database; it does not add tables to an existing file.
-    /// Create any model tables that may be absent after upgrading from an Accounts-only schema.
-    /// </summary>
-    private static async Task TryAddMessageFlaggedColumnAsync(
-        MailtideDbContext db,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await db.Database
-                .ExecuteSqlRawAsync(
-                    "ALTER TABLE Messages ADD COLUMN IsFlagged INTEGER NOT NULL DEFAULT 0",
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch
-        {
-            // Column already exists on upgraded stores.
-        }
-    }
-
-    private static async Task TryAddAttachmentContentIdColumnAsync(
-        MailtideDbContext db,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await db.Database
-                .ExecuteSqlRawAsync("ALTER TABLE Attachments ADD COLUMN ContentId TEXT", cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch
-        {
-            // Column already exists on upgraded stores.
-        }
-    }
-
-    private static async Task TryAddThreadingColumnsAsync(
-        MailtideDbContext db,
-        CancellationToken cancellationToken)
-    {
-        foreach (var sql in new[]
-                 {
-                     "ALTER TABLE Messages ADD COLUMN InternetMessageId TEXT",
-                     "ALTER TABLE Messages ADD COLUMN ReferencesJson TEXT NOT NULL DEFAULT '[]'",
-                     "ALTER TABLE Drafts ADD COLUMN InReplyTo TEXT",
-                     "ALTER TABLE Drafts ADD COLUMN ReferencesJson TEXT NOT NULL DEFAULT '[]'",
-                     "ALTER TABLE OutboxItems ADD COLUMN InReplyTo TEXT",
-                     "ALTER TABLE OutboxItems ADD COLUMN ReferencesJson TEXT NOT NULL DEFAULT '[]'",
-                 })
-        {
-            try
-            {
-                await db.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Column already exists on upgraded stores.
-            }
-        }
-    }
-
-    private static async Task TryAddDraftOutboxCcColumnsAsync(
-        MailtideDbContext db,
-        CancellationToken cancellationToken)
-    {
-        foreach (var sql in new[]
-                 {
-                     "ALTER TABLE Drafts ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
-                     "ALTER TABLE OutboxItems ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
-                     "ALTER TABLE Drafts ADD COLUMN BccAddresses TEXT NOT NULL DEFAULT '[]'",
-                     "ALTER TABLE OutboxItems ADD COLUMN BccAddresses TEXT NOT NULL DEFAULT '[]'",
-                     "ALTER TABLE Drafts ADD COLUMN BodyHtml TEXT",
-                     "ALTER TABLE OutboxItems ADD COLUMN BodyHtml TEXT",
-                 })
-        {
-            try
-            {
-                await db.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Column already exists on upgraded stores.
-            }
-        }
-    }
-
-    private static async Task TryAddMessageRecipientColumnsAsync(
-        MailtideDbContext db,
-        CancellationToken cancellationToken)
-    {
-        foreach (var sql in new[]
-                 {
-                     "ALTER TABLE Messages ADD COLUMN ToAddresses TEXT NOT NULL DEFAULT '[]'",
-                     "ALTER TABLE Messages ADD COLUMN CcAddresses TEXT NOT NULL DEFAULT '[]'",
-                     "ALTER TABLE Messages ADD COLUMN BodyHtml TEXT",
-                 })
-        {
-            try
-            {
-                await db.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Column already exists on upgraded stores.
-            }
-        }
-    }
-    private static async Task EnsureStoreSchemaAsync(
-        MailtideDbContext db,
-        CancellationToken cancellationToken)
-    {
-        await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE TABLE IF NOT EXISTS "Mailboxes" (
-                    "Id" TEXT NOT NULL CONSTRAINT "PK_Mailboxes" PRIMARY KEY,
-                    "AccountId" TEXT NOT NULL,
-                    "Name" TEXT NOT NULL,
-                    "Path" TEXT NOT NULL,
-                    "Role" TEXT NULL
-                )
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Mailboxes_AccountId_Path"
-                ON "Mailboxes" ("AccountId", "Path")
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE TABLE IF NOT EXISTS "Messages" (
-                    "Id" TEXT NOT NULL CONSTRAINT "PK_Messages" PRIMARY KEY,
-                    "AccountId" TEXT NOT NULL,
-                    "MailboxId" TEXT NOT NULL,
-                    "RemoteId" TEXT NOT NULL,
-                    "Subject" TEXT NOT NULL,
-                    "FromAddress" TEXT NOT NULL,
-                    "ReceivedAt" TEXT NOT NULL,
-                    "IsRead" INTEGER NOT NULL,
-                    "BodyText" TEXT NOT NULL
-                )
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Messages_AccountId_MailboxId_RemoteId"
-                ON "Messages" ("AccountId", "MailboxId", "RemoteId")
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await TryAddMessageRecipientColumnsAsync(db, cancellationToken).ConfigureAwait(false);
-        await TryAddDraftOutboxCcColumnsAsync(db, cancellationToken).ConfigureAwait(false);
-        await TryAddThreadingColumnsAsync(db, cancellationToken).ConfigureAwait(false);
-        await TryAddAttachmentContentIdColumnAsync(db, cancellationToken).ConfigureAwait(false);
-        await TryAddMessageFlaggedColumnAsync(db, cancellationToken).ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE TABLE IF NOT EXISTS "Attachments" (
-                    "Id" TEXT NOT NULL CONSTRAINT "PK_Attachments" PRIMARY KEY,
-                    "AccountId" TEXT NOT NULL,
-                    "MessageId" TEXT NOT NULL,
-                    "FileName" TEXT NOT NULL,
-                    "ContentType" TEXT NOT NULL,
-                    "BlobRelativePath" TEXT NOT NULL
-                )
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE INDEX IF NOT EXISTS "IX_Attachments_AccountId_MessageId"
-                ON "Attachments" ("AccountId", "MessageId")
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE TABLE IF NOT EXISTS "Drafts" (
-                    "Id" TEXT NOT NULL CONSTRAINT "PK_Drafts" PRIMARY KEY,
-                    "AccountId" TEXT NOT NULL,
-                    "ToAddresses" TEXT NOT NULL,
-                    "Subject" TEXT NOT NULL,
-                    "BodyText" TEXT NOT NULL,
-                    "UpdatedAt" TEXT NOT NULL
-                )
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE INDEX IF NOT EXISTS "IX_Drafts_AccountId"
-                ON "Drafts" ("AccountId")
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE TABLE IF NOT EXISTS "DraftAttachments" (
-                    "Id" TEXT NOT NULL CONSTRAINT "PK_DraftAttachments" PRIMARY KEY,
-                    "AccountId" TEXT NOT NULL,
-                    "DraftId" TEXT NOT NULL,
-                    "FileName" TEXT NOT NULL,
-                    "ContentType" TEXT NOT NULL,
-                    "BlobRelativePath" TEXT NOT NULL
-                )
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE INDEX IF NOT EXISTS "IX_DraftAttachments_AccountId_DraftId"
-                ON "DraftAttachments" ("AccountId", "DraftId")
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE TABLE IF NOT EXISTS "OutboxItems" (
-                    "Id" TEXT NOT NULL CONSTRAINT "PK_OutboxItems" PRIMARY KEY,
-                    "AccountId" TEXT NOT NULL,
-                    "ToAddresses" TEXT NOT NULL,
-                    "Subject" TEXT NOT NULL,
-                    "BodyText" TEXT NOT NULL,
-                    "State" TEXT NOT NULL,
-                    "ErrorMessage" TEXT NULL,
-                    "UpdatedAt" TEXT NOT NULL
-                )
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE INDEX IF NOT EXISTS "IX_OutboxItems_AccountId"
-                ON "OutboxItems" ("AccountId")
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE TABLE IF NOT EXISTS "OutboxAttachments" (
-                    "Id" TEXT NOT NULL CONSTRAINT "PK_OutboxAttachments" PRIMARY KEY,
-                    "AccountId" TEXT NOT NULL,
-                    "OutboxItemId" TEXT NOT NULL,
-                    "FileName" TEXT NOT NULL,
-                    "ContentType" TEXT NOT NULL,
-                    "BlobRelativePath" TEXT NOT NULL
-                )
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                CREATE INDEX IF NOT EXISTS "IX_OutboxAttachments_AccountId_OutboxItemId"
-                ON "OutboxAttachments" ("AccountId", "OutboxItemId")
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-
-        await EnsureAccountsOAuthColumnsAsync(db, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task EnsureAccountsOAuthColumnsAsync(
-        MailtideDbContext db,
-        CancellationToken cancellationToken)
-    {
-        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var connection = db.Database.GetDbConnection();
-        var shouldClose = connection.State != System.Data.ConnectionState.Open;
-        if (shouldClose)
-        {
-            await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT name FROM pragma_table_info('Accounts')";
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                existing.Add(reader.GetString(0));
-            }
-        }
-        finally
-        {
-            if (shouldClose)
-            {
-                await db.Database.CloseConnectionAsync().ConfigureAwait(false);
-            }
-        }
-
-        if (!existing.Contains("OAuthProvider"))
-        {
-            await db.Database.ExecuteSqlRawAsync(
-                    """ALTER TABLE "Accounts" ADD COLUMN "OAuthProvider" TEXT NULL""",
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        if (!existing.Contains("OAuthAuthority"))
-        {
-            await db.Database.ExecuteSqlRawAsync(
-                    """ALTER TABLE "Accounts" ADD COLUMN "OAuthAuthority" TEXT NULL""",
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        if (!existing.Contains("OAuthClientId"))
-        {
-            await db.Database.ExecuteSqlRawAsync(
-                    """ALTER TABLE "Accounts" ADD COLUMN "OAuthClientId" TEXT NULL""",
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-    }
-
     private async Task FailQueuedOutboxItemsAsync(
         Guid accountId,
         IReadOnlyList<Guid> itemIds,
         string errorMessage,
         CancellationToken cancellationToken)
     {
-        foreach (var itemId in itemIds)
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await MarkQueuedOutboxItemFailedAsync(accountId, itemId, errorMessage, cancellationToken)
+            await _outbox.FailQueuedAsync(accountId, itemIds, errorMessage, cancellationToken)
                 .ConfigureAwait(false);
         }
-    }
-
-    private async Task<IReadOnlyDictionary<string, HashSet<string>>> LoadKnownRemoteIdsByPathAsync(
-        Guid accountId,
-        CancellationToken cancellationToken)
-    {
-        var mailboxes = await _db.Mailboxes
-            .AsNoTracking()
-            .Where(m => m.AccountId == accountId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var messages = await _db.Messages
-            .AsNoTracking()
-            .Where(m => m.AccountId == accountId)
-            .Select(m => new { m.MailboxId, m.RemoteId })
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var byId = mailboxes.ToDictionary(m => m.Id, m => m.Path);
-        var known = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (var mailbox in mailboxes)
+        finally
         {
-            known[mailbox.Path] = new HashSet<string>(StringComparer.Ordinal);
+            _dbGate.Release();
         }
-
-        foreach (var message in messages)
-        {
-            if (byId.TryGetValue(message.MailboxId, out var path))
-            {
-                known[path].Add(message.RemoteId);
-            }
-        }
-
-        return known;
-    }
-
-    private static async Task<IReadOnlyList<RemoteMailboxSnapshot>> FetchRemoteSnapshotAsync(
-        IImapClient client,
-        IReadOnlyDictionary<string, HashSet<string>> knownRemoteIds,
-        CancellationToken cancellationToken)
-    {
-        var remoteMailboxes = await client
-            .ListMailboxesAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var snapshot = new List<RemoteMailboxSnapshot>(remoteMailboxes.Count);
-        foreach (var mailbox in remoteMailboxes)
-        {
-            var summaries = await client
-                .FetchMessageSummariesAsync(mailbox.Path, cancellationToken)
-                .ConfigureAwait(false);
-            knownRemoteIds.TryGetValue(mailbox.Path, out var known);
-            var missing = summaries
-                .Select(s => s.RemoteId)
-                .Where(id => known is null || !known.Contains(id))
-                .ToList();
-            var fetched = missing.Count == 0
-                ? Array.Empty<RemoteMessage>()
-                : await client
-                    .FetchMessagesAsync(mailbox.Path, missing, cancellationToken)
-                    .ConfigureAwait(false);
-            snapshot.Add(new RemoteMailboxSnapshot(
-                mailbox,
-                summaries,
-                fetched.ToDictionary(m => m.RemoteId, StringComparer.Ordinal)));
-        }
-
-        return snapshot;
-    }
-    private async Task<IReadOnlyList<InboxArrival>> PersistSnapshotAsync(
-        Guid accountId,
-        IReadOnlyList<RemoteMailboxSnapshot> snapshot,
-        CancellationToken cancellationToken)
-    {
-        var existingMailboxes = await _db.Mailboxes
-            .Where(m => m.AccountId == accountId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var mailboxByPath = existingMailboxes.ToDictionary(m => m.Path, StringComparer.Ordinal);
-
-        var existingMessages = await _db.Messages
-            .Where(m => m.AccountId == accountId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var existingAttachments = await _db.Attachments
-            .Where(a => a.AccountId == accountId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var existingInboxMailboxIds = existingMailboxes
-            .Where(m => m.Role == MailboxRole.Inbox)
-            .Select(m => m.Id)
-            .ToHashSet();
-        var accountDisplayName = await _db.Accounts
-            .AsNoTracking()
-            .Where(a => a.Id == accountId)
-            .Select(a => a.DisplayName)
-            .SingleAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var arrivals = new List<InboxArrival>();
-        var seenMailboxIds = new HashSet<Guid>();
-        var seenMessageIds = new HashSet<Guid>();
-
-        foreach (var entry in snapshot)
-        {
-            if (!mailboxByPath.TryGetValue(entry.Mailbox.Path, out var mailbox))
-            {
-                mailbox = new MailboxRecord
-                {
-                    Id = Guid.NewGuid(),
-                    AccountId = accountId,
-                    Name = entry.Mailbox.Name,
-                    Path = entry.Mailbox.Path,
-                    Role = entry.Mailbox.Role,
-                };
-                _db.Mailboxes.Add(mailbox);
-                mailboxByPath[entry.Mailbox.Path] = mailbox;
-            }
-            else
-            {
-                mailbox.Name = entry.Mailbox.Name;
-                mailbox.Role = entry.Mailbox.Role;
-            }
-
-            seenMailboxIds.Add(mailbox.Id);
-
-            var messagesByRemote = existingMessages
-                .Where(m => m.MailboxId == mailbox.Id)
-                .ToDictionary(m => m.RemoteId, StringComparer.Ordinal);
-
-            foreach (var summary in entry.Summaries)
-            {
-                entry.FetchedByRemoteId.TryGetValue(summary.RemoteId, out var fetched);
-                if (!messagesByRemote.TryGetValue(summary.RemoteId, out var message))
-                {
-                    if (fetched is null)
-                    {
-                        continue;
-                    }
-
-                    var messageId = Guid.NewGuid();
-                    message = new MessageRecord
-                    {
-                        Id = messageId,
-                        AccountId = accountId,
-                        MailboxId = mailbox.Id,
-                        RemoteId = fetched.RemoteId,
-                        Subject = fetched.Subject,
-                        FromAddress = fetched.FromAddress,
-                        ReceivedAt = fetched.ReceivedAt,
-                        IsRead = summary.IsRead,
-                        IsFlagged = summary.IsFlagged,
-                        BodyText = fetched.BodyText,
-                        BodyHtml = fetched.BodyHtml,
-                        InternetMessageId = fetched.InternetMessageId,
-                        ReferencesJson = EncodeAddresses(fetched.References),
-                        ToAddresses = EncodeAddresses(fetched.ToAddresses),
-                        CcAddresses = EncodeAddresses(fetched.CcAddresses),
-                    };
-                    _db.Messages.Add(message);
-                    if (mailbox.Role == MailboxRole.Inbox
-                        && existingInboxMailboxIds.Contains(mailbox.Id)
-                        && !summary.IsRead)
-                    {
-                        arrivals.Add(new InboxArrival(
-                            message.Id,
-                            accountId,
-                            mailbox.Id,
-                            message.Subject,
-                            message.FromAddress,
-                            accountDisplayName));
-                    }
-
-                    foreach (var remoteAttachment in fetched.Attachments)
-                    {
-                        var attachmentId = Guid.NewGuid();
-                        var blobRelativePath = BlobRelativePath(accountId, attachmentId);
-                        var blobAbsolutePath = Path.Combine(_appDataDirectory, blobRelativePath);
-                        Directory.CreateDirectory(Path.GetDirectoryName(blobAbsolutePath)!);
-                        await File
-                            .WriteAllBytesAsync(blobAbsolutePath, remoteAttachment.Content, cancellationToken)
-                            .ConfigureAwait(false);
-
-                        _db.Attachments.Add(new AttachmentRecord
-                        {
-                            Id = attachmentId,
-                            AccountId = accountId,
-                            MessageId = messageId,
-                            FileName = remoteAttachment.FileName,
-                            ContentType = remoteAttachment.ContentType,
-                            BlobRelativePath = blobRelativePath,
-                            ContentId = remoteAttachment.ContentId,
-                        });
-                    }
-                }
-                else
-                {
-                    message.IsRead = summary.IsRead;
-                    message.IsFlagged = summary.IsFlagged;
-                    message.Subject = summary.Subject;
-                    message.FromAddress = summary.FromAddress;
-                    message.ReceivedAt = summary.ReceivedAt;
-                    if (fetched is not null)
-                    {
-                        message.BodyText = fetched.BodyText;
-                        message.BodyHtml = fetched.BodyHtml;
-                        message.InternetMessageId = fetched.InternetMessageId;
-                        message.ReferencesJson = EncodeAddresses(fetched.References);
-                        message.ToAddresses = EncodeAddresses(fetched.ToAddresses);
-                        message.CcAddresses = EncodeAddresses(fetched.CcAddresses);
-                    }
-                }
-
-                seenMessageIds.Add(message.Id);
-            }
-        }
-
-        var messagesToRemove = existingMessages
-            .Where(m => !seenMessageIds.Contains(m.Id))
-            .ToList();
-        var removedMessageIds = messagesToRemove.Select(m => m.Id).ToHashSet();
-        var attachmentsToRemove = existingAttachments
-            .Where(a => removedMessageIds.Contains(a.MessageId))
-            .ToList();
-
-        foreach (var attachment in attachmentsToRemove)
-        {
-            var blobAbsolutePath = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
-            if (File.Exists(blobAbsolutePath))
-            {
-                File.Delete(blobAbsolutePath);
-            }
-        }
-
-        _db.Attachments.RemoveRange(attachmentsToRemove);
-        _db.Messages.RemoveRange(messagesToRemove);
-        _db.Mailboxes.RemoveRange(existingMailboxes.Where(m => !seenMailboxIds.Contains(m.Id)));
-
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return arrivals;
-    }
-
-    private void RaiseInboxArrivals(IReadOnlyList<InboxArrival> arrivals)
-    {
-        foreach (var arrival in arrivals)
-        {
-            lock (_inboxArrivalGate)
-            {
-                if (!_notifiedInboxMessageIds.Add(arrival.MessageId))
-                {
-                    continue;
-                }
-            }
-
-            InboxMessageArrived?.Invoke(this, arrival);
-        }
-    }
-    private void ResetBlobArea(Guid accountId)
-    {
-        var blobsDirectory = BlobAreaPath(accountId);
-        if (Directory.Exists(blobsDirectory))
-        {
-            Directory.Delete(blobsDirectory, recursive: true);
-        }
-
-        Directory.CreateDirectory(blobsDirectory);
     }
 
     private async Task RequeueSendingOutboxItemAsync(
@@ -2256,21 +1663,8 @@ public sealed partial class MailtideApp : IAsyncDisposable
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var item = await _db.OutboxItems
-                .SingleOrDefaultAsync(
-                    o => o.AccountId == accountId && o.Id == outboxItemId,
-                    cancellationToken)
+            await _outbox.RequeueSendingAsync(accountId, outboxItemId, cancellationToken)
                 .ConfigureAwait(false);
-
-            if (item is null || item.State != OutboxItemState.Sending)
-            {
-                return;
-            }
-
-            item.State = OutboxItemState.Queued;
-            item.ErrorMessage = null;
-            item.UpdatedAt = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -2287,21 +1681,8 @@ public sealed partial class MailtideApp : IAsyncDisposable
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var item = await _db.OutboxItems
-                .SingleOrDefaultAsync(
-                    o => o.AccountId == accountId && o.Id == outboxItemId,
-                    cancellationToken)
+            await _outbox.MarkQueuedFailedAsync(accountId, outboxItemId, errorMessage, cancellationToken)
                 .ConfigureAwait(false);
-
-            if (item is null || item.State != OutboxItemState.Queued)
-            {
-                return;
-            }
-
-            item.State = OutboxItemState.Failed;
-            item.ErrorMessage = errorMessage;
-            item.UpdatedAt = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -2318,26 +1699,8 @@ public sealed partial class MailtideApp : IAsyncDisposable
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var item = await _db.OutboxItems
-                .SingleOrDefaultAsync(
-                    o => o.AccountId == accountId && o.Id == outboxItemId,
-                    cancellationToken)
+            await _outbox.MarkFailedAsync(accountId, outboxItemId, errorMessage, cancellationToken)
                 .ConfigureAwait(false);
-
-            if (item is null)
-            {
-                return;
-            }
-
-            if (item.State is not (OutboxItemState.Queued or OutboxItemState.Sending))
-            {
-                return;
-            }
-
-            item.State = OutboxItemState.Failed;
-            item.ErrorMessage = errorMessage;
-            item.UpdatedAt = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -2372,22 +1735,15 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
     private static string EncodeReplyReferences(string existingJson, string? internetMessageId)
     {
-        var ids = DecodeAddresses(existingJson).ToList();
+        var ids = PackedStringList.Decode(existingJson).ToList();
         if (!string.IsNullOrWhiteSpace(internetMessageId)
             && !ids.Contains(internetMessageId, StringComparer.OrdinalIgnoreCase))
         {
             ids.Add(internetMessageId);
         }
 
-        return EncodeAddresses(ids);
+        return PackedStringList.Encode(ids);
     }
-
-    private static string EncodeAddresses(IReadOnlyList<string> addresses) =>
-        JsonSerializer.Serialize(addresses);
-
-    private static IReadOnlyList<string> DecodeAddresses(string encoded) =>
-        JsonSerializer.Deserialize<string[]>(encoded) ?? [];
-
 
     private static string ForwardSubject(string subject) =>
         subject.StartsWith("Fwd:", StringComparison.OrdinalIgnoreCase)
@@ -2445,15 +1801,15 @@ public sealed partial class MailtideApp : IAsyncDisposable
         new(
             record.Id,
             record.AccountId,
-            DecodeAddresses(record.ToAddresses),
+            PackedStringList.Decode(record.ToAddresses),
             record.Subject,
             record.BodyText,
             record.UpdatedAt)
         {
-            CcAddresses = DecodeAddresses(record.CcAddresses),
-            BccAddresses = DecodeAddresses(record.BccAddresses),
+            CcAddresses = PackedStringList.Decode(record.CcAddresses),
+            BccAddresses = PackedStringList.Decode(record.BccAddresses),
             InReplyTo = record.InReplyTo,
-            References = DecodeAddresses(record.ReferencesJson),
+            References = PackedStringList.Decode(record.ReferencesJson),
             BodyHtml = record.BodyHtml,
         };
 
@@ -2465,6 +1821,22 @@ public sealed partial class MailtideApp : IAsyncDisposable
             record.Subject,
             record.ErrorMessage,
             record.UpdatedAt);
+
+    private void RaiseInboxArrivals(IReadOnlyList<InboxArrival> arrivals)
+    {
+        foreach (var arrival in arrivals)
+        {
+            lock (_inboxArrivalGate)
+            {
+                if (!_notifiedInboxMessageIds.Add(arrival.MessageId))
+                {
+                    continue;
+                }
+            }
+
+            InboxMessageArrived?.Invoke(this, arrival);
+        }
+    }
 
     private string AccountPartitionPath(Guid accountId) =>
         Path.Combine(_appDataDirectory, "accounts", accountId.ToString("D"));
@@ -2551,109 +1923,8 @@ public sealed partial class MailtideApp : IAsyncDisposable
             record.IsFlagged)
         {
             Preview = MessagePreview.FromBodyText(record.BodyText),
-            ToAddresses = DecodeAddresses(record.ToAddresses),
-            CcAddresses = DecodeAddresses(record.CcAddresses),
+            ToAddresses = PackedStringList.Decode(record.ToAddresses),
+            CcAddresses = PackedStringList.Decode(record.CcAddresses),
         };
 
-    private static IReadOnlyList<MessageThreadInfo> GroupMessagesByReplyThread(
-        IReadOnlyList<MessageRecord> records)
-    {
-        if (records.Count == 0)
-        {
-            return [];
-        }
-
-        var parent = records.ToDictionary(record => record.Id, record => record.Id);
-
-        Guid Find(Guid id)
-        {
-            while (parent[id] != id)
-            {
-                parent[id] = parent[parent[id]];
-                id = parent[id];
-            }
-
-            return id;
-        }
-
-        void Union(Guid left, Guid right)
-        {
-            left = Find(left);
-            right = Find(right);
-            if (left != right)
-            {
-                parent[right] = left;
-            }
-        }
-
-        var tokenOwner = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        foreach (var record in records)
-        {
-            foreach (var token in MessageThreadTokens(record))
-            {
-                if (tokenOwner.TryGetValue(token, out var owner))
-                {
-                    Union(record.Id, owner);
-                }
-                else
-                {
-                    tokenOwner[token] = record.Id;
-                }
-            }
-        }
-
-        return records
-            .GroupBy(record => Find(record.Id))
-            .Select(group =>
-            {
-                var ordered = group
-                    .Select(ToMessageInfo)
-                    .OrderByDescending(message => message.ReceivedAt)
-                    .ThenBy(message => message.Subject)
-                    .ToList();
-                return new MessageThreadInfo(ordered[0], ordered);
-            })
-            .OrderByDescending(thread => thread.Latest.ReceivedAt)
-            .ThenBy(thread => thread.Latest.Subject)
-            .ToList();
-    }
-
-    private static IEnumerable<string> MessageThreadTokens(MessageRecord record)
-    {
-        var own = NormalizeMessageId(record.InternetMessageId);
-        if (own is not null)
-        {
-            yield return own;
-        }
-
-        foreach (var reference in DecodeAddresses(record.ReferencesJson))
-        {
-            var token = NormalizeMessageId(reference);
-            if (token is not null)
-            {
-                yield return token;
-            }
-        }
-    }
-
-    private static string? NormalizeMessageId(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var trimmed = value.Trim();
-        if (trimmed.Length >= 2 && trimmed[0] == '<' && trimmed[^1] == '>')
-        {
-            trimmed = trimmed[1..^1];
-        }
-
-        return trimmed.Length == 0 ? null : trimmed;
-    }
-
-    private sealed record RemoteMailboxSnapshot(
-        RemoteMailbox Mailbox,
-        IReadOnlyList<RemoteMessageSummary> Summaries,
-        IReadOnlyDictionary<string, RemoteMessage> FetchedByRemoteId);
 }
