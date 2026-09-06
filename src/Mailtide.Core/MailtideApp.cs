@@ -1930,15 +1930,12 @@ public sealed partial class MailtideApp : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(oauthMetadata);
 
         var accessToken = await _auth
-            .GetAccessTokenAsync(oauthMetadata, credentialHandle, cancellationToken)
+            .GetAccessTokenAsync(
+                oauthMetadata,
+                credentialHandle,
+                invalidateOnAuthFailure,
+                cancellationToken)
             .ConfigureAwait(false);
-
-        if (accessToken is null && invalidateOnAuthFailure)
-        {
-            await _auth
-                .InvalidateAsync(credentialHandle, cancellationToken)
-                .ConfigureAwait(false);
-        }
 
         return accessToken;
     }

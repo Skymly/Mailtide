@@ -152,12 +152,44 @@ public sealed class OAuthAccountTests
         var message = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
 
         fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-next", "rotated-again");
-        await Task.WhenAll(
-            app.SyncNowAsync(account.Id),
-            app.MarkReadAsync(account.Id, message.Id));
+        var holdRefresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.OAuth.BlockRefreshUntil = holdRefresh;
+        var refreshCountAfterFirstSync = fixture.OAuth.RefreshCallCount;
+
+        var sync = app.SyncNowAsync(account.Id);
+        await WaitUntilAsync(() => fixture.OAuth.RefreshCallCount == refreshCountAfterFirstSync + 1);
+
+        var mark = app.MarkReadAsync(account.Id, message.Id);
+        await Task.Delay(100);
+        Assert.AreEqual(
+            refreshCountAfterFirstSync + 1,
+            fixture.OAuth.RefreshCallCount,
+            "A second refresh must wait for the in-flight refresh to persist the rotated Credential.");
+
+        holdRefresh.SetResult();
+        await Task.WhenAll(sync, mark);
 
         Assert.AreEqual(AccountSyncState.Idle, app.GetAccountStatus(account.Id).State);
-        Assert.IsNotNull(await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+        Assert.AreEqual(
+            "rotated-again",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+        Assert.IsTrue(fixture.OAuth.RefreshCallCount >= refreshCountAfterFirstSync + 2);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(20);
+        }
+
+        Assert.Fail("Timed out waiting for condition.");
     }
 
     [TestMethod]

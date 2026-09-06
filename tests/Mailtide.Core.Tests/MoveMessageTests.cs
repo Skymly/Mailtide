@@ -104,10 +104,8 @@ public sealed class MoveMessageTests
         Assert.HasCount(2, archived);
         Assert.AreEqual(original.Id, archived.Single(m => m.Subject == "From inbox").Id);
         Assert.AreEqual(existingId, archived.Single(m => m.Subject == "Already archived").Id);
-        Assert.AreNotEqual(
-            archived[0].RemoteId,
-            archived[1].RemoteId,
-            "IMAP UIDs are per-Mailbox; the moved Message must receive the destination UID.");
+        Assert.AreEqual("2", archived.Single(m => m.Subject == "From inbox").RemoteId);
+        Assert.AreEqual("1", archived.Single(m => m.Subject == "Already archived").RemoteId);
     }
 
     [TestMethod]

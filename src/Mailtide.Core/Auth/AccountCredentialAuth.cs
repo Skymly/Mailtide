@@ -70,6 +70,7 @@ internal sealed class AccountCredentialAuth
     public async Task<string?> GetAccessTokenAsync(
         OAuthTokenMetadata metadata,
         string credentialHandle,
+        bool invalidateOnAuthFailure,
         CancellationToken cancellationToken)
     {
         var gate = _refreshGates.GetOrAdd(credentialHandle, static _ => new SemaphoreSlim(1, 1));
@@ -91,6 +92,12 @@ internal sealed class AccountCredentialAuth
 
                 if (string.IsNullOrWhiteSpace(result.AccessToken))
                 {
+                    await InvalidateIfCurrentAsync(
+                            credentialHandle,
+                            refreshSecret,
+                            invalidateOnAuthFailure,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                     return null;
                 }
 
@@ -105,12 +112,37 @@ internal sealed class AccountCredentialAuth
             }
             catch (OAuthAuthenticationException)
             {
+                await InvalidateIfCurrentAsync(
+                        credentialHandle,
+                        refreshSecret,
+                        invalidateOnAuthFailure,
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 return null;
             }
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    private async Task InvalidateIfCurrentAsync(
+        string credentialHandle,
+        string refreshSecret,
+        bool invalidateOnAuthFailure,
+        CancellationToken cancellationToken)
+    {
+        if (!invalidateOnAuthFailure)
+        {
+            return;
+        }
+
+        var current = await RetrieveCredentialSecretAsync(credentialHandle, cancellationToken)
+            .ConfigureAwait(false);
+        if (string.Equals(current, refreshSecret, StringComparison.Ordinal))
+        {
+            await DeleteCredentialSecretAsync(credentialHandle, cancellationToken).ConfigureAwait(false);
         }
     }
 

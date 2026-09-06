@@ -74,6 +74,8 @@ internal sealed class FakeOAuthClient : IOAuthClient
 
     public bool RejectStaleRefreshSecrets { get; set; }
 
+    public TaskCompletionSource? BlockRefreshUntil { get; set; }
+
     private readonly HashSet<string> _retiredRefreshSecrets = new(StringComparer.Ordinal);
 
     public Task<OAuthAuthorizationResult> AuthorizeAsync(
@@ -95,12 +97,17 @@ internal sealed class FakeOAuthClient : IOAuthClient
         return Task.FromResult(AuthorizeResult);
     }
 
-    public Task<OAuthAccessTokenResult> RefreshAsync(
+    public async Task<OAuthAccessTokenResult> RefreshAsync(
         OAuthRefreshRequest request,
         CancellationToken cancellationToken = default)
     {
         LastRefreshRequest = request;
         RefreshCallCount++;
+
+        if (BlockRefreshUntil is not null)
+        {
+            await BlockRefreshUntil.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         if (RefreshFailWith is not null)
         {
@@ -127,7 +134,7 @@ internal sealed class FakeOAuthClient : IOAuthClient
             }
         }
 
-        return Task.FromResult(RefreshResult);
+        return RefreshResult;
     }
 }
 
