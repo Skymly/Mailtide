@@ -99,6 +99,68 @@ public sealed class OAuthAccountTests
     }
 
     [TestMethod]
+    public async Task OAuth_refresh_persists_rotated_refresh_Credential()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.OAuth.AuthorizeResult = GoogleAuthorization("rotate@gmail.com", "original-refresh");
+        fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-1", "rotated-refresh");
+        fixture.OAuth.RejectStaleRefreshSecrets = true;
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddGoogleAccountAsync("Gmail");
+
+        await app.SyncNowAsync(account.Id);
+
+        Assert.AreEqual(
+            "rotated-refresh",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+        Assert.AreEqual("original-refresh", fixture.OAuth.LastRefreshRequest?.RefreshSecret);
+
+        fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-2", "rotated-again");
+        await app.SyncNowAsync(account.Id);
+
+        Assert.AreEqual("rotated-refresh", fixture.OAuth.LastRefreshRequest?.RefreshSecret);
+        Assert.AreEqual(
+            "rotated-again",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+        Assert.AreEqual(AccountSyncState.Idle, app.GetAccountStatus(account.Id).State);
+    }
+
+    [TestMethod]
+    public async Task Concurrent_OAuth_refresh_does_not_reuse_a_rotated_refresh_Credential()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 8, 10, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "body"));
+        fixture.OAuth.AuthorizeResult = GoogleAuthorization("race@gmail.com", "original-refresh");
+        fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-token", "rotated-refresh");
+        fixture.OAuth.RejectStaleRefreshSecrets = true;
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddGoogleAccountAsync("Gmail");
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+        var message = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+
+        fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-next", "rotated-again");
+        await Task.WhenAll(
+            app.SyncNowAsync(account.Id),
+            app.MarkReadAsync(account.Id, message.Id));
+
+        Assert.AreEqual(AccountSyncState.Idle, app.GetAccountStatus(account.Id).State);
+        Assert.IsNotNull(await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+    }
+
+    [TestMethod]
     public async Task OAuth_refresh_failure_surfaces_as_Account_relogin_error_and_invalidates()
     {
         using var fixture = new CoreAppFixture();

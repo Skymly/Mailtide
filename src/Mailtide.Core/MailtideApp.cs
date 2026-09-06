@@ -357,11 +357,16 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 .Where(o => o.AccountId == accountId)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var outboxAttachments = await _db.OutboxAttachments
+                .Where(a => a.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
             _db.Attachments.RemoveRange(attachments);
             _db.Messages.RemoveRange(messages);
             _db.Mailboxes.RemoveRange(mailboxes);
             _db.DraftAttachments.RemoveRange(draftAttachments);
             _db.Drafts.RemoveRange(drafts);
+            _db.OutboxAttachments.RemoveRange(outboxAttachments);
             _db.OutboxItems.RemoveRange(outboxItems);
 
             _db.Accounts.Remove(record);
@@ -1513,6 +1518,11 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
                         if (item is not null)
                         {
+                            await DeleteOutboxAttachmentsLockedAsync(
+                                    accountId,
+                                    item.Id,
+                                    CancellationToken.None)
+                                .ConfigureAwait(false);
                             _db.OutboxItems.Remove(item);
                             await _db.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
                         }
@@ -1612,6 +1622,8 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 return;
             }
 
+            await DeleteOutboxAttachmentsLockedAsync(accountId, item.Id, cancellationToken)
+                .ConfigureAwait(false);
             _db.OutboxItems.Remove(item);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -1635,6 +1647,27 @@ public sealed partial class MailtideApp : IAsyncDisposable
             _dbGate.Release();
             _dbGate.Dispose();
         }
+    }
+
+    private async Task DeleteOutboxAttachmentsLockedAsync(
+        Guid accountId,
+        Guid outboxItemId,
+        CancellationToken cancellationToken)
+    {
+        var attachments = await _db.OutboxAttachments
+            .Where(a => a.AccountId == accountId && a.OutboxItemId == outboxItemId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var attachment in attachments)
+        {
+            var blobPath = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
+            if (File.Exists(blobPath))
+            {
+                File.Delete(blobPath);
+            }
+        }
+
+        _db.OutboxAttachments.RemoveRange(attachments);
     }
 
     private async Task FailQueuedOutboxItemsAsync(
@@ -1897,7 +1930,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(oauthMetadata);
 
         var accessToken = await _auth
-            .GetAccessTokenAsync(oauthMetadata, credentialSecret, cancellationToken)
+            .GetAccessTokenAsync(oauthMetadata, credentialHandle, cancellationToken)
             .ConfigureAwait(false);
 
         if (accessToken is null && invalidateOnAuthFailure)

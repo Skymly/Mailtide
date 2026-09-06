@@ -180,12 +180,12 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
-        public Task MoveAsync(
+        public Task<string?> MoveAsync(
             string sourceMailboxPath,
             string destinationMailboxPath,
             string remoteId,
             CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+            Task.FromResult<string?>(null);
 
         public Task<string> CreateMailboxAsync(
             string name,

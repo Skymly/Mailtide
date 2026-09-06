@@ -399,7 +399,7 @@ internal sealed class MailKitImapClient : IImapClient
         }
     }
 
-    public async Task MoveAsync(
+    public async Task<string?> MoveAsync(
         string sourceMailboxPath,
         string destinationMailboxPath,
         string remoteId,
@@ -419,7 +419,10 @@ internal sealed class MailKitImapClient : IImapClient
             var source = await client.GetFolderAsync(sourceMailboxPath, cancellationToken).ConfigureAwait(false);
             await source.OpenAsync(FolderAccess.ReadWrite, cancellationToken).ConfigureAwait(false);
             var destination = await client.GetFolderAsync(destinationMailboxPath, cancellationToken).ConfigureAwait(false);
-            await source.MoveToAsync(new UniqueId(uidValue), destination, cancellationToken).ConfigureAwait(false);
+            var moved = await source
+                .MoveToAsync(new UniqueId(uidValue), destination, cancellationToken)
+                .ConfigureAwait(false);
+            return moved is { IsValid: true } uid ? uid.Id.ToString() : null;
         }
         catch (AuthenticationException ex)
         {

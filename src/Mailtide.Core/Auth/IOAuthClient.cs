@@ -25,7 +25,11 @@ public sealed record OAuthRefreshRequest(
     string RefreshSecret,
     OAuthTokenMetadata Metadata);
 
-public sealed record OAuthAccessTokenResult(string AccessToken);
+/// <summary>
+/// Short-lived access token from refresh. <see cref="RefreshSecret"/> is present when the
+/// IdP rotated the Account Credential and must be persisted.
+/// </summary>
+public sealed record OAuthAccessTokenResult(string AccessToken, string? RefreshSecret = null);
 
 /// <summary>
 /// Host/test-provided OAuth port (authorize via system browser + token refresh).

@@ -80,6 +80,37 @@ public sealed class MoveMessageTests
     }
 
     [TestMethod]
+    public async Task MoveMessage_when_destination_already_has_same_RemoteId_keeps_both_Messages()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages("INBOX", Message("1", "From inbox"));
+        fixture.Imap.SeedMessages("Archive", Message("1", "Already archived"));
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft());
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Name == "Archive");
+        var original = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+        var existingId = (await app.ListMessagesAsync(account.Id, archive.Id)).Single().Id;
+
+        await app.MoveMessageAsync(account.Id, original.Id, archive.Id);
+
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, inbox.Id));
+        var archived = await app.ListMessagesAsync(account.Id, archive.Id);
+        Assert.HasCount(2, archived);
+        Assert.AreEqual(original.Id, archived.Single(m => m.Subject == "From inbox").Id);
+        Assert.AreEqual(existingId, archived.Single(m => m.Subject == "Already archived").Id);
+        Assert.AreNotEqual(
+            archived[0].RemoteId,
+            archived[1].RemoteId,
+            "IMAP UIDs are per-Mailbox; the moved Message must receive the destination UID.");
+    }
+
+    [TestMethod]
     public async Task MoveMessage_IMAP_failure_leaves_Message_in_place()
     {
         using var fixture = new CoreAppFixture();

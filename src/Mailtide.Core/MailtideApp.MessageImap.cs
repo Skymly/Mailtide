@@ -47,14 +47,20 @@ public sealed partial class MailtideApp
                 return;
             }
 
+            string? destinationRemoteId = null;
             await UsingAuthenticatedImapAsync(
                     prep.Endpoint,
                     prep.Secret,
-                    client => client.MoveAsync(
-                        prep.SourcePath,
-                        prep.DestinationPath,
-                        prep.RemoteId,
-                        cancellationToken),
+                    async client =>
+                    {
+                        destinationRemoteId = await client
+                            .MoveAsync(
+                                prep.SourcePath,
+                                prep.DestinationPath,
+                                prep.RemoteId,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    },
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -69,6 +75,27 @@ public sealed partial class MailtideApp
                 if (message is not null)
                 {
                     message.MailboxId = prep.DestinationMailboxId;
+                    if (!string.IsNullOrWhiteSpace(destinationRemoteId))
+                    {
+                        message.RemoteId = destinationRemoteId;
+                    }
+                    else
+                    {
+                        var collision = await _db.Messages
+                            .AsNoTracking()
+                            .AnyAsync(
+                                m => m.AccountId == accountId
+                                    && m.MailboxId == prep.DestinationMailboxId
+                                    && m.RemoteId == message.RemoteId
+                                    && m.Id != message.Id,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        if (collision)
+                        {
+                            message.RemoteId = "moved:" + Guid.NewGuid().ToString("N");
+                        }
+                    }
+
                     await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 }
             }

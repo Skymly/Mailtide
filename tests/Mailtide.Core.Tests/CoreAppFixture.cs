@@ -72,6 +72,10 @@ internal sealed class FakeOAuthClient : IOAuthClient
 
     public int RefreshCallCount { get; private set; }
 
+    public bool RejectStaleRefreshSecrets { get; set; }
+
+    private readonly HashSet<string> _retiredRefreshSecrets = new(StringComparer.Ordinal);
+
     public Task<OAuthAuthorizationResult> AuthorizeAsync(
         OAuthAuthorizeRequest request,
         CancellationToken cancellationToken = default)
@@ -106,6 +110,21 @@ internal sealed class FakeOAuthClient : IOAuthClient
         if (RefreshResult is null)
         {
             throw new InvalidOperationException("FakeOAuthClient.RefreshResult was not set.");
+        }
+
+        lock (_retiredRefreshSecrets)
+        {
+            if (RejectStaleRefreshSecrets && _retiredRefreshSecrets.Contains(request.RefreshSecret))
+            {
+                throw new OAuthAuthenticationException("invalid_grant");
+            }
+
+            if (RejectStaleRefreshSecrets
+                && !string.IsNullOrWhiteSpace(RefreshResult.RefreshSecret)
+                && !string.Equals(RefreshResult.RefreshSecret, request.RefreshSecret, StringComparison.Ordinal))
+            {
+                _retiredRefreshSecrets.Add(request.RefreshSecret);
+            }
         }
 
         return Task.FromResult(RefreshResult);
@@ -371,7 +390,7 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             return Task.CompletedTask;
         }
 
-        public Task MoveAsync(
+        public Task<string?> MoveAsync(
             string sourceMailboxPath,
             string destinationMailboxPath,
             string remoteId,
@@ -382,19 +401,38 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             _factory.LastMoveSourcePath = sourceMailboxPath;
             _factory.LastMoveDestinationPath = destinationMailboxPath;
             _factory.LastMoveRemoteId = remoteId;
-            if (_factory._messagesByPath.TryGetValue(sourceMailboxPath, out var source))
+            if (!_factory._messagesByPath.TryGetValue(sourceMailboxPath, out var source))
             {
-                var moved = source.Where(m => m.RemoteId == remoteId).ToList();
-                _factory._messagesByPath[sourceMailboxPath] = source.Where(m => m.RemoteId != remoteId).ToList();
-                if (!_factory._messagesByPath.TryGetValue(destinationMailboxPath, out var dest))
-                {
-                    dest = [];
-                }
-
-                _factory._messagesByPath[destinationMailboxPath] = dest.Concat(moved).ToList();
+                return Task.FromResult<string?>(null);
             }
 
-            return Task.CompletedTask;
+            var moved = source.Where(m => m.RemoteId == remoteId).ToList();
+            _factory._messagesByPath[sourceMailboxPath] = source.Where(m => m.RemoteId != remoteId).ToList();
+            if (!_factory._messagesByPath.TryGetValue(destinationMailboxPath, out var dest))
+            {
+                dest = [];
+            }
+
+            uint next = 1;
+            foreach (var existing in dest)
+            {
+                if (uint.TryParse(existing.RemoteId, out var uid) && uid >= next)
+                {
+                    next = uid + 1;
+                }
+            }
+
+            var remapped = new List<RemoteMessage>(moved.Count);
+            string? assigned = null;
+            foreach (var message in moved)
+            {
+                assigned = next.ToString();
+                next++;
+                remapped.Add(message with { RemoteId = assigned });
+            }
+
+            _factory._messagesByPath[destinationMailboxPath] = dest.Concat(remapped).ToList();
+            return Task.FromResult(assigned);
         }
 
         public Task<string> CreateMailboxAsync(

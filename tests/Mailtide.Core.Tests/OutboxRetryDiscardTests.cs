@@ -59,6 +59,56 @@ public sealed class OutboxRetryDiscardTests
         Assert.AreEqual(0, (await app.ListDraftsAsync(account.Id)).Count);
     }
 
+    [TestMethod]
+    public async Task Discard_removes_Outbox_attachment_blobs()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Smtp.FailWith = new SmtpProtocolException("temporary");
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidAccountDraft());
+        var draft = await app.SaveDraftAsync(
+            account.Id,
+            new DraftContent(["bob@example.com"], "Hello", "Body"));
+        var payload = "discard-me"u8.ToArray();
+        await app.AddDraftAttachmentAsync(
+            account.Id,
+            draft.Id,
+            "notes.txt",
+            "text/plain",
+            payload);
+        await app.SendAsync(account.Id, draft.Id);
+        await app.SendNowAsync(account.Id);
+
+        Assert.IsTrue(FolderContainsBytes(fixture.AppDataDirectory, payload));
+        var failed = (await app.ListOutboxAsync(account.Id)).Single();
+        await app.DiscardOutboxItemAsync(account.Id, failed.Id);
+
+        Assert.AreEqual(0, (await app.ListOutboxAsync(account.Id)).Count);
+        Assert.IsFalse(
+            FolderContainsBytes(fixture.AppDataDirectory, payload),
+            "Discarded Outbox attachment blobs must not remain on disk.");
+    }
+
+    private static bool FolderContainsBytes(string root, byte[] payload)
+    {
+        if (!Directory.Exists(root))
+        {
+            return false;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            var bytes = File.ReadAllBytes(file);
+            if (bytes.AsSpan().SequenceEqual(payload))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static ManualAccountDraft ValidAccountDraft() =>
         new(
             DisplayName: "Personal",

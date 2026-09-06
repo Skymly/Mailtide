@@ -112,6 +112,35 @@ public sealed class DesktopOidcOAuthClientTests
     }
 
     [TestMethod]
+    public async Task RefreshAsync_returns_rotated_refresh_Credential_when_IdP_issues_one()
+    {
+        using var handler = new ScriptedOidcBackchannel(
+            issuer: "https://accounts.google.com",
+            authorizeEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.googleapis.com/token",
+            email: "alice@gmail.com",
+            refreshToken: "google-refresh-secret",
+            accessTokenOnRefresh: "google-access-token",
+            rotatedRefreshToken: "google-rotated-refresh");
+
+        var client = new DesktopOidcOAuthClient(
+            new DesktopOAuthOptions(GoogleClientId: "test-google-client", MicrosoftClientId: "unused"),
+            new ScriptedBrowser(),
+            handler);
+
+        var result = await client.RefreshAsync(
+            new OAuthRefreshRequest(
+                "google-refresh-secret",
+                new OAuthTokenMetadata(
+                    OAuthProvider.Google,
+                    GoogleMailPreset.Authority,
+                    "test-google-client")));
+
+        Assert.AreEqual("google-access-token", result.AccessToken);
+        Assert.AreEqual("google-rotated-refresh", result.RefreshSecret);
+    }
+
+    [TestMethod]
     public async Task RefreshAsync_IdP_rejection_throws_OAuthAuthenticationException()
     {
         using var handler = new ScriptedOidcBackchannel(
@@ -187,6 +216,7 @@ public sealed class DesktopOidcOAuthClientTests
         private readonly string _email;
         private readonly string _refreshToken;
         private readonly string? _accessTokenOnRefresh;
+        private readonly string? _rotatedRefreshToken;
         private readonly bool _refreshFail;
 
         public ScriptedOidcBackchannel(
@@ -196,7 +226,8 @@ public sealed class DesktopOidcOAuthClientTests
             string email,
             string refreshToken,
             string? accessTokenOnRefresh = null,
-            bool refreshFail = false)
+            bool refreshFail = false,
+            string? rotatedRefreshToken = null)
         {
             _issuer = issuer;
             _authorizeEndpoint = authorizeEndpoint;
@@ -205,6 +236,7 @@ public sealed class DesktopOidcOAuthClientTests
             _refreshToken = refreshToken;
             _accessTokenOnRefresh = accessTokenOnRefresh;
             _refreshFail = refreshFail;
+            _rotatedRefreshToken = rotatedRefreshToken;
         }
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -252,10 +284,22 @@ public sealed class DesktopOidcOAuthClientTests
                             HttpStatusCode.BadRequest);
                     }
 
+                    if (_rotatedRefreshToken is null)
+                    {
+                        return Json(
+                            new
+                            {
+                                access_token = _accessTokenOnRefresh ?? "refreshed-access",
+                                token_type = "Bearer",
+                                expires_in = 3600,
+                            });
+                    }
+
                     return Json(
                         new
                         {
                             access_token = _accessTokenOnRefresh ?? "refreshed-access",
+                            refresh_token = _rotatedRefreshToken,
                             token_type = "Bearer",
                             expires_in = 3600,
                         });

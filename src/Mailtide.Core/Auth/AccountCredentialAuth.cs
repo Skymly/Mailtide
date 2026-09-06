@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Mailtide.Core.Security;
 
 namespace Mailtide.Core.Auth;
@@ -10,6 +11,7 @@ internal sealed class AccountCredentialAuth
 {
     private readonly IOAuthClient _oauthClient;
     private readonly ISecureStorage _secureStorage;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshGates = new(StringComparer.Ordinal);
 
     public AccountCredentialAuth(IOAuthClient oauthClient, ISecureStorage secureStorage)
     {
@@ -62,23 +64,53 @@ internal sealed class AccountCredentialAuth
     /// <summary>
     /// Returns a usable access token, or null when the OAuth Credential is invalid
     /// (caller should surface re-sign-in). Non-auth failures propagate.
+    /// Re-reads and persists rotated refresh Credentials under a per-handle gate so
+    /// concurrent IDLE/sync/send cannot replay a retired refresh secret.
     /// </summary>
     public async Task<string?> GetAccessTokenAsync(
         OAuthTokenMetadata metadata,
-        string refreshSecret,
+        string credentialHandle,
         CancellationToken cancellationToken)
     {
+        var gate = _refreshGates.GetOrAdd(credentialHandle, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var result = await _oauthClient
-                .RefreshAsync(new OAuthRefreshRequest(refreshSecret, metadata), cancellationToken)
+            var refreshSecret = await RetrieveCredentialSecretAsync(credentialHandle, cancellationToken)
                 .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(refreshSecret))
+            {
+                return null;
+            }
 
-            return string.IsNullOrWhiteSpace(result.AccessToken) ? null : result.AccessToken;
+            try
+            {
+                var result = await _oauthClient
+                    .RefreshAsync(new OAuthRefreshRequest(refreshSecret, metadata), cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (string.IsNullOrWhiteSpace(result.AccessToken))
+                {
+                    return null;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.RefreshSecret)
+                    && !string.Equals(result.RefreshSecret, refreshSecret, StringComparison.Ordinal))
+                {
+                    await StoreRefreshSecretAsync(credentialHandle, result.RefreshSecret, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                return result.AccessToken;
+            }
+            catch (OAuthAuthenticationException)
+            {
+                return null;
+            }
         }
-        catch (OAuthAuthenticationException)
+        finally
         {
-            return null;
+            gate.Release();
         }
     }
 

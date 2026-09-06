@@ -57,7 +57,10 @@ public interface IImapClient : IAsyncDisposable
         string mailboxPath,
         CancellationToken cancellationToken = default);
 
-    Task MoveAsync(
+    /// <summary>
+    /// Moves a Message and returns the destination IMAP UID when the server reports it.
+    /// </summary>
+    Task<string?> MoveAsync(
         string sourceMailboxPath,
         string destinationMailboxPath,
         string remoteId,
