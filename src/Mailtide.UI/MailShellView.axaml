@@ -2,20 +2,173 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:core="using:Mailtide.Core"
              xmlns:local="using:Mailtide.UI"
-             mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="720"
+             mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              x:Class="Mailtide.UI.MailShellView"
-             Focusable="True"
-             KeyDown="OnShellKeyDown">
-  <DockPanel Margin="12">
+             Focusable="True">
+  <UserControl.Resources>
+    <DataTemplate x:Key="ConversationCardTemplate" x:DataType="local:ConversationCard">
+      <Border Padding="8,10"
+              Margin="0,0,0,4"
+              CornerRadius="6"
+              Background="Transparent"
+              Classes="conversationCard"
+              Classes.selected="{Binding IsSelected}"
+              Tapped="OnConversationCardTapped">
+        <DockPanel>
+          <Border Width="28"
+                  Height="28"
+                  CornerRadius="14"
+                  Background="{DynamicResource SystemControlHighlightListAccentLowBrush}"
+                  DockPanel.Dock="Left"
+                  Margin="0,0,10,0">
+            <TextBlock Text="{Binding Initial}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold" />
+          </Border>
+          <StackPanel>
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right"
+                         Text="{Binding DateLabel}"
+                         Opacity="0.7"
+                         FontSize="12" />
+              <TextBlock Text="{Binding Sender}"
+                         FontWeight="{Binding Message.IsRead, Converter={x:Static local:UnreadFontWeightConverter.Instance}}"
+                         ToolTip.Tip="{Binding Message.FromAddress}">
+                <TextBlock.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Copy address" Click="OnCopySenderAddressClick" />
+                    <MenuItem Header="Search from sender" Click="OnSearchFromSenderClick" />
+                    <MenuItem Header="Search to recipient" Click="OnSearchToRecipientClick" />
+                  </ContextMenu>
+                </TextBlock.ContextMenu>
+              </TextBlock>
+            </DockPanel>
+            <TextBlock Text="{Binding ToLine}"
+                       IsVisible="{Binding ShowToLine}"
+                       Opacity="0.7"
+                       FontSize="12">
+              <TextBlock.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Search to recipient" Click="OnSearchToRecipientClick" />
+                </ContextMenu>
+              </TextBlock.ContextMenu>
+            </TextBlock>
+            <TextBlock Text="{Binding CcLine}"
+                       IsVisible="{Binding ShowCcLine}"
+                       Opacity="0.7"
+                       FontSize="12" />
+            <TextBlock Text="{Binding BccLine}"
+                       IsVisible="{Binding ShowBccLine}"
+                       Opacity="0.7"
+                       FontSize="12" />
+            <TextBlock Text="{Binding ReplyToLine}"
+                       IsVisible="{Binding ShowReplyToLine}"
+                       Opacity="0.7"
+                       FontSize="12" />
+            <TextBlock Text="Remote images blocked."
+                       IsVisible="{Binding ShowRemoteImagesCaption}"
+                       Opacity="0.7"
+                       FontSize="12"
+                       Margin="0,6,0,0" />
+            <TextBlock Text="This Message body is not available yet."
+                       IsVisible="{Binding ShowUnavailable}"
+                       Opacity="0.7"
+                       Margin="0,8,0,0"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Snippet}"
+                       IsVisible="{Binding ShowBodyText}"
+                       Margin="0,8,0,0"
+                       TextWrapping="Wrap"
+                       TextTrimming="CharacterEllipsis"
+                       MaxLines="2" />
+            <TextBlock Text="{Binding ExpandedBody}"
+                       IsVisible="{Binding ShowExpandedBody}"
+                       Margin="0,8,0,0"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="[]"
+                       IsVisible="{Binding ShowAttachmentClip}"
+                       Opacity="0.7"
+                       FontSize="12"
+                       Margin="0,6,0,0"
+                       Cursor="Hand"
+                       ToolTip.Tip="{Binding AttachmentTip}"
+                       Tapped="OnConversationAttachmentClipTapped" />
+            <ItemsControl ItemsSource="{Binding Attachments}"
+                          IsVisible="{Binding ShowAttachmentChips}"
+                          Margin="0,8,0,0">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="8" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="core:AttachmentInfo">
+                  <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                          CornerRadius="4"
+                          Padding="8,4"
+                          Cursor="Hand"
+                          Tapped="OnConversationAttachmentTapped">
+                    <TextBlock Text="{Binding FileName}" FontSize="12" />
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8"
+                        Margin="0,10,0,0"
+                        IsVisible="{Binding ShowActions}">
+              <Button Content="Reply" Padding="8,4" Click="OnReplyClick" />
+              <Button Content="Reply All" Padding="8,4" Click="OnReplyAllClick" />
+              <Button Content="Forward" Padding="8,4" Click="OnForwardClick" />
+              <Button Content="Flag" Padding="8,4" IsVisible="{Binding ShowFlag}" Click="OnFlagClick" />
+              <Button Content="Unflag" Padding="8,4" IsVisible="{Binding ShowUnflag}" Click="OnFlagClick" />
+              <Button Content="Unread" Padding="8,4" IsVisible="{Binding ShowMarkUnread}" Click="OnMarkUnreadShortcut" />
+              <Button Content="Read" Padding="8,4" IsVisible="{Binding ShowMarkRead}" Click="OnMarkReadClick" />
+              <Button Content="Delete" Padding="8,4" Click="OnDeleteClick" />
+            </StackPanel>
+          </StackPanel>
+        </DockPanel>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Border.conversationCard.selected">
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
+    </Style>
+  </UserControl.Styles>
+  <DockPanel>
+    <CommandBar Name="ShellCommandBar"
+                DockPanel.Dock="Top"
+                DefaultLabelPosition="Right"
+                OverflowButtonVisibility="Collapsed"
+                IsDynamicOverflowEnabled="False">
+      <CommandBar.PrimaryCommands>
+        <CommandBarButton Name="ComposeButton"
+                          Label="Compose"
+                          Click="OnComposeClick">
+          <CommandBarButton.Icon>
+            <PathIcon Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+          </CommandBarButton.Icon>
+        </CommandBarButton>
+        <CommandBarButton Name="SyncButton"
+                          Label="Sync"
+                          Click="OnSyncNowClick">
+          <CommandBarButton.Icon>
+            <PathIcon Data="M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13.09 17.71,14.12 17.18,15L18.64,16.46C19.5,15.16 20,13.64 20,12A8,8 0 0,0 12,4M12,18A6,6 0 0,1 6,12C6,10.91 6.29,9.88 6.82,9L5.36,7.54C4.5,8.84 4,10.36 4,12A8,8 0 0,0 12,20V23L16,19L12,15V18Z" />
+          </CommandBarButton.Icon>
+        </CommandBarButton>
+      </CommandBar.PrimaryCommands>
+    </CommandBar>
+
     <Border Name="UpdateBanner"
             DockPanel.Dock="Top"
             IsVisible="False"
-            Background="#E8F0FE"
+            Background="{DynamicResource SystemControlHighlightListAccentLowBrush}"
             Padding="10,8"
-            Margin="0,0,0,12"
-            CornerRadius="4">
+            Margin="0">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
           <Button Name="UpdateNowButton" Content="Update" Click="OnUpdateNowClick" />
@@ -31,10 +184,8 @@
     <Border Name="AuthFailureBanner"
             DockPanel.Dock="Top"
             IsVisible="False"
-            Background="#FDECEC"
-            Padding="10,8"
-            Margin="0,0,0,12"
-            CornerRadius="4">
+            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            Padding="10,8">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
           <Button Name="AuthFailureActionButton" Content="Reauthorize" Click="OnAuthFailureActionClick" />
@@ -47,308 +198,617 @@
       </DockPanel>
     </Border>
 
-    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
-      <TextBlock Text="Mailtide" FontSize="20" VerticalAlignment="Center" />
-      <Button Name="UnifiedInboxButton" Content="Unified Inbox" Click="OnUnifiedInboxClick" />
-      <Button Name="RefreshButton" Content="Refresh" Click="OnRefreshClick" />
-      <Button Name="SyncNowButton" Content="Sync Now" Click="OnSyncNowClick" />
-      <Button Name="SendNowButton" Content="Send Now" Click="OnSendNowClick" />
-      <Button Name="ComposeSurfaceButton" Content="Compose" Click="OnComposeSurfaceClick" />
-    </StackPanel>
+    <TextBlock Name="AccountActionStatus"
+               DockPanel.Dock="Top"
+               Margin="12,8,12,0"
+               TextWrapping="Wrap"
+               Opacity="0.8"
+               FontSize="12"
+               IsVisible="False" />
 
-    <Grid ColumnDefinitions="220,200,*,*" ColumnSpacing="12">
-      <DockPanel Grid.Column="0">
-        <TextBlock DockPanel.Dock="Top" Text="Accounts" FontWeight="SemiBold" Margin="0,0,0,8" />
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
-          <Button Name="AddAccountButton" Content="Add Account" Click="OnAddAccountClick" />
-          <Button Name="EditAccountButton" Content="Edit" Click="OnEditAccountClick" />
-          <Button Name="RemoveAccountButton" Content="Remove" Click="OnRemoveAccountClick" />
-        </StackPanel>
-        <TextBlock Name="AccountActionStatus"
-                   DockPanel.Dock="Top"
-                   Margin="0,0,0,8"
-                   TextWrapping="Wrap"
-                   Opacity="0.8"
-                   FontSize="12" />
-        <ListBox Name="AccountsList"
-                 SelectionChanged="OnAccountSelectionChanged">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="local:AccountStatusRow">
-              <DockPanel>
-                <TextBlock DockPanel.Dock="Right"
-                           Text="{Binding Account.UnreadCount}"
-                           IsVisible="{Binding Account.HasUnread}"
-                           Opacity="0.7"
-                           Margin="8,0,0,0" />
-                <StackPanel>
-                  <TextBlock Text="{Binding Account.DisplayName}" />
-                  <TextBlock Text="{Binding Account.EmailAddress}" Opacity="0.7" FontSize="12" />
-                  <TextBlock Text="{Binding Status.State}" Opacity="0.7" FontSize="12" />
-                  <TextBlock Text="{Binding Status.ErrorMessage}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
-                </StackPanel>
-              </DockPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-      </DockPanel>
-
-      <DockPanel Grid.Column="1">
-        <TextBlock DockPanel.Dock="Top" Text="Mailboxes" FontWeight="SemiBold" Margin="0,0,0,8" />
-        <Button Name="NewMailboxButton"
-                DockPanel.Dock="Top"
-                Content="New Mailbox"
-                Margin="0,0,0,8"
-                Click="OnNewMailboxClick" />
-        <Button Name="RenameMailboxButton"
-                DockPanel.Dock="Top"
-                Content="Rename Mailbox"
-                Margin="0,0,0,8"
-                Click="OnRenameMailboxClick" />
-        <Button Name="DeleteMailboxButton"
-                DockPanel.Dock="Top"
-                Content="Delete Mailbox"
-                Margin="0,0,0,8"
-                Click="OnDeleteMailboxClick" />
-        <ListBox Name="MailboxesList"
-                 SelectionChanged="OnMailboxSelectionChanged">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="core:MailboxInfo">
-              <DockPanel>
-                <TextBlock DockPanel.Dock="Right"
-                           Text="{Binding UnreadCount}"
-                           IsVisible="{Binding HasUnread}"
-                           Opacity="0.7"
-                           Margin="8,0,0,0" />
-                <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
-              </DockPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-      </DockPanel>
-
-      <DockPanel Grid.Column="2">
-        <TextBlock Name="MessagesHeader"
-                   DockPanel.Dock="Top"
-                   Text="Messages"
+    <Grid>
+      <StackPanel Name="EmptyStatePanel"
+                  IsVisible="False"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="12"
+                  MaxWidth="420">
+        <PathIcon Width="48"
+                  Height="48"
+                  Opacity="0.7"
+                  HorizontalAlignment="Center"
+                  Data="M20,8L12,13L4,8V6L12,11L20,6M20,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V6C22,4.89 21.1,4 20,4Z" />
+        <TextBlock Text="Add an Account to start reading mail"
+                   FontSize="20"
                    FontWeight="SemiBold"
-                   Margin="0,0,0,8" />
-        <TextBox Name="MessageSearchBox"
-                 DockPanel.Dock="Top"
-                 PlaceholderText="Search  is:flagged  is:unread"
-                 Margin="0,0,0,8"
-                 KeyDown="OnMessageSearchKeyDown" />
-        <ListBox Name="MessagesList"
-                 SelectionChanged="OnMessageSelectionChanged">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="core:MessageInfo">
-              <StackPanel>
-                <TextBlock Text="{Binding Subject}"
-                           TextWrapping="Wrap"
-                           FontWeight="{Binding IsRead, Converter={x:Static local:UnreadFontWeightConverter.Instance}}" />
-                <TextBlock Text="Flagged"
-                           IsVisible="{Binding IsFlagged}"
-                           Opacity="0.7"
-                           FontSize="12" />
-                <TextBlock Text="{Binding FromAddress}" Opacity="0.7" FontSize="12" />
-                <TextBlock Text="{Binding Preview}"
-                           IsVisible="{Binding Preview, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                           Opacity="0.65"
-                           FontSize="12"
-                           TextWrapping="NoWrap"
-                           TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding ReceivedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm} UTC'}"
-                           Opacity="0.7"
-                           FontSize="12" />
-              </StackPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-      </DockPanel>
+                   TextAlignment="Center"
+                   TextWrapping="Wrap" />
+        <TextBlock Text="Mailtide keeps your mail on this device. Add Gmail, Outlook.com, QQ Mail, or a manual IMAP account."
+                   Opacity="0.7"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap" />
+        <Button Name="AddAccountEmptyButton"
+                Content="Add Account"
+                HorizontalAlignment="Center"
+                Click="OnAddAccountClick" />
+      </StackPanel>
 
-      <Grid Grid.Column="3">
-        <DockPanel Name="ReadSurface">
-        <TextBlock DockPanel.Dock="Top" Text="Message" FontWeight="SemiBold" Margin="0,0,0,8" />
-        <TextBlock Name="MessageToText"
-                   DockPanel.Dock="Top"
-                   IsVisible="False"
-                   Opacity="0.75"
-                   FontSize="12"
-                   TextWrapping="Wrap"
-                   Margin="0,0,0,4" />
-        <TextBlock Name="MessageCcText"
-                   DockPanel.Dock="Top"
-                   IsVisible="False"
-                   Opacity="0.75"
-                   FontSize="12"
-                   TextWrapping="Wrap"
-                   Margin="0,0,0,8" />
-        <TextBlock Name="BodyUnavailableText"
-                   DockPanel.Dock="Top"
-                   Text="Body unavailable"
-                   IsVisible="False"
-                   Opacity="0.75"
-                   Margin="0,0,0,8" />
-        <NativeWebView Name="MessageHtmlView"
-                       DockPanel.Dock="Top"
-                       IsVisible="False"
-                       MinHeight="120"
-                       Margin="0,0,0,8"
-                       NavigationStarted="OnMessageHtmlNavigationStarted"
-                       NewWindowRequested="OnMessageHtmlNewWindowRequested" />
-        <TextBox Name="MessageBodyBox"
-                 DockPanel.Dock="Top"
-                 IsReadOnly="True"
-                 AcceptsReturn="True"
-                 TextWrapping="Wrap"
-                 MinHeight="120"
-                 Margin="0,0,0,8" />
-        <Button Name="ReplyAllButton"
-                DockPanel.Dock="Top"
-                Content="Reply All"
-                Margin="0,0,0,8"
-                Click="OnReplyAllClick" />
-        <Button Name="ReplyButton"
-                DockPanel.Dock="Top"
-                Content="Reply"
-                Margin="0,0,0,8"
-                Click="OnReplyClick" />
-        <Button Name="ForwardButton"
-                DockPanel.Dock="Top"
-                Content="Forward"
-                Margin="0,0,0,8"
-                Click="OnForwardClick" />
-        <Button Name="MarkUnreadButton"
-                DockPanel.Dock="Top"
-                Content="Mark Unread"
-                Margin="0,0,0,8"
-                Click="OnMarkUnreadClick" />
-        <Button Name="MarkMailboxReadButton"
-                DockPanel.Dock="Top"
-                Content="Mark Mailbox Read"
-                Margin="0,0,0,8"
-                Click="OnMarkMailboxReadClick" />
-        <Button Name="FlagButton"
-                DockPanel.Dock="Top"
-                Content="Flag"
-                Margin="0,0,0,8"
-                Click="OnFlagClick" />
-        <Button Name="MoveButton"
-                DockPanel.Dock="Top"
-                Content="Move"
-                Margin="0,0,0,8"
-                Click="OnMoveClick" />
-        <Button Name="DeleteButton"
-                DockPanel.Dock="Top"
-                Content="Delete"
-                Margin="0,0,0,8"
-                Click="OnDeleteClick" />
-        <Button Name="RestoreButton"
-                DockPanel.Dock="Top"
-                Content="Restore"
-                Margin="0,0,0,8"
-                Click="OnRestoreClick" />
-        <Button Name="EmptyTrashButton"
-                DockPanel.Dock="Top"
-                Content="Empty Trash"
-                Margin="0,0,0,8"
-                Click="OnEmptyTrashClick" />
-        <Button Name="NextUnreadButton"
-                DockPanel.Dock="Top"
-                Content="Next Unread"
-                Margin="0,0,0,8"
-                Click="OnNextUnreadClick" />
-        <Button Name="PreviousUnreadButton"
-                DockPanel.Dock="Top"
-                Content="Previous Unread"
-                Margin="0,0,0,8"
-                Click="OnPreviousUnreadClick" />
-        <TextBlock DockPanel.Dock="Top" Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,8" />
-        <TextBlock Name="AttachmentOpenErrorText"
-                   DockPanel.Dock="Top"
-                   TextWrapping="Wrap"
-                   Opacity="0.85"
-                   FontSize="12"
-                   Margin="0,0,0,8" />
-        <Button Name="OpenAttachmentButton"
-                DockPanel.Dock="Bottom"
-                Content="Open Attachment"
-                Margin="0,8,0,0"
-                Click="OnOpenAttachmentClick" />
-        <ListBox Name="AttachmentsList">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="core:AttachmentInfo">
-              <StackPanel>
-                <TextBlock Text="{Binding FileName}" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding ContentType}" Opacity="0.7" FontSize="12" />
-              </StackPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+      <Grid Name="DailyShell"
+            ColumnDefinitions="180,8,240,8,*">
+        <DockPanel Grid.Column="0" MinWidth="160" Margin="8,8,4,8">
+          <Button Name="AddAccountButton"
+                  DockPanel.Dock="Bottom"
+                  Content="Add Account"
+                  Margin="0,8,0,0"
+                  HorizontalAlignment="Stretch"
+                  Click="OnAddAccountClick" />
+          <TreeView Name="NavTree"
+                    SelectionChanged="OnNavSelectionChanged"
+                    DragDrop.AllowDrop="True">
+            <TreeView.Styles>
+              <Style Selector="TreeViewItem" x:DataType="local:ShellNavItem">
+                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+              </Style>
+            </TreeView.Styles>
+            <TreeView.ItemTemplate>
+              <TreeDataTemplate DataType="local:ShellNavItem" ItemsSource="{Binding Children}">
+                <DockPanel>
+                  <DockPanel.ContextMenu>
+                    <ContextMenu Opening="OnNavContextMenuOpening">
+                      <MenuItem Header="Edit Account" Click="OnEditAccountClick" />
+                      <MenuItem Header="Remove Account" Click="OnRemoveAccountClick" />
+                      <MenuItem Header="New Mailbox" Click="OnNewMailboxClick" />
+                      <MenuItem Header="Rename Mailbox" Click="OnRenameMailboxClick" />
+                      <MenuItem Header="Delete Mailbox" Click="OnDeleteMailboxClick" />
+                      <MenuItem Header="Mark Mailbox Read" Click="OnMarkMailboxReadClick" />
+                      <MenuItem Header="Pin to Favorites" Click="OnPinFavoriteClick" />
+                      <MenuItem Header="Unpin from Favorites" Click="OnUnpinFavoriteClick" />
+                      <MenuItem Header="Empty Trash" Click="OnEmptyTrashClick" />
+                      <MenuItem Header="Empty Junk" Click="OnEmptyJunkClick" />
+                    </ContextMenu>
+                  </DockPanel.ContextMenu>
+                  <TextBlock DockPanel.Dock="Right"
+                             Text="{Binding UnreadCount}"
+                             IsVisible="{Binding HasUnread}"
+                             Opacity="0.7"
+                             Margin="8,0,0,0" />
+                  <Border DockPanel.Dock="Right"
+                          Background="{DynamicResource SystemControlBackgroundAccentBrush}"
+                          CornerRadius="9"
+                          Padding="6,1"
+                          Margin="8,0,0,0"
+                          IsVisible="{Binding HasOutboxBadge}">
+                    <TextBlock Text="{Binding OutboxCount}"
+                               Foreground="{DynamicResource SystemControlForegroundChromeWhiteBrush}"
+                               FontSize="11"
+                               FontWeight="SemiBold" />
+                  </Border>
+                  <Border DockPanel.Dock="Right"
+                          Background="{DynamicResource SystemControlErrorTextForegroundBrush}"
+                          CornerRadius="9"
+                          Padding="6,1"
+                          Margin="8,0,0,0"
+                          IsVisible="{Binding HasOutboxFailed}">
+                    <TextBlock Text="{Binding OutboxCount}"
+                               Foreground="{DynamicResource SystemControlForegroundChromeWhiteBrush}"
+                               FontSize="11"
+                               FontWeight="SemiBold" />
+                  </Border>
+                  <TextBlock Text="!"
+                             DockPanel.Dock="Right"
+                             Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
+                             FontWeight="Bold"
+                             Margin="8,0,0,0"
+                             IsVisible="{Binding IsError}"
+                             Cursor="Hand"
+                             ToolTip.Tip="Sync failed. Click to retry."
+                             PointerPressed="OnAccountErrorPressed" />
+                  <ProgressBar Width="12"
+                               Height="12"
+                               Margin="8,0,0,0"
+                               DockPanel.Dock="Right"
+                               IsIndeterminate="True"
+                               IsVisible="{Binding IsSyncing}" />
+                  <TextBlock Text="{Binding Title}"
+                             TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+              </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
         </DockPanel>
-        <Grid Name="ComposeSurface" IsVisible="False" ColumnDefinitions="*,*" ColumnSpacing="12">
-      <DockPanel Grid.Column="0">
-        <TextBlock DockPanel.Dock="Top" Text="Compose" FontWeight="SemiBold" Margin="0,0,0,8" />
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-          <Button Name="NewDraftButton" Content="New Draft" Click="OnNewDraftClick" />
-          <Button Name="SaveDraftButton" Content="Save Draft" Click="OnSaveDraftClick" />
-          <Button Name="SendDraftButton" Content="Send" Click="OnSendDraftClick" />
-          <Button Name="DiscardDraftButton" Content="Discard Draft" Click="OnDiscardDraftClick" />
-        </StackPanel>
-        <StackPanel Spacing="6">
-          <TextBox Name="ComposeToBox" PlaceholderText="To" />
-          <TextBox Name="ComposeCcBox" PlaceholderText="Cc" />
-          <TextBox Name="ComposeBccBox" PlaceholderText="Bcc" />
-          <TextBox Name="ComposeSubjectBox" PlaceholderText="Subject" />
-          <TextBox Name="ComposeBodyBox" PlaceholderText="Body" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" />
-          <TextBox Name="ComposeHtmlBox" PlaceholderText="HTML (optional)" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" />
-          <TextBlock Text="Draft attachments" FontWeight="SemiBold" Margin="0,8,0,0" />
-          <ListBox Name="DraftAttachmentsList"
-                   MinHeight="40"
-                   MaxHeight="80">
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="core:DraftAttachmentInfo">
-                <TextBlock Text="{Binding FileName}" />
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Name="AttachDraftButton" Content="Attach" Click="OnAttachDraftClick" />
-            <Button Name="RemoveDraftAttachmentButton" Content="Remove Attachment" Click="OnRemoveDraftAttachmentClick" />
-          </StackPanel>
-          <TextBlock Text="Drafts" FontWeight="SemiBold" Margin="0,8,0,0" />
-          <ListBox Name="DraftsList"
-                   MinHeight="60"
-                   MaxHeight="100"
-                   SelectionChanged="OnDraftSelectionChanged">
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="core:DraftInfo">
-                <TextBlock Text="{Binding Subject}" />
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </StackPanel>
-      </DockPanel>
 
-      <DockPanel Grid.Column="1">
-        <TextBlock DockPanel.Dock="Top" Text="Outbox" FontWeight="SemiBold" Margin="0,0,0,8" />
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-          <Button Name="RetryOutboxButton" Content="Retry" Click="OnRetryOutboxClick" />
-          <Button Name="DiscardOutboxButton" Content="Discard" Click="OnDiscardOutboxClick" />
-        </StackPanel>
-        <ListBox Name="OutboxList">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="core:OutboxItemInfo">
-              <StackPanel>
-                <TextBlock Text="{Binding Subject}" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding State}" Opacity="0.7" FontSize="12" />
-                <TextBlock Text="{Binding ErrorMessage}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+        <GridSplitter Grid.Column="1" ResizeDirection="Columns" Width="8" Background="Transparent" />
+
+        <DockPanel Grid.Column="2" MinWidth="220" Margin="4,8">
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Name="ListHeaderText"
+                       DockPanel.Dock="Top"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,6"
+                       Text="Unified Inbox" />
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right"
+                          Orientation="Horizontal"
+                          Spacing="4"
+                          Margin="8,0,0,0">
+                <Button Name="SortOrderButton"
+                        Content="Newest"
+                        Padding="8,4">
+                  <Button.Flyout>
+                    <MenuFlyout Opening="OnSortMenuOpening">
+                      <MenuItem Header="Newest" Click="OnSortMenuClick" />
+                      <MenuItem Header="Oldest" Click="OnSortMenuClick" />
+                      <MenuItem Header="From" Click="OnSortMenuClick" />
+                      <MenuItem Header="Subject" Click="OnSortMenuClick" />
+                      <MenuItem Header="Size" Click="OnSortMenuClick" />
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+                <Button Name="AttachmentFilterButton"
+                        Content="Files"
+                        Padding="8,4"
+                        Click="OnAttachmentFilterClick" />
+                <Button Name="FlaggedFilterButton"
+                        Content="Flagged"
+                        Padding="8,4"
+                        Click="OnFlaggedFilterClick" />
+                <Button Name="UnreadFilterButton"
+                        Content="Unread"
+                        Padding="8,4"
+                        Click="OnUnreadFilterClick" />
               </StackPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-      </DockPanel>
-    </Grid>
+              <Grid>
+                <TextBox Name="MessageSearchBox"
+                         PlaceholderText="Search  from:  to:  in:  filename:  larger:  msgid:"
+                         GotFocus="OnMessageSearchGotFocus"
+                         KeyDown="OnMessageSearchKeyDown" />
+                <Popup Name="SearchHistoryPopup"
+                       Placement="Bottom"
+                       IsLightDismissEnabled="True">
+                  <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                          CornerRadius="4"
+                          MinWidth="260"
+                          MaxHeight="180">
+                    <ListBox Name="SearchHistoryList"
+                             PointerReleased="OnSearchHistoryPointerReleased" />
+                  </Border>
+                </Popup>
+              </Grid>
+            </DockPanel>
+          </DockPanel>
+          <Grid>
+            <ListBox Name="ThreadsList"
+                     SelectionChanged="OnThreadSelectionChanged"
+                     DoubleTapped="OnThreadListDoubleTapped">
+              <ListBox.ContextMenu>
+                <ContextMenu Opening="OnThreadMenuOpening">
+                  <MenuItem Header="Reply" Click="OnReplyClick" />
+                  <MenuItem Header="Reply All" Click="OnReplyAllClick" />
+                  <MenuItem Header="Forward" Click="OnForwardClick" />
+                  <MenuItem Header="Forward as Attachment" Click="OnForwardAsAttachmentClick" />
+                  <MenuItem Header="Edit as New" Click="OnEditAsNewClick" />
+                  <MenuItem Header="Save as .eml" Click="OnSaveMessageEmlClick" />
+                  <MenuItem Header="Show original" Click="OnShowOriginalClick" />
+                  <MenuItem Header="Copy subject" Click="OnCopySubjectClick" />
+                  <MenuItem Header="Copy address" Click="OnCopyAddressClick" />
+                  <MenuItem Header="Search from sender" Click="OnSearchFromSenderClick" />
+                  <MenuItem Header="Search to recipient" Click="OnSearchToRecipientClick" />
+                  <MenuItem Header="Copy headers" Click="OnCopyHeadersClick" />
+                  <MenuItem Header="Copy Message-ID" Click="OnCopyMessageIdClick" />
+                  <MenuItem Name="ThreadReadItem" Header="Mark Unread" Click="OnMarkUnreadClick" />
+                  <MenuItem Name="ThreadFlagItem" Header="Flag" Click="OnFlagClick" />
+                  <MenuItem Name="ThreadMoveItem" Header="Move" Click="OnMoveClick" />
+                  <MenuItem Name="ThreadCopyItem" Header="Copy" Click="OnCopyClick" />
+                  <MenuItem Name="ThreadRevealItem" Header="Show in Mailbox" Click="OnRevealInMailboxClick" />
+                  <MenuItem Name="ThreadArchiveItem" Header="Archive" Click="OnArchiveClick" />
+                  <MenuItem Name="ThreadJunkItem" Header="Move to Junk" Click="OnMoveToJunkClick" />
+                  <MenuItem Name="ThreadNotJunkItem" Header="Not Junk" Click="OnNotJunkClick" />
+                  <MenuItem Header="Delete" Click="OnDeleteClick" />
+                  <MenuItem Name="ThreadRestoreItem" Header="Restore" Click="OnRestoreClick" />
+                  <MenuItem Name="OutboxRetryItem" Header="Retry" Click="OnRetryOutboxClick" />
+                  <MenuItem Name="OutboxDiscardItem" Header="Discard" Click="OnDiscardOutboxClick" />
+                </ContextMenu>
+              </ListBox.ContextMenu>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="local:ThreadRow">
+                  <Grid>
+                    <TextBlock Text="{Binding GroupTitle}"
+                               IsVisible="{Binding IsGroupHeader}"
+                               FontWeight="SemiBold"
+                               Opacity="0.7"
+                               FontSize="12"
+                               Margin="4,10,0,2" />
+                    <Grid ColumnDefinitions="8,*" Margin="0,4" IsVisible="{Binding ShowAsThread}">
+                    <Ellipse Width="6"
+                             Height="6"
+                             VerticalAlignment="Top"
+                             Margin="0,6,0,0"
+                             Fill="{DynamicResource SystemControlForegroundAccentBrush}"
+                             IsVisible="{Binding IsUnread}" />
+                    <DockPanel Grid.Column="1" Margin="8,0,0,0">
+                      <DockPanel DockPanel.Dock="Top">
+                        <TextBlock DockPanel.Dock="Right"
+                                   Text="{Binding DateLabel}"
+                                   Opacity="0.7"
+                                   FontSize="12"
+                                   Margin="8,0,0,0"
+                                   ToolTip.Tip="{Binding DateTip}" />
+                        <TextBlock Text="{Binding Sender}"
+                                   TextTrimming="CharacterEllipsis"
+                                   FontWeight="{Binding IsRead, Converter={x:Static local:UnreadFontWeightConverter.Instance}}"
+                                   ToolTip.Tip="{Binding FromAddress}" />
+                      </DockPanel>
+                      <DockPanel DockPanel.Dock="Top">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="{Binding CountLabel}"
+                                     IsVisible="{Binding ShowCount}"
+                                     Opacity="0.7"
+                                     FontSize="11"
+                                     ToolTip.Tip="{Binding CountTip}" />
+                          <TextBlock Text="{Binding FlagLabel}"
+                                     Opacity="{Binding FlagOpacity}"
+                                     IsVisible="{Binding CanFlag}"
+                                     Cursor="Hand"
+                                     ToolTip.Tip="Flag"
+                                     PointerPressed="OnThreadFlagPressed" />
+                          <TextBlock Text="Failed"
+                                     IsVisible="{Binding IsFailedOutbox}"
+                                     Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
+                                     FontSize="11" />
+                          <TextBlock Text="[]"
+                                     IsVisible="{Binding HasAttachments}"
+                                     Opacity="0.7"
+                                     Cursor="Hand"
+                                     ToolTip.Tip="Has files"
+                                     PointerPressed="OnThreadAttachmentClipPressed" />
+                          <Border Background="{DynamicResource SystemControlHighlightListAccentLowBrush}"
+                                  CornerRadius="3"
+                                  Padding="4,0"
+                                  IsVisible="{Binding ShowAccountBadge}">
+                            <TextBlock Text="{Binding AccountBadge}" FontSize="11" />
+                          </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding Subject}"
+                                   TextTrimming="CharacterEllipsis"
+                                   FontSize="12"
+                                   ToolTip.Tip="{Binding Subject}" />
+                      </DockPanel>
+                      <TextBlock Text="{Binding Preview}"
+                                 Opacity="0.65"
+                                 FontSize="12"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTip.Tip="{Binding Preview}" />
+                    </DockPanel>
+                    </Grid>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Name="EmptyListText"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Opacity="0.65"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       Margin="24"
+                       IsVisible="False"
+                       Text="No messages" />
+          </Grid>
+        </DockPanel>
 
+        <GridSplitter Grid.Column="3" ResizeDirection="Columns" Width="8" Background="Transparent" />
+
+        <Grid Grid.Column="4" MinWidth="280" Margin="4,8,8,8">
+          <DockPanel Name="ReadSurface">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+              <Button Name="ReadingMoreButton"
+                      DockPanel.Dock="Right"
+                      Content="..."
+                      Padding="10,4"
+                      VerticalAlignment="Top">
+                <Button.Flyout>
+                  <MenuFlyout Opening="OnReadingMenuOpening">
+                    <MenuItem Header="Reply" Click="OnReplyClick" />
+                    <MenuItem Header="Reply All" Click="OnReplyAllClick" />
+                    <MenuItem Header="Forward" Click="OnForwardClick" />
+                  <MenuItem Header="Forward as Attachment" Click="OnForwardAsAttachmentClick" />
+                    <MenuItem Header="Edit as New" Click="OnEditAsNewClick" />
+                    <MenuItem Header="Save as .eml" Click="OnSaveMessageEmlClick" />
+                    <MenuItem Header="Show original" Click="OnShowOriginalClick" />
+                    <MenuItem Header="Copy subject" Click="OnCopySubjectClick" />
+                    <MenuItem Header="Copy address" Click="OnCopyAddressClick" />
+                    <MenuItem Header="Search from sender" Click="OnSearchFromSenderClick" />
+                    <MenuItem Header="Search to recipient" Click="OnSearchToRecipientClick" />
+                    <MenuItem Header="Copy headers" Click="OnCopyHeadersClick" />
+                    <MenuItem Header="Copy Message-ID" Click="OnCopyMessageIdClick" />
+                    <MenuItem Name="ReadReadItem" Header="Mark Unread" Click="OnMarkUnreadClick" />
+                    <MenuItem Name="ReadFlagItem" Header="Flag" Click="OnFlagClick" />
+                    <MenuItem Name="ReadMoveItem" Header="Move" Click="OnMoveClick" />
+                    <MenuItem Name="ReadCopyItem" Header="Copy" Click="OnCopyClick" />
+                    <MenuItem Name="ReadRevealItem" Header="Show in Mailbox" Click="OnRevealInMailboxClick" />
+                    <MenuItem Header="Find in conversation" Click="OnFindInMessageClick" />
+                    <MenuItem Name="ExpandConversationItem" Header="Expand all" Click="OnExpandConversationClick" />
+                    <MenuItem Name="CollapseConversationItem" Header="Collapse all" Click="OnCollapseConversationClick" />
+                    <MenuItem Name="ConversationOrderItem" Header="Newest on top" Click="OnConversationOrderClick" />
+                    <MenuItem Name="ReadArchiveItem" Header="Archive" Click="OnArchiveClick" />
+                    <MenuItem Name="ReadJunkItem" Header="Move to Junk" Click="OnMoveToJunkClick" />
+                    <MenuItem Name="ReadNotJunkItem" Header="Not Junk" Click="OnNotJunkClick" />
+                    <MenuItem Header="Delete" Click="OnDeleteClick" />
+                    <MenuItem Name="ReadRestoreItem" Header="Restore" Click="OnRestoreClick" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+              <StackPanel>
+                <TextBlock Name="ThreadSubjectText"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap">
+                  <TextBlock.ContextMenu>
+                    <ContextMenu>
+                      <MenuItem Header="Copy subject" Click="OnCopySubjectClick" />
+                    </ContextMenu>
+                  </TextBlock.ContextMenu>
+                </TextBlock>
+                <DockPanel Margin="0,4,0,0">
+                  <TextBlock Name="ThreadConversationPosition"
+                             DockPanel.Dock="Right"
+                             Opacity="0.7"
+                             FontSize="12"
+                             Margin="8,0,0,0"
+                             IsVisible="False" />
+                  <TextBlock Name="ThreadParticipantsText"
+                             Opacity="0.7"
+                             FontSize="12"
+                             TextWrapping="Wrap"
+                             TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+              </StackPanel>
+            </DockPanel>
+            <DockPanel Name="FindInMessageBar"
+                       DockPanel.Dock="Top"
+                       Margin="0,0,0,8"
+                       IsVisible="False">
+              <Button DockPanel.Dock="Right"
+                      Content="×"
+                      Padding="8,4"
+                      Click="OnCloseFindInMessageClick" />
+              <Button DockPanel.Dock="Right"
+                      Content="Next"
+                      Padding="8,4"
+                      Margin="0,0,8,0"
+                      Click="OnFindNextClick" />
+              <Button DockPanel.Dock="Right"
+                      Content="Previous"
+                      Padding="8,4"
+                      Margin="0,0,8,0"
+                      Click="OnFindPreviousClick" />
+              <TextBlock Name="FindInMessageStatus"
+                         DockPanel.Dock="Right"
+                         Opacity="0.7"
+                         VerticalAlignment="Center"
+                         Margin="8,0" />
+              <TextBox Name="FindInMessageBox"
+                       PlaceholderText="Find in conversation"
+                       KeyDown="OnFindInMessageKeyDown" />
+            </DockPanel>
+            <ListBox Name="ThreadAttachmentsList"
+                     DockPanel.Dock="Top"
+                     Height="36"
+                     Margin="0,0,0,8"
+                     DoubleTapped="OnThreadAttachmentDoubleTapped"
+                     KeyDown="OnThreadAttachmentKeyDown">
+              <ListBox.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Open" Click="OnOpenAttachmentClick" />
+                  <MenuItem Header="Save As" Click="OnSaveAttachmentClick" />
+                  <MenuItem Name="SaveAllAttachmentsItem" Header="Save All" Click="OnSaveAllAttachmentsClick" />
+                </ContextMenu>
+              </ListBox.ContextMenu>
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="8" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="core:AttachmentInfo">
+                  <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" CornerRadius="4" Padding="8,4">
+                    <TextBlock Text="{Binding FileName}" FontSize="12" />
+                  </Border>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Name="AttachmentOpenErrorText"
+                       DockPanel.Dock="Top"
+                       TextWrapping="Wrap"
+                       Opacity="0.85"
+                       FontSize="12"
+                       Margin="0,0,0,8" />
+            <ScrollViewer Name="ReadingScroll">
+              <StackPanel>
+                <ItemsControl Name="ConversationBeforeList"
+                              ItemTemplate="{StaticResource ConversationCardTemplate}" />
+                <ContentControl Name="SelectedConversationHost"
+                                ContentTemplate="{StaticResource ConversationCardTemplate}" />
+                <TextBlock Name="BodyUnavailableText"
+                           IsVisible="False"
+                           Opacity="0.7"
+                           Margin="0,12,0,0"
+                           Text="This Message body is not available yet." />
+                <Button Name="RetryBodyButton"
+                        Content="Get body"
+                        HorizontalAlignment="Left"
+                        Padding="8,4"
+                        Margin="0,8,0,0"
+                        IsVisible="False"
+                        Click="OnRetryBodyClick" />
+                <NativeWebView Name="MessageHtmlView"
+                               MinHeight="180"
+                               Margin="0,12,0,0"
+                               NavigationStarted="OnMessageHtmlNavigationStarted"
+                               NewWindowRequested="OnMessageHtmlNewWindowRequested" />
+                <TextBox Name="MessageBodyBox"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         BorderThickness="0"
+                         MinHeight="120"
+                         Margin="0,12,0,0"
+                         PointerReleased="OnMessageBodyPointerReleased">
+                  <TextBox.ContextMenu>
+                    <ContextMenu Opening="OnMessageBodyMenuOpening">
+                      <MenuItem Name="OpenPlainLinkItem" Header="Open link" Click="OnOpenPlainLinkClick" />
+                      <MenuItem Header="Copy" Click="OnCopyMessageBodyClick" />
+                      <MenuItem Name="CopyAsQuoteItem" Header="Copy as quote" Click="OnCopyAsQuoteClick" />
+                    </ContextMenu>
+                  </TextBox.ContextMenu>
+                </TextBox>
+                <Button Name="ShowQuotedButton"
+                        Content="Show quoted text"
+                        HorizontalAlignment="Left"
+                        Padding="8,4"
+                        Margin="0,8,0,0"
+                        IsVisible="False"
+                        Click="OnToggleQuotedClick" />
+                <TextBox Name="QuotedBodyBox"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         BorderThickness="0"
+                         Opacity="0.75"
+                         Margin="0,8,0,0"
+                         IsVisible="False"
+                         PointerReleased="OnMessageBodyPointerReleased">
+                  <TextBox.ContextMenu>
+                    <ContextMenu Opening="OnQuotedBodyMenuOpening">
+                      <MenuItem Header="Copy" Click="OnCopyMessageBodyClick" />
+                      <MenuItem Header="Copy as quote" Click="OnCopyAsQuoteClick" />
+                    </ContextMenu>
+                  </TextBox.ContextMenu>
+                </TextBox>
+                <ItemsControl Name="ConversationAfterList"
+                              ItemTemplate="{StaticResource ConversationCardTemplate}" />
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+
+          <Border Name="BlankReading" IsVisible="False" />
+
+          <DockPanel Name="OutboxSurface" IsVisible="False">
+            <TextBlock Name="OutboxSubjectText"
+                       DockPanel.Dock="Top"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap" />
+            <TextBlock Name="OutboxToText"
+                       DockPanel.Dock="Top"
+                       Opacity="0.7"
+                       Margin="0,8,0,0"
+                       TextWrapping="Wrap" />
+            <TextBlock Name="OutboxStateText"
+                       DockPanel.Dock="Top"
+                       Opacity="0.7"
+                       Margin="0,8,0,0" />
+            <TextBlock Name="OutboxErrorText"
+                       DockPanel.Dock="Top"
+                       Opacity="0.7"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+          </DockPanel>
+
+          <DockPanel Name="ComposeSurface" IsVisible="False"
+                     DragDrop.AllowDrop="True">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+              <TextBlock Name="ComposeAccountText"
+                         DockPanel.Dock="Top"
+                         Opacity="0.7"
+                         FontSize="12"
+                         Margin="0,0,0,6" />
+              <ComboBox Name="ComposeFromBox"
+                        DockPanel.Dock="Top"
+                        PlaceholderText="From"
+                        Margin="0,0,0,6"
+                        HorizontalAlignment="Stretch"
+                        SelectionChanged="OnComposeFromChanged">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="core:AccountInfo">
+                    <TextBlock Text="{Binding EmailAddress}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <ComboBox Name="DraftsCombo"
+                        PlaceholderText="Local Drafts"
+                        HorizontalAlignment="Stretch"
+                        SelectionChanged="OnDraftSelectionChanged">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="core:DraftInfo">
+                    <TextBlock Text="{Binding Subject, Converter={x:Static local:SubjectFallbackConverter.Instance}}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </DockPanel>
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+              <Button Name="SendDraftButton" Content="Send" Click="OnSendDraftClick" />
+              <Button Name="DiscardDraftButton" Content="Discard" Click="OnDiscardDraftClick" />
+              <Button Name="AttachDraftButton" Content="Attach" Click="OnAttachDraftClick" />
+              <Button Name="RemoveDraftAttachmentButton" Content="Remove Attachment" Click="OnRemoveDraftAttachmentClick" />
+            </StackPanel>
+            <ScrollViewer>
+              <StackPanel Spacing="6">
+                <DockPanel>
+                  <Button Name="ShowCcBccButton"
+                          DockPanel.Dock="Right"
+                          Content="Cc/Bcc"
+                          Padding="8,4"
+                          Margin="8,0,0,0"
+                          IsTabStop="False"
+                          Click="OnToggleCcBccClick" />
+                  <TextBox Name="ComposeToBox" PlaceholderText="To" />
+                </DockPanel>
+                <TextBox Name="ComposeCcBox" PlaceholderText="Cc" IsVisible="False" IsTabStop="False" />
+                <TextBox Name="ComposeBccBox" PlaceholderText="Bcc" IsVisible="False" IsTabStop="False" />
+                <Popup Name="AddressSuggestPopup"
+                       Placement="Bottom"
+                       IsLightDismissEnabled="True">
+                  <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                          CornerRadius="4"
+                          MinWidth="260"
+                          MaxHeight="180">
+                    <ListBox Name="AddressSuggestList"
+                             PointerReleased="OnAddressSuggestPointerReleased" />
+                  </Border>
+                </Popup>
+                <TextBox Name="ComposeSubjectBox" PlaceholderText="Subject" />
+                <TextBox Name="ComposeBodyBox"
+                         PlaceholderText="Body"
+                         AcceptsReturn="True"
+                         AcceptsTab="True"
+                         TextWrapping="Wrap"
+                         MinHeight="160" />
+                <Button Name="ShowHtmlButton"
+                        Content="HTML"
+                        HorizontalAlignment="Left"
+                        Padding="8,4"
+                        IsTabStop="False"
+                        Click="OnToggleHtmlClick" />
+                <TextBox Name="ComposeHtmlBox"
+                         PlaceholderText="HTML (optional)"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MinHeight="80"
+                         IsVisible="False"
+                         IsTabStop="False" />
+                <TextBlock Text="Draft attachments" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <ListBox Name="DraftAttachmentsList" MinHeight="40" MaxHeight="80">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="core:DraftAttachmentInfo">
+                      <TextBlock Text="{Binding FileName}" />
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </Grid>
       </Grid>
     </Grid>
   </DockPanel>

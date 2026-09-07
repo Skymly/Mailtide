@@ -13,4 +13,7 @@ public sealed record OutboxItemInfo(
     OutboxItemState State,
     string Subject,
     string? ErrorMessage,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public IReadOnlyList<string> ToAddresses { get; init; } = [];
+}

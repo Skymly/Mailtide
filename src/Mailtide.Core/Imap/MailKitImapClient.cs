@@ -97,7 +97,7 @@ internal sealed class MailKitImapClient : IImapClient
                 .Select(folder => new RemoteMailbox(
                     Name: folder.Name,
                     Path: folder.FullName,
-                    Role: MapRole(folder.Attributes))
+                    Role: MapRole(folder.Attributes, folder.Name))
                 {
                     UidValidity = folder.UidValidity,
                 })
@@ -137,7 +137,8 @@ internal sealed class MailKitImapClient : IImapClient
                     -1,
                     MessageSummaryItems.UniqueId
                     | MessageSummaryItems.Flags
-                    | MessageSummaryItems.InternalDate,
+                    | MessageSummaryItems.InternalDate
+                    | MessageSummaryItems.Size,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -150,18 +151,21 @@ internal sealed class MailKitImapClient : IImapClient
                 var remote = new RemoteMessage(
                     RemoteId: summary.UniqueId.Id.ToString(),
                     Subject: mime.Subject ?? string.Empty,
-                    FromAddress: mime.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
+                    FromAddress: FormatMailbox(mime.From.Mailboxes.FirstOrDefault()),
                     ReceivedAt: summary.InternalDate ?? mime.Date,
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
                     BodyText: ExtractBodyText(mime))
                 {
                     ToAddresses = ExtractAddresses(mime.To),
                     CcAddresses = ExtractAddresses(mime.Cc),
+                    BccAddresses = ExtractAddresses(mime.Bcc),
+                    ReplyToAddresses = ExtractAddresses(mime.ReplyTo),
                     BodyHtml = ExtractBodyHtml(mime),
                     IsFlagged = summary.Flags?.HasFlag(MessageFlags.Flagged) == true,
                     InternetMessageId = ExtractInternetMessageId(mime),
                     References = ExtractReferences(mime),
                     Attachments = ExtractAttachments(mime),
+                    SizeBytes = SummarySize(summary),
                 };
                 messages.Add(remote);
             }
@@ -198,7 +202,7 @@ internal sealed class MailKitImapClient : IImapClient
                 .FetchAsync(
                     0,
                     -1,
-                    MessageSummaryItems.UniqueId | MessageSummaryItems.Flags | MessageSummaryItems.Envelope | MessageSummaryItems.InternalDate,
+                    MessageSummaryItems.UniqueId | MessageSummaryItems.Flags | MessageSummaryItems.Envelope | MessageSummaryItems.InternalDate | MessageSummaryItems.Size,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -208,8 +212,11 @@ internal sealed class MailKitImapClient : IImapClient
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
                     IsFlagged: summary.Flags?.HasFlag(MessageFlags.Flagged) == true,
                     Subject: summary.Envelope?.Subject ?? string.Empty,
-                    FromAddress: summary.Envelope?.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
-                    ReceivedAt: summary.InternalDate ?? default))
+                    FromAddress: FormatMailbox(summary.Envelope?.From.Mailboxes.FirstOrDefault()),
+                    ReceivedAt: summary.InternalDate ?? default)
+                {
+                    SizeBytes = SummarySize(summary),
+                })
                 .ToList();
         }
         catch (AuthenticationException ex)
@@ -255,7 +262,8 @@ internal sealed class MailKitImapClient : IImapClient
                     uids,
                     MessageSummaryItems.UniqueId
                     | MessageSummaryItems.Flags
-                    | MessageSummaryItems.InternalDate,
+                    | MessageSummaryItems.InternalDate
+                    | MessageSummaryItems.Size,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -267,18 +275,21 @@ internal sealed class MailKitImapClient : IImapClient
                 messages.Add(new RemoteMessage(
                     RemoteId: summary.UniqueId.Id.ToString(),
                     Subject: mime.Subject ?? string.Empty,
-                    FromAddress: mime.From.Mailboxes.FirstOrDefault()?.Address ?? string.Empty,
+                    FromAddress: FormatMailbox(mime.From.Mailboxes.FirstOrDefault()),
                     ReceivedAt: summary.InternalDate ?? mime.Date,
                     IsRead: summary.Flags?.HasFlag(MessageFlags.Seen) == true,
                     BodyText: ExtractBodyText(mime))
                 {
                     ToAddresses = ExtractAddresses(mime.To),
                     CcAddresses = ExtractAddresses(mime.Cc),
+                    BccAddresses = ExtractAddresses(mime.Bcc),
+                    ReplyToAddresses = ExtractAddresses(mime.ReplyTo),
                     BodyHtml = ExtractBodyHtml(mime),
                     IsFlagged = summary.Flags?.HasFlag(MessageFlags.Flagged) == true,
                     InternetMessageId = ExtractInternetMessageId(mime),
                     References = ExtractReferences(mime),
                     Attachments = ExtractAttachments(mime),
+                    SizeBytes = SummarySize(summary),
                 });
             }
 
@@ -431,6 +442,45 @@ internal sealed class MailKitImapClient : IImapClient
         }
     }
 
+    public async Task<string> CopyAsync(
+        string sourceMailboxPath,
+        string destinationMailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceMailboxPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationMailboxPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(remoteId);
+        var client = EnsureAuthenticated();
+        try
+        {
+            if (!uint.TryParse(remoteId, out var uidValue))
+            {
+                throw new ImapProtocolException("IMAP protocol failure.", new FormatException($"RemoteId '{remoteId}' is not a UID."));
+            }
+
+            var sourceUid = new UniqueId(uidValue);
+            var source = await client.GetFolderAsync(sourceMailboxPath, cancellationToken).ConfigureAwait(false);
+            await source.OpenAsync(FolderAccess.ReadWrite, cancellationToken).ConfigureAwait(false);
+            var destination = await client.GetFolderAsync(destinationMailboxPath, cancellationToken).ConfigureAwait(false);
+            var destUid = await source.CopyToAsync(sourceUid, destination, cancellationToken).ConfigureAwait(false);
+            if (destUid is not { Id: not 0 } copied)
+            {
+                throw new ImapProtocolException("IMAP COPY did not return a destination UID.");
+            }
+
+            return copied.Id.ToString();
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException and not ImapProtocolException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
     public async Task<string> CreateMailboxAsync(
         string name,
         CancellationToken cancellationToken = default)
@@ -558,6 +608,39 @@ internal sealed class MailKitImapClient : IImapClient
         }
     }
 
+    public async Task ExpungeAsync(
+        string mailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mailboxPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(remoteId);
+        var client = EnsureAuthenticated();
+        try
+        {
+            if (!uint.TryParse(remoteId, out var uidValue))
+            {
+                throw new ImapProtocolException("IMAP protocol failure.", new FormatException($"RemoteId '{remoteId}' is not a UID."));
+            }
+
+            var folder = await client.GetFolderAsync(mailboxPath, cancellationToken).ConfigureAwait(false);
+            await folder.OpenAsync(FolderAccess.ReadWrite, cancellationToken).ConfigureAwait(false);
+            var uid = new UniqueId(uidValue);
+            await folder
+                .AddFlagsAsync(uid, MessageFlags.Deleted, silent: true, cancellationToken)
+                .ConfigureAwait(false);
+            await folder.ExpungeAsync(new[] { uid }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AuthenticationException ex)
+        {
+            throw new ImapAuthenticationException("IMAP authentication failed.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ImapAuthenticationException and not ImapProtocolException)
+        {
+            throw new ImapProtocolException("IMAP protocol failure.", ex);
+        }
+    }
+
     public async Task WaitForMailboxChangeAsync(
         string mailboxPath,
         CancellationToken cancellationToken = default)
@@ -646,7 +729,7 @@ internal sealed class MailKitImapClient : IImapClient
         return _client;
     }
 
-    private static MailboxRole? MapRole(FolderAttributes attributes)
+    private static MailboxRole? MapRole(FolderAttributes attributes, string name)
     {
         if (attributes.HasFlag(FolderAttributes.Inbox))
         {
@@ -671,6 +754,13 @@ internal sealed class MailKitImapClient : IImapClient
         if (attributes.HasFlag(FolderAttributes.Junk))
         {
             return MailboxRole.Junk;
+        }
+
+        if (attributes.HasFlag(FolderAttributes.Archive)
+            || string.Equals(name, "Archive", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "Archives", StringComparison.OrdinalIgnoreCase))
+        {
+            return MailboxRole.Archive;
         }
 
         return null;
@@ -705,6 +795,9 @@ internal sealed class MailKitImapClient : IImapClient
         return NormalizeBody(mime.HtmlBody);
     }
 
+    private static long SummarySize(IMessageSummary summary) =>
+        summary.Size is { } size ? size : 0;
+
     private static string? ExtractInternetMessageId(MimeMessage mime) =>
         string.IsNullOrWhiteSpace(mime.MessageId) ? null : mime.MessageId.Trim();
 
@@ -719,9 +812,14 @@ internal sealed class MailKitImapClient : IImapClient
 
     private static IReadOnlyList<string> ExtractAddresses(InternetAddressList list) =>
         list.Mailboxes
-            .Select(mailbox => mailbox.Address)
-            .Where(address => !string.IsNullOrWhiteSpace(address))
+            .Select(FormatMailbox)
+            .Where(address => address.Length > 0)
             .ToList();
+
+    private static string FormatMailbox(MailboxAddress? mailbox) =>
+        mailbox is null || string.IsNullOrWhiteSpace(mailbox.Address)
+            ? string.Empty
+            : MailAddresses.Format(mailbox);
     private static IReadOnlyList<RemoteAttachment> ExtractAttachments(MimeMessage mime)
     {
         var attachments = new List<RemoteAttachment>();

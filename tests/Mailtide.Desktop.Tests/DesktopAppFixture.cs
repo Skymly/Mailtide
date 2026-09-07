@@ -144,7 +144,10 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             }
 
             return Task.FromResult<IReadOnlyList<RemoteMessageSummary>>(
-                messages.Select(m => new RemoteMessageSummary(m.RemoteId, m.IsRead, m.Subject, m.FromAddress, m.ReceivedAt)).ToList());
+                messages.Select(m => new RemoteMessageSummary(m.RemoteId, m.IsRead, m.Subject, m.FromAddress, m.ReceivedAt, m.IsFlagged)
+                {
+                    SizeBytes = m.SizeBytes,
+                }).ToList());
         }
 
         public Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
@@ -187,6 +190,13 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
+        public Task<string> CopyAsync(
+            string sourceMailboxPath,
+            string destinationMailboxPath,
+            string remoteId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(remoteId);
+
         public Task<string> CreateMailboxAsync(
             string name,
             CancellationToken cancellationToken = default) =>
@@ -205,8 +215,30 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
         public Task ExpungeAllAsync(
             string mailboxPath,
-            CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+            CancellationToken cancellationToken = default)
+        {
+            if (_factory._messagesByPath.TryGetValue(mailboxPath, out _))
+            {
+                _factory._messagesByPath[mailboxPath] = [];
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task ExpungeAsync(
+            string mailboxPath,
+            string remoteId,
+            CancellationToken cancellationToken = default)
+        {
+            if (_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                _factory._messagesByPath[mailboxPath] = messages
+                    .Where(m => m.RemoteId != remoteId)
+                    .ToList();
+            }
+
+            return Task.CompletedTask;
+        }
 
         public Task SetSeenAsync(
             string mailboxPath,

@@ -7,6 +7,7 @@ public enum MailboxRole
     Drafts = 2,
     Trash = 3,
     Junk = 4,
+    Archive = 5,
 }
 
 public sealed record MailboxInfo(

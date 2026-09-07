@@ -3,6 +3,6 @@
              x:Class="Mailtide.UI.App"
              RequestedThemeVariant="Default">
     <Application.Styles>
-        <FluentTheme />
+        <FluentTheme DensityStyle="Compact" />
     </Application.Styles>
 </Application>

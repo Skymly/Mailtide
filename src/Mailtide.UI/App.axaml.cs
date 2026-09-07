@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -31,7 +32,9 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var mainWindow = new MainWindow(_shell);
+            RestoreWindowLayout(mainWindow);
             desktop.MainWindow = mainWindow;
+            mainWindow.Closing += OnMainWindowClosing;
 
             mainWindow.Opened += async (_, _) =>
             {
@@ -68,6 +71,62 @@ public partial class App : Application
         await Task.Yield();
         await shell.InitializeBrowseAsync().ConfigureAwait(true);
         StartForegroundSync();
+    }
+
+    private void RestoreWindowLayout(Window window)
+    {
+        if (_core is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var raw = _core.GetPreferenceAsync(WindowLayout.PreferenceKey).GetAwaiter().GetResult();
+            if (!WindowLayout.TryParse(raw, out var x, out var y, out var width, out var height, out var maximized))
+            {
+                return;
+            }
+
+            window.Position = new PixelPoint(x, y);
+            window.Width = width;
+            window.Height = height;
+            if (maximized)
+            {
+                window.WindowState = WindowState.Maximized;
+            }
+        }
+        catch
+        {
+            // Layout restore is best-effort.
+        }
+    }
+
+    private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_core is null || sender is not Window window)
+        {
+            return;
+        }
+
+        try
+        {
+            _core.SetPreferenceAsync(
+                    WindowLayout.PreferenceKey,
+                    WindowLayout.Encode(
+                        window.Position.X,
+                        window.Position.Y,
+                        window.Width,
+                        window.Height,
+                        window.WindowState == WindowState.Maximized))
+                .GetAwaiter()
+                .GetResult();
+            _shell?.PersistChromeAsync().GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // Layout persist is best-effort.
+        }
     }
 
     private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e) => DisposeCore();

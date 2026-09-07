@@ -8,7 +8,7 @@ namespace Mailtide.Core.Store;
 /// </summary>
 internal static class StoreMigrator
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 6;
 
     public static async Task ApplyAsync(MailtideDbContext db, CancellationToken cancellationToken)
     {
@@ -46,6 +46,34 @@ internal static class StoreMigrator
             {
                 await ApplyV2Async(db, cancellationToken).ConfigureAwait(false);
                 await SetVersionAsync(db, 2, cancellationToken).ConfigureAwait(false);
+                version = 2;
+            }
+
+            if (version < 3)
+            {
+                await ApplyV3Async(db, cancellationToken).ConfigureAwait(false);
+                await SetVersionAsync(db, 3, cancellationToken).ConfigureAwait(false);
+                version = 3;
+            }
+
+            if (version < 4)
+            {
+                await ApplyV4Async(db, cancellationToken).ConfigureAwait(false);
+                await SetVersionAsync(db, 4, cancellationToken).ConfigureAwait(false);
+                version = 4;
+            }
+
+            if (version < 5)
+            {
+                await ApplyV5Async(db, cancellationToken).ConfigureAwait(false);
+                await SetVersionAsync(db, 5, cancellationToken).ConfigureAwait(false);
+                version = 5;
+            }
+
+            if (version < 6)
+            {
+                await ApplyV6Async(db, cancellationToken).ConfigureAwait(false);
+                await SetVersionAsync(db, 6, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -227,6 +255,8 @@ internal static class StoreMigrator
             .ConfigureAwait(false);
         await AddColumnIfMissingAsync(db, "Accounts", "OAuthClientId", "TEXT NULL", cancellationToken)
             .ConfigureAwait(false);
+        await AddColumnIfMissingAsync(db, "Accounts", "Signature", "TEXT", cancellationToken)
+            .ConfigureAwait(false);
         await AddColumnIfMissingAsync(db, "Messages", "ToAddresses", "TEXT NOT NULL DEFAULT '[]'", cancellationToken)
             .ConfigureAwait(false);
         await AddColumnIfMissingAsync(db, "Messages", "CcAddresses", "TEXT NOT NULL DEFAULT '[]'", cancellationToken)
@@ -284,7 +314,40 @@ internal static class StoreMigrator
         await MessageSearchIndex.RebuildAllAsync(db, cancellationToken).ConfigureAwait(false);
     }
 
+    private static async Task ApplyV3Async(MailtideDbContext db, CancellationToken cancellationToken)
+    {
+        await ExecuteAsync(
+                db,
+                """
+                CREATE TABLE IF NOT EXISTS "Preferences" (
+                    "Key" TEXT NOT NULL CONSTRAINT "PK_Preferences" PRIMARY KEY,
+                    "Value" TEXT NOT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task ApplyV4Async(MailtideDbContext db, CancellationToken cancellationToken)
+    {
+        await AddColumnIfMissingAsync(db, "Messages", "BccAddresses", "TEXT NOT NULL DEFAULT '[]'", cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task ApplyV5Async(MailtideDbContext db, CancellationToken cancellationToken)
+    {
+        await AddColumnIfMissingAsync(db, "Messages", "ReplyToAddresses", "TEXT NOT NULL DEFAULT '[]'", cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task ApplyV6Async(MailtideDbContext db, CancellationToken cancellationToken)
+    {
+        await AddColumnIfMissingAsync(db, "Messages", "SizeBytes", "INTEGER NOT NULL DEFAULT 0", cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public static async Task AddColumnIfMissingAsync(
+
         MailtideDbContext db,
         string table,
         string column,

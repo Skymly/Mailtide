@@ -25,6 +25,8 @@ internal sealed class MailtideDbContext : DbContext
 
     public DbSet<OutboxAttachmentRecord> OutboxAttachments => Set<OutboxAttachmentRecord>();
 
+    public DbSet<PreferenceRecord> Preferences => Set<PreferenceRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var account = modelBuilder.Entity<AccountRecord>();
@@ -55,6 +57,8 @@ internal sealed class MailtideDbContext : DbContext
         message.Property(m => m.BodyText).IsRequired();
         message.Property(m => m.ToAddresses).IsRequired();
         message.Property(m => m.CcAddresses).IsRequired();
+        message.Property(m => m.BccAddresses).IsRequired();
+        message.Property(m => m.ReplyToAddresses).IsRequired();
         message.HasIndex(m => new { m.AccountId, m.MailboxId, m.RemoteId }).IsUnique();
 
         var attachment = modelBuilder.Entity<AttachmentRecord>();
@@ -101,5 +105,11 @@ internal sealed class MailtideDbContext : DbContext
         outboxAttachment.Property(a => a.ContentType).IsRequired();
         outboxAttachment.Property(a => a.BlobRelativePath).IsRequired();
         outboxAttachment.HasIndex(a => new { a.AccountId, a.OutboxItemId });
+
+        var preference = modelBuilder.Entity<PreferenceRecord>();
+        preference.ToTable("Preferences");
+        preference.HasKey(p => p.Key);
+        preference.Property(p => p.Key).IsRequired();
+        preference.Property(p => p.Value).IsRequired();
     }
 }
