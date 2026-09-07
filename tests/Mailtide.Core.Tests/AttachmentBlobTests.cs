@@ -39,7 +39,9 @@ public sealed class AttachmentBlobTests
         await app.SyncNowAsync(account.Id);
 
         var mailboxId = (await app.ListMailboxesAsync(account.Id)).Single().Id;
-        var messageId = (await app.ListMessagesAsync(account.Id, mailboxId)).Single().Id;
+        var listed = (await app.ListMessagesAsync(account.Id, mailboxId)).Single();
+        Assert.IsTrue(listed.HasAttachments);
+        var messageId = listed.Id;
 
         var attachments = await app.ListAttachmentsAsync(account.Id, messageId);
         Assert.HasCount(1, attachments);

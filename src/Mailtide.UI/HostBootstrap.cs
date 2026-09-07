@@ -13,6 +13,11 @@ public static class HostBootstrap
     public static IOpenDownloadedAttachment? OpenDownloadedAttachment { get; set; }
 
     /// <summary>
+    /// Host port: open an http(s)/mailto URI outside NativeWebView.
+    /// </summary>
+    public static IOpenExternalUri? OpenExternalUri { get; set; }
+
+    /// <summary>
     /// Host port: OS notification for a newly arrived Inbox Message.
     /// </summary>
     public static INotifyInboxArrival? NotifyInboxArrival { get; set; }

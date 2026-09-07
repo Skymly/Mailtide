@@ -18,6 +18,8 @@ public sealed record AccountInfo(
     public int UnreadCount { get; init; }
 
     public bool HasUnread => UnreadCount > 0;
+
+    public string? Signature { get; init; }
 }
 
 public enum CredentialKind

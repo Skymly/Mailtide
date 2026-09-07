@@ -54,6 +54,34 @@ public sealed class HtmlBodyTests
     }
 
     [TestMethod]
+    public async Task GetMessageBodyAsync_falls_back_to_stripped_HTML()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "html-only",
+                Subject: "Hello html",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "")
+            {
+                BodyHtml = "<p>Hello <b>world</b></p>",
+            });
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft());
+        await app.SyncNowAsync(account.Id);
+        var mailboxId = (await app.ListMailboxesAsync(account.Id)).Single().Id;
+        var message = (await app.ListMessagesAsync(account.Id, mailboxId)).Single();
+
+        Assert.AreEqual("Hello world", await app.GetMessageBodyAsync(account.Id, message.Id));
+        Assert.AreEqual("Hello world", message.Preview);
+    }
+
+    [TestMethod]
     public async Task GetMessageHtmlAsync_returns_null_when_Message_has_only_BodyText()
     {
         using var fixture = new CoreAppFixture();

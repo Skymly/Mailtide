@@ -20,6 +20,7 @@ class Program
 
         HostBootstrap.OpenCoreAsync = DesktopComposition.OpenCoreAsync;
         HostBootstrap.OpenDownloadedAttachment = new DesktopOpenDownloadedAttachment();
+        HostBootstrap.OpenExternalUri = new DesktopOpenExternalUri();
         HostBootstrap.NotifyInboxArrival = new DesktopNotifyInboxArrival(
             onActivated: n => HostBootstrap.InboxArrivalActivated?.Invoke(n));
 

@@ -212,6 +212,9 @@ internal sealed class RemoteSnapshotSync
                         ReferencesJson = PackedStringList.Encode(fetched.References),
                         ToAddresses = PackedStringList.Encode(fetched.ToAddresses),
                         CcAddresses = PackedStringList.Encode(fetched.CcAddresses),
+                        BccAddresses = PackedStringList.Encode(fetched.BccAddresses),
+                        ReplyToAddresses = PackedStringList.Encode(fetched.ReplyToAddresses),
+                        SizeBytes = fetched.SizeBytes != 0 ? fetched.SizeBytes : summary.SizeBytes,
                     };
                     _db.Messages.Add(message);
                     existingMessages.Add(message);
@@ -257,6 +260,7 @@ internal sealed class RemoteSnapshotSync
                     message.Subject = summary.Subject;
                     message.FromAddress = summary.FromAddress;
                     message.ReceivedAt = summary.ReceivedAt;
+                    message.SizeBytes = fetched is { SizeBytes: not 0 } ? fetched.SizeBytes : summary.SizeBytes;
                     if (fetched is not null)
                     {
                         message.BodyText = fetched.BodyText;
@@ -265,6 +269,8 @@ internal sealed class RemoteSnapshotSync
                         message.ReferencesJson = PackedStringList.Encode(fetched.References);
                         message.ToAddresses = PackedStringList.Encode(fetched.ToAddresses);
                         message.CcAddresses = PackedStringList.Encode(fetched.CcAddresses);
+                        message.BccAddresses = PackedStringList.Encode(fetched.BccAddresses);
+                        message.ReplyToAddresses = PackedStringList.Encode(fetched.ReplyToAddresses);
                     }
                 }
 

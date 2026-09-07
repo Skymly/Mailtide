@@ -315,6 +315,14 @@ public sealed class BrowseShellTests
         var mailboxCountAfter = (await app.ListMailboxesAsync(accountA.Id)).Count
             + (await app.ListMailboxesAsync(accountB.Id)).Count;
         Assert.AreEqual(mailboxCountBefore, mailboxCountAfter);
+
+        var alice = shell.Threads.Single(item => item.Latest.Subject == "From Alice Inbox");
+        await shell.SelectThreadAsync(alice.Latest.Id);
+        await shell.RevealInMailboxAsync();
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+        Assert.AreEqual(accountA.Id, shell.SelectedAccountId);
+        Assert.AreEqual(alice.Latest.MailboxId, shell.SelectedMailboxId);
+        Assert.AreEqual(alice.Latest.Id, shell.SelectedThreadId);
     }
 
     [TestMethod]
@@ -881,6 +889,39 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_ToggleFlag_stars_a_Thread_without_opening_it()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "flag-list",
+                Subject: "Star from list",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "x"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+
+        Assert.IsNull(shell.SelectedThreadId);
+        Assert.IsFalse(shell.Threads[0].Latest.IsFlagged);
+        Assert.IsFalse(shell.Threads[0].Latest.IsRead);
+        await shell.ToggleFlagAsync(shell.Threads[0].Latest.Id);
+
+        Assert.IsTrue(shell.Threads[0].Latest.IsFlagged);
+        Assert.IsFalse(shell.Threads[0].Latest.IsRead);
+        Assert.IsNull(shell.SelectedThreadId);
+    }
+
+    [TestMethod]
     public async Task BrowseShell_MoveSelectedToTrash_removes_Message_from_Inbox()
     {
         using var fixture = new DesktopAppFixture();
@@ -946,6 +987,43 @@ public sealed class BrowseShellTests
         Assert.IsEmpty(shell.Messages);
         Assert.IsNull(shell.SelectedMessageId);
         Assert.HasCount(1, await app.ListMessagesAsync(account.Id, archive.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_CopySelectedToMailbox_keeps_source_and_adds_destination()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "cp-1",
+                Subject: "Keep me",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "keep"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Name == "Archive");
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        var sourceId = shell.SelectedMessageId;
+        await shell.CopySelectedToMailboxAsync(archive.Id);
+
+        Assert.AreEqual(sourceId, shell.SelectedMessageId);
+        Assert.HasCount(1, shell.Messages);
+        Assert.AreEqual("Keep me", shell.Messages[0].Subject);
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, archive.Id));
+        Assert.AreEqual(archive.Id, shell.RecentMoveMailboxIds[0]);
     }
 
     [TestMethod]
@@ -1097,6 +1175,320 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_EmptyJunk_clears_Junk_list()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Junk", "Junk", MailboxRole.Junk));
+        fixture.Imap.SeedMessages(
+            "Junk",
+            new RemoteMessage(
+                RemoteId: "spam-1",
+                Subject: "Spam",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "buy"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var junk = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Junk);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(junk.Id);
+        Assert.HasCount(1, shell.Messages);
+        await shell.EmptyJunkAsync();
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsNull(shell.SelectedMessageId);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, junk.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_PermanentlyDeleteSelected_removes_Trash_Message_and_keeps_Inbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "keep-1",
+                Subject: "Keep",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "keep"));
+        fixture.Imap.SeedMessages(
+            "Trash",
+            new RemoteMessage(
+                RemoteId: "gone-1",
+                Subject: "Old",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "dust"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Trash);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(trash.Id);
+        await shell.SelectThreadAsync(shell.Messages.Single().Id);
+        await shell.PermanentlyDeleteSelectedAsync();
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsNull(shell.SelectedMessageId);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, trash.Id));
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, inbox.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_PermanentlyDeleteSelected_on_Thread_removes_every_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "Trash",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Trash);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(trash.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.PermanentlyDeleteSelectedAsync();
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, trash.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_PermanentlyDeleteSelected_selects_the_next_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "Trash",
+            new RemoteMessage(
+                RemoteId: "newer",
+                Subject: "Newer",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "one"),
+            new RemoteMessage(
+                RemoteId: "older",
+                Subject: "Older",
+                FromAddress: "c@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "three"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Trash);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(trash.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.PermanentlyDeleteSelectedAsync();
+
+        Assert.AreEqual("Older", shell.Messages.Single(message => message.Id == shell.SelectedMessageId).Subject);
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, trash.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_PermanentlyDeleteSelected_expunges_Inbox_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "gone-1",
+                Subject: "Gone",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "bye"),
+            new RemoteMessage(
+                RemoteId: "keep-1",
+                Subject: "Keep",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 9, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "stay"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Trash);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        var gone = shell.Messages.Single(message => message.Subject == "Gone");
+        await shell.SelectThreadAsync(gone.Id);
+        await shell.PermanentlyDeleteSelectedAsync();
+
+        Assert.AreEqual("Keep", shell.Messages.Single().Subject);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, trash.Id));
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, inbox.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_MoveSelectedToJunk_removes_Message_from_Inbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Junk", "Junk", MailboxRole.Junk));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "spam-1",
+                Subject: "Spam",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "buy now"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var junk = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Junk);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages.Single().Id);
+        await shell.MoveSelectedToJunkAsync();
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, junk.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_RestoreSelectedFromJunk_returns_Message_to_Inbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Junk", "Junk", MailboxRole.Junk));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "spam-1",
+                Subject: "Spam",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "buy now"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var junk = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Junk);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages.Single().Id);
+        await shell.MoveSelectedToJunkAsync();
+        await shell.SelectMailboxAsync(junk.Id);
+        await shell.SelectThreadAsync(shell.Messages.Single().Id);
+        await shell.RestoreSelectedFromJunkAsync();
+
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, junk.Id));
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, inbox.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_MoveSelectedToJunk_on_Thread_moves_every_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Junk", "Junk", MailboxRole.Junk));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var junk = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Junk);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.MoveSelectedToJunkAsync();
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.HasCount(2, await app.ListMessagesAsync(account.Id, junk.Id));
+    }
+
+    [TestMethod]
     public async Task BrowseShell_SelectNextUnread_skips_read_and_selects_the_next_unread()
     {
         using var fixture = new DesktopAppFixture();
@@ -1179,6 +1571,56 @@ public sealed class BrowseShellTests
         await shell.SelectPreviousUnreadAsync();
 
         Assert.AreEqual("Newer unread", shell.Messages.Single(m => m.Id == shell.SelectedMessageId).Subject);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectNextFlagged_skips_unflagged_and_selects_the_next_flagged()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "newer",
+                Subject: "Newer flagged",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "one")
+            {
+                IsFlagged = true,
+            },
+            new RemoteMessage(
+                RemoteId: "mid",
+                Subject: "Plain",
+                FromAddress: "b@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 9, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "two"),
+            new RemoteMessage(
+                RemoteId: "older",
+                Subject: "Older flagged",
+                FromAddress: "c@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "three")
+            {
+                IsFlagged = true,
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads.Single(thread => thread.Latest.Subject == "Newer flagged").Latest.Id);
+        await shell.SelectNextFlaggedAsync();
+
+        Assert.AreEqual("Older flagged", shell.Threads.Single(thread => thread.Latest.Id == shell.SelectedThreadId).Latest.Subject);
+        await shell.SelectPreviousFlaggedAsync();
+        Assert.AreEqual("Newer flagged", shell.Threads.Single(thread => thread.Latest.Id == shell.SelectedThreadId).Latest.Subject);
     }
 
     [TestMethod]
@@ -1385,6 +1827,127 @@ public sealed class BrowseShellTests
     }
 
     [TestMethod]
+    public async Task BrowseShell_conversation_html_cards_keep_snippets_and_expand_the_selected_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-root",
+                Subject: "Root html",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: string.Empty)
+            {
+                BodyHtml = "<p>older html</p>",
+                InternetMessageId = "<root-html@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-reply",
+                Subject: "Re: Root html",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: string.Empty)
+            {
+                BodyHtml = "<p>later html</p>",
+                InternetMessageId = "<reply-html@example.com>",
+                References = ["<root-html@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        Assert.HasCount(1, shell.Threads);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+        await shell.SelectMessageAsync(shell.Threads[0].Latest.Id);
+        await shell.RefreshConversationAsync();
+
+        Assert.HasCount(2, shell.Conversation);
+        var split = MailShellFormatting.SplitConversation(shell.Conversation);
+        Assert.HasCount(1, split.Before);
+        Assert.AreEqual("<p>older html</p>", split.Before[0].BodyHtml);
+        Assert.AreEqual("older html", split.Before[0].BodyText);
+        Assert.IsTrue(split.Before[0].ShowBodyText);
+        Assert.IsNotNull(split.Selected);
+        Assert.AreEqual("<p>later html</p>", split.Selected.BodyHtml);
+        Assert.IsFalse(split.Selected.ShowBodyText);
+        Assert.IsEmpty(split.After);
+
+        await shell.SelectMessageAsync(split.Before[0].Message.Id);
+        await shell.RefreshConversationAsync();
+        var olderSelected = MailShellFormatting.SplitConversation(shell.Conversation);
+        Assert.IsEmpty(olderSelected.Before);
+        Assert.AreEqual("<p>older html</p>", olderSelected.Selected!.BodyHtml);
+        Assert.IsFalse(olderSelected.Selected.ShowBodyText);
+        Assert.HasCount(1, olderSelected.After);
+        Assert.IsTrue(olderSelected.After[0].ShowBodyText);
+        Assert.AreEqual("<p>later html</p>", olderSelected.After[0].BodyHtml);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_conversation_cards_keep_attachments_on_the_owning_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-root",
+                Subject: "Root files",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root-files@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-reply",
+                Subject: "Re: Root files",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply-files@example.com>",
+                References = ["<root-files@example.com>"],
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "invoice.pdf",
+                        ContentType: "application/pdf",
+                        Content: "pdf-bytes"u8.ToArray()),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+        await shell.SelectMessageAsync(shell.Threads[0].Latest.Id);
+        await shell.RefreshConversationAsync();
+
+        Assert.HasCount(2, shell.Conversation);
+        Assert.IsEmpty(shell.Conversation[0].Attachments);
+        Assert.IsTrue(shell.Conversation[0].ShowAttachmentClip is false);
+        Assert.AreEqual("invoice.pdf", shell.Conversation[1].Attachments.Single().FileName);
+        Assert.IsTrue(shell.Conversation[1].ShowAttachmentChips);
+        Assert.IsFalse(shell.Conversation[1].ShowAttachmentClip);
+        Assert.AreEqual("invoice.pdf", shell.ThreadAttachments.Single().FileName);
+    }
+
+    [TestMethod]
     public async Task BrowseShell_OpenAttachment_calls_Host_port_with_content()
     {
         using var fixture = new DesktopAppFixture();
@@ -1436,6 +1999,209 @@ public sealed class BrowseShellTests
                 HostBootstrap.OpenDownloadedAttachment = previous;
             }
         }
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_MaterializeAttachment_writes_a_temp_file()
+    {
+        using var fixture = new DesktopAppFixture();
+        var payload = "drag-payload"u8.ToArray();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-drag",
+                Subject: "Has file",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "see file")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "report.pdf",
+                        ContentType: "application/pdf",
+                        Content: payload),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        var path = await shell.MaterializeAttachmentAsync(shell.Attachments[0].Id);
+
+        Assert.IsNotNull(path);
+        Assert.AreEqual("report.pdf", Path.GetFileName(path));
+        CollectionAssert.AreEqual(payload, await File.ReadAllBytesAsync(path));
+        Assert.IsNull(shell.AttachmentOpenError);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_OpenFirstThreadAttachment_opens_the_latest_file()
+    {
+        using var fixture = new DesktopAppFixture();
+        var payload = "clip-payload"u8.ToArray();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-clip",
+                Subject: "Has file",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "see file")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "notes.txt",
+                        ContentType: "text/plain",
+                        Content: payload),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var fakeOpen = new FakeOpenDownloadedAttachment();
+        lock (HostBootstrapGate)
+        {
+            var previous = HostBootstrap.OpenDownloadedAttachment;
+            HostBootstrap.OpenDownloadedAttachment = fakeOpen;
+            try
+            {
+                var shell = new BrowseShell(app);
+                shell.SelectAccountAsync(account.Id).GetAwaiter().GetResult();
+                shell.SelectMailboxAsync(inbox.Id).GetAwaiter().GetResult();
+                shell.OpenFirstThreadAttachmentAsync(shell.Threads[0].Latest.Id).GetAwaiter().GetResult();
+
+                Assert.IsNull(shell.AttachmentOpenError);
+                Assert.AreEqual("notes.txt", fakeOpen.LastFileName);
+                Assert.AreEqual("text/plain", fakeOpen.LastContentType);
+                CollectionAssert.AreEqual(payload, fakeOpen.LastContent);
+            }
+            finally
+            {
+                HostBootstrap.OpenDownloadedAttachment = previous;
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SaveAttachment_writes_bytes_without_opening()
+    {
+        using var fixture = new DesktopAppFixture();
+        var payload = "save-payload"u8.ToArray();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-save",
+                Subject: "Has file",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "see file")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "notes.txt",
+                        ContentType: "text/plain",
+                        Content: payload),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        using var saved = new MemoryStream();
+        await shell.SaveAttachmentAsync(shell.Attachments[0].Id, saved);
+
+        Assert.IsNull(shell.AttachmentOpenError);
+        CollectionAssert.AreEqual(payload, saved.ToArray());
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SaveAllAttachments_writes_each_file_and_renames_collisions()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-save-all",
+                Subject: "Has files",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "see files")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "notes.txt",
+                        ContentType: "text/plain",
+                        Content: "one"u8.ToArray()),
+                    new RemoteAttachment(
+                        FileName: "notes.txt",
+                        ContentType: "text/plain",
+                        Content: "two"u8.ToArray()),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        var directory = Path.Combine(Path.GetTempPath(), "mailtide-save-all-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var saved = await shell.SaveAllAttachmentsAsync(directory);
+            Assert.AreEqual(2, saved);
+            var texts = new HashSet<string>
+            {
+                await File.ReadAllTextAsync(Path.Combine(directory, "notes.txt")),
+                await File.ReadAllTextAsync(Path.Combine(directory, "notes (1).txt")),
+            };
+            Assert.IsTrue(texts.SetEquals(["one", "two"]));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SaveAttachment_surfaces_error_when_Attachment_is_missing()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var shell = new BrowseShell(app);
+        using var saved = new MemoryStream();
+        await shell.SaveAttachmentAsync(Guid.NewGuid(), saved);
+        Assert.AreEqual("Attachment is not available.", shell.AttachmentOpenError);
+        Assert.AreEqual(0, saved.Length);
     }
 
     [TestMethod]
@@ -1717,6 +2483,1995 @@ public sealed class BrowseShellTests
         Assert.IsTrue(shell.Messages[0].IsRead);
         Assert.IsTrue((await app.ListMessagesAsync(account.Id, inbox.Id)).Single().IsRead);
     }
+    [TestMethod]
+    public async Task BrowseShell_MoveSelectedToMailbox_from_Unified_Inbox_moves_the_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Name == "Archive");
+
+        var shell = new BrowseShell(app);
+        await shell.ShowUnifiedInboxAsync();
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.MoveSelectedToMailboxAsync(archive.Id);
+
+        Assert.IsTrue(shell.ShowingUnifiedInbox);
+        Assert.IsEmpty(await app.ListUnifiedInboxAsync());
+        Assert.HasCount(2, await app.ListMessagesAsync(account.Id, archive.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_MarkSelectedUnread_on_Thread_marks_every_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        await shell.MarkSelectedUnreadAsync();
+
+        Assert.IsTrue(shell.Messages.All(message => !message.IsRead));
+        Assert.IsTrue(shell.Threads[0].Messages.All(message => !message.IsRead));
+        Assert.IsTrue((await app.ListMessagesAsync(account.Id, inbox.Id)).All(message => !message.IsRead));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_ToggleSelectedRead_marks_unread_Thread_read()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.SelectMessageAsync(shell.Messages[0].Id);
+        await shell.MarkSelectedUnreadAsync();
+        await shell.ToggleSelectedReadAsync();
+
+        Assert.IsTrue(shell.Messages.All(message => message.IsRead));
+        Assert.IsTrue((await app.ListMessagesAsync(account.Id, inbox.Id)).All(message => message.IsRead));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_MarkSelectedRead_marks_the_Thread_read()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "u-1",
+                Subject: "Unread",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "body"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.MarkSelectedUnreadAsync();
+        await shell.MarkSelectedReadAsync();
+
+        Assert.IsTrue(shell.Messages.Single().IsRead);
+        Assert.AreEqual(0, shell.Mailboxes.Single().UnreadCount);
+        await shell.MarkSelectedReadAsync();
+        Assert.IsTrue(shell.Messages.Single().IsRead);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SetConversationExpanded_shows_other_bodies()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "older body")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "newer body")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            },
+            new RemoteMessage(
+                RemoteId: "other",
+                Subject: "Other",
+                FromAddress: "carol@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "other"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        var root = shell.Threads.Single(thread => thread.Latest.Subject == "Re: Root" || thread.Latest.Subject == "Root");
+        await shell.SelectThreadAsync(root.Latest.Id);
+        await shell.SelectMessageAsync(root.Latest.Id);
+        await shell.RefreshConversationAsync();
+        Assert.IsFalse(shell.ConversationExpanded);
+        Assert.AreEqual(1, shell.Conversation.Count(card => card.ShowBodyText));
+        Assert.AreEqual(0, shell.Conversation.Count(card => card.ShowExpandedBody));
+
+        await shell.SetConversationExpandedAsync(true);
+        Assert.IsTrue(shell.ConversationExpanded);
+        Assert.AreEqual(0, shell.Conversation.Count(card => card.ShowBodyText));
+        Assert.AreEqual(1, shell.Conversation.Count(card => card.ShowExpandedBody));
+        Assert.AreEqual("older body", shell.Conversation.Single(card => card.ShowExpandedBody).ExpandedBody);
+
+        await shell.SelectThreadAsync(root.Latest.Id);
+        Assert.IsTrue(shell.ConversationExpanded);
+
+        var other = shell.Threads.Single(thread => thread.Latest.Subject == "Other");
+        await shell.SelectThreadAsync(other.Latest.Id);
+        Assert.IsFalse(shell.ConversationExpanded);
+
+        await shell.SelectThreadAsync(root.Latest.Id);
+        Assert.IsTrue(shell.ConversationExpanded);
+
+        await shell.SetConversationExpandedAsync(false);
+        await shell.SelectThreadAsync(other.Latest.Id);
+        await shell.SelectThreadAsync(root.Latest.Id);
+        Assert.IsFalse(shell.ConversationExpanded);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_ConversationNewestFirst_reverses_cards_and_persists()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "older body")
+            {
+                InternetMessageId = "<root-order@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "newer body")
+            {
+                InternetMessageId = "<reply-order@example.com>",
+                References = ["<root-order@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+        await shell.SelectMessageAsync(shell.Threads[0].Latest.Id);
+        await shell.RefreshConversationAsync();
+        Assert.AreEqual("older body", shell.Conversation[0].BodyText);
+        Assert.AreEqual("newer body", shell.Conversation[1].BodyText);
+
+        shell.ConversationNewestFirst = true;
+        await shell.PersistConversationOrderAsync();
+        await shell.RefreshConversationAsync();
+        Assert.AreEqual("newer body", shell.Conversation[0].BodyText);
+        Assert.AreEqual("older body", shell.Conversation[1].BodyText);
+
+        var restored = new BrowseShell(app);
+        await restored.RestoreBrowseAsync();
+        Assert.IsTrue(restored.ConversationNewestFirst);
+    }
+
+    public async Task BrowseShell_MoveSelectedToTrash_selects_the_next_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "newer",
+                Subject: "Newer",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "one"),
+            new RemoteMessage(
+                RemoteId: "older",
+                Subject: "Older",
+                FromAddress: "c@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "three"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.MoveSelectedToTrashAsync();
+
+        Assert.AreEqual("Older", shell.Messages.Single(message => message.Id == shell.SelectedMessageId).Subject);
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, inbox.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_UndoLastTrash_restores_the_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "keep",
+                Subject: "Keep",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "one"),
+            new RemoteMessage(
+                RemoteId: "gone",
+                Subject: "Gone",
+                FromAddress: "c@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "three"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Trash);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        var gone = shell.Messages.Single(message => message.Subject == "Gone");
+        await shell.SelectThreadAsync(gone.Id);
+        await shell.MoveSelectedToTrashAsync();
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, trash.Id));
+
+        Assert.IsTrue(await shell.UndoLastTrashAsync());
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, trash.Id));
+        Assert.HasCount(2, await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.AreEqual("Gone", shell.Messages.Single(message => message.Id == shell.SelectedMessageId).Subject);
+        Assert.IsFalse(await shell.UndoLastTrashAsync());
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_UndoLastTrash_undoes_a_Move()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Keep",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "keep"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Name == "Archive");
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+        await shell.MoveSelectedToMailboxAsync(archive.Id);
+
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, archive.Id));
+        Assert.AreEqual(archive.Id, shell.RecentMoveMailboxIds[0]);
+
+        Assert.IsTrue(await shell.UndoLastTrashAsync());
+        Assert.AreEqual("Move undone.", shell.LastRelocateUndoStatus);
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, archive.Id));
+        Assert.AreEqual("Keep", shell.Messages.Single(message => message.Id == shell.SelectedMessageId).Subject);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_UndoLastTrash_undoes_Junk()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Junk", "Junk", MailboxRole.Junk));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "spam",
+                Subject: "Spam",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "buy"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var junk = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Junk);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+        await shell.MoveSelectedToJunkAsync();
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, junk.Id));
+
+        Assert.IsTrue(await shell.UndoLastTrashAsync());
+        Assert.AreEqual("Restored from Junk.", shell.LastRelocateUndoStatus);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, junk.Id));
+        Assert.HasCount(1, await app.ListMessagesAsync(account.Id, inbox.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_ListMoveDestinations_puts_recent_Mailbox_first()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null),
+            new RemoteMailbox("Later", "Later", Role: null));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Keep",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "keep"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var later = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Name == "Later");
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+        await shell.MoveSelectedToMailboxAsync(later.Id);
+
+        var destinations = await shell.ListMoveDestinationsAsync();
+        Assert.AreEqual("Later", destinations[0].Name);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectThread_marks_every_unread_Message_read()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+
+        Assert.IsTrue(shell.Messages.All(message => message.IsRead));
+        Assert.IsTrue((await app.ListMessagesAsync(account.Id, inbox.Id)).All(message => message.IsRead));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_MoveSelectedToTrash_on_Thread_moves_every_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Trash);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.MoveSelectedToTrashAsync();
+
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.HasCount(2, await app.ListMessagesAsync(account.Id, trash.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectNextUnread_after_Thread_moves_to_the_next_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "newer",
+                Subject: "Newer unread",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "one"),
+            new RemoteMessage(
+                RemoteId: "older",
+                Subject: "Older unread",
+                FromAddress: "c@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "three"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Messages[0].Id);
+        await shell.SelectNextUnreadAsync();
+
+        Assert.AreEqual("Older unread", shell.Messages.Single(m => m.Id == shell.SelectedMessageId).Subject);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectNextUnread_crosses_to_the_next_Mailbox_with_unread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "inbox-unread",
+                Subject: "Inbox unread",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "one"));
+        fixture.Imap.SeedMessages(
+            "Archive",
+            new RemoteMessage(
+                RemoteId: "archive-unread",
+                Subject: "Archive unread",
+                FromAddress: "b@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "two"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Name == "Archive");
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+        await shell.SelectNextUnreadAsync();
+
+        Assert.AreEqual(archive.Id, shell.SelectedMailboxId);
+        Assert.AreEqual("Archive unread", shell.Threads.Single(thread => thread.Latest.Id == shell.SelectedThreadId).Latest.Subject);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_unread_chip_survives_Mailbox_switch_but_text_search_does_not()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "inbox-unread",
+                Subject: "Inbox unread",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "one"),
+            new RemoteMessage(
+                RemoteId: "inbox-read",
+                Subject: "Inbox read",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 9, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "two"));
+        fixture.Imap.SeedMessages(
+            "Archive",
+            new RemoteMessage(
+                RemoteId: "archive-unread",
+                Subject: "Archive unread",
+                FromAddress: "b@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "three"),
+            new RemoteMessage(
+                RemoteId: "archive-read",
+                Subject: "Archive read",
+                FromAddress: "b@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 7, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "four"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Name == "Archive");
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("is:unread");
+        Assert.AreEqual("is:unread", shell.SearchQuery);
+        Assert.IsTrue(shell.Messages.All(message => !message.IsRead));
+
+        await shell.SelectMailboxAsync(archive.Id);
+        Assert.AreEqual("is:unread", shell.SearchQuery);
+        Assert.AreEqual("Archive unread", shell.Messages.Single().Subject);
+
+        await shell.SearchAsync("read");
+        await shell.SelectMailboxAsync(inbox.Id);
+        Assert.AreEqual(string.Empty, shell.SearchQuery);
+        Assert.HasCount(2, shell.Threads);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_unread_chip_does_not_mark_the_restored_Thread_read()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "inbox-unread",
+                Subject: "Inbox unread",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "one"));
+        fixture.Imap.SeedMessages(
+            "Archive",
+            new RemoteMessage(
+                RemoteId: "archive-unread",
+                Subject: "Archive unread",
+                FromAddress: "b@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "three"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Name == "Archive");
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(archive.Id);
+        await shell.SelectThreadAsync(shell.Threads.Single(thread => thread.Latest.Subject == "Archive unread").Latest.Id);
+        await shell.MarkSelectedUnreadAsync();
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("is:unread");
+        await shell.SelectMailboxAsync(archive.Id);
+
+        Assert.AreEqual("is:unread", shell.SearchQuery);
+        Assert.AreEqual("Archive unread", shell.Messages.Single().Subject);
+        Assert.IsFalse(shell.Messages.Single().IsRead);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_clearing_Search_restores_the_selected_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "keep",
+                Subject: "Keep me",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "one"),
+            new RemoteMessage(
+                RemoteId: "other",
+                Subject: "Other",
+                FromAddress: "c@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 8, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "three"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        var keep = shell.Messages.Single(message => message.Subject == "Keep me");
+        await shell.SelectThreadAsync(keep.Id);
+        await shell.SearchAsync("no-such-token-xyz");
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsNull(shell.SelectedThreadId);
+
+        await shell.SearchAsync("");
+        Assert.AreEqual(keep.Id, shell.SelectedThreadId);
+        Assert.AreEqual("Keep me", shell.Messages.Single(message => message.Id == shell.SelectedMessageId).Subject);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Search_on_Outbox_keeps_Outbox_scope()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.ShowOutboxAsync(account.Id);
+        await shell.SearchAsync("invoice");
+
+        Assert.IsTrue(shell.ShowingOutbox);
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.IsEmpty(shell.Threads);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Search_hit_conversation_is_not_every_hit()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "a",
+                Subject: "invoice one",
+                FromAddress: "a@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "first invoice"),
+            new RemoteMessage(
+                RemoteId: "b",
+                Subject: "invoice two",
+                FromAddress: "b@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 2, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "second invoice"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("invoice");
+        Assert.HasCount(2, shell.Messages);
+        Assert.HasCount(2, shell.Threads);
+        await shell.OpenSearchHitAsync(shell.Messages[0].Id);
+
+        Assert.HasCount(1, shell.Conversation);
+        Assert.AreEqual(shell.Messages[0].Id, shell.Conversation[0].Message.Id);
+        Assert.HasCount(2, shell.Messages);
+        Assert.HasCount(2, shell.Threads);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Search_hit_opens_the_reply_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root invoice",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root invoice",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply@example.com>",
+                References = ["<root@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("invoice");
+        Assert.HasCount(2, shell.Messages);
+        Assert.HasCount(1, shell.Threads);
+        Assert.HasCount(2, shell.Threads[0].Messages);
+        var hit = shell.Messages.Single(message => message.Subject.StartsWith("Re:"));
+        await shell.OpenSearchHitAsync(hit.Id);
+
+        Assert.HasCount(2, shell.Conversation);
+        Assert.HasCount(2, shell.Messages);
+        Assert.HasCount(1, shell.Threads);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Search_thread_row_opens_like_a_Mailbox_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root invoice",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root-search-row@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root invoice",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply-search-row@example.com>",
+                References = ["<root-search-row@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("invoice");
+        await shell.OpenListedThreadAsync(shell.Threads.Single().Latest.Id);
+
+        Assert.AreEqual("invoice", shell.SearchQuery);
+        Assert.AreEqual(shell.Threads.Single().Latest.Id, shell.SelectedThreadId);
+        Assert.HasCount(2, shell.Messages);
+        Assert.HasCount(2, shell.Conversation);
+        Assert.AreEqual(shell.Threads.Single().Latest.Id, shell.SelectedMessageId);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Search_thread_row_opens_the_matching_Message()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: new string('x', 200) + " secret-token in the root")
+            {
+                InternetMessageId = "<root-search-match@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Hello",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "thanks")
+            {
+                InternetMessageId = "<reply-search-match@example.com>",
+                References = ["<root-search-match@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("secret-token");
+        Assert.HasCount(1, shell.Threads);
+        Assert.HasCount(1, shell.Messages);
+        var match = shell.MatchingSearchMessage(shell.Threads[0]);
+        Assert.IsNotNull(match);
+        Assert.AreEqual("Hello", match!.Subject);
+        StringAssert.Contains(match.Preview, "secret-token");
+        Assert.AreNotEqual(shell.Threads[0].Latest.Id, match.Id);
+
+        await shell.OpenListedThreadAsync(shell.Threads[0].Latest.Id);
+
+        Assert.AreEqual(match.Id, shell.SelectedMessageId);
+        var selected = shell.Conversation.Single(card => card.Message.Id == match.Id);
+        Assert.IsTrue(selected.IsSelected);
+        StringAssert.Contains(selected.Snippet, "secret-token");
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Search_hit_can_select_a_sibling_in_the_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root thread",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root-sibling@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root thread",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "secret-reply")
+            {
+                InternetMessageId = "<reply-sibling@example.com>",
+                References = ["<root-sibling@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("secret-reply");
+        Assert.HasCount(1, shell.Messages);
+        Assert.HasCount(1, shell.Threads);
+        Assert.HasCount(2, shell.Threads[0].Messages);
+        var hit = shell.Messages[0];
+        await shell.OpenSearchHitAsync(hit.Id);
+
+        Assert.HasCount(2, shell.Conversation);
+        Assert.HasCount(1, shell.Messages);
+        var sibling = shell.Conversation.Single(card => card.Message.Id != hit.Id).Message;
+        await shell.SelectMessageAsync(sibling.Id);
+        await shell.RefreshConversationAsync();
+
+        Assert.AreEqual(sibling.Id, shell.SelectedMessageId);
+        Assert.IsTrue(shell.Conversation.Single(card => card.Message.Id == sibling.Id).IsSelected);
+        Assert.AreEqual(hit.Id, shell.Messages[0].Id);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Search_hit_Trash_moves_the_whole_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Root thread",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root-search-trash@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: Root thread",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "secret-reply")
+            {
+                InternetMessageId = "<reply-search-trash@example.com>",
+                References = ["<root-search-trash@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Trash);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("secret-reply");
+        var hit = shell.Messages.Single();
+        await shell.OpenSearchHitAsync(hit.Id);
+        await shell.MoveSelectedToTrashAsync();
+
+        Assert.AreEqual("secret-reply", shell.SearchQuery);
+        Assert.IsEmpty(shell.Messages);
+        Assert.IsEmpty(await app.ListMessagesAsync(account.Id, inbox.Id));
+        Assert.HasCount(2, await app.ListMessagesAsync(account.Id, trash.Id));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_Search_hit_Trash_keeps_search_and_opens_the_next_hit()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "keep",
+                Subject: "keep unique",
+                FromAddress: "keep@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 9, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "keep"),
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "trash unique",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "root")
+            {
+                InternetMessageId = "<root-search-next@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "m-2",
+                Subject: "Re: trash unique",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "reply")
+            {
+                InternetMessageId = "<reply-search-next@example.com>",
+                References = ["<root-search-next@example.com>"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("unique");
+        var trashHit = shell.Messages.First(message => message.Subject.Contains("trash"));
+        await shell.OpenSearchHitAsync(trashHit.Id);
+        await shell.MoveSelectedToTrashAsync();
+
+        Assert.AreEqual("unique", shell.SearchQuery);
+        Assert.HasCount(1, shell.Messages);
+        Assert.AreEqual("keep unique", shell.Messages[0].Subject);
+        Assert.AreEqual(shell.Messages[0].Id, shell.SelectedMessageId);
+        Assert.IsTrue(await shell.UndoLastTrashAsync());
+        Assert.AreEqual("unique", shell.SearchQuery);
+        Assert.IsTrue(shell.Messages.Any(message => message.Subject.Contains("trash")));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_ShowOutbox_is_not_a_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.ShowOutboxAsync(account.Id);
+
+        Assert.IsTrue(shell.ShowingOutbox);
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.IsNull(shell.SelectedMailboxId);
+        Assert.IsEmpty(shell.Threads);
+        Assert.AreEqual(0, shell.OutboxCounts[account.Id]);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_BuildNavItems_nests_Mailboxes_and_Outbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+
+        var nav = shell.BuildNavItems();
+        Assert.AreEqual(ShellNavKind.Favorites, nav[0].Kind);
+        Assert.AreEqual(ShellNavKind.UnifiedInbox, nav[1].Kind);
+        Assert.AreEqual(account.Id, nav[2].AccountId);
+        Assert.IsTrue(nav[2].Children.Any(child => child.Kind == ShellNavKind.Mailbox && child.Role == MailboxRole.Inbox));
+        Assert.IsTrue(nav[2].Children.Any(child => child.Kind == ShellNavKind.Outbox));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_BuildNavItems_nests_IMAP_child_Mailboxes()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Work", "INBOX/Work", null));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        var accountNav = shell.BuildNavItems().Single(item => item.AccountId == account.Id);
+        var inbox = accountNav.Children.Single(child => child.Role == MailboxRole.Inbox);
+        Assert.AreEqual("Work", inbox.Children.Single(child => child.Kind == ShellNavKind.Mailbox).Title);
+        Assert.IsTrue(accountNav.Children.Any(child => child.Kind == ShellNavKind.Outbox));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_restores_list_sort_and_last_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        var sent = shell.Mailboxes.Single(mailbox => mailbox.Role == MailboxRole.Sent);
+        await shell.SelectMailboxAsync(sent.Id);
+        shell.ListNewestFirst = false;
+        await shell.PersistListSortAsync();
+
+        var restored = new BrowseShell(app);
+        await restored.LoadAccountsAsync();
+        await restored.RestoreBrowseAsync();
+
+        Assert.IsFalse(restored.ListNewestFirst);
+        Assert.AreEqual(ThreadListSort.Oldest, restored.ListSort);
+        Assert.IsFalse(restored.ShowingUnifiedInbox);
+        Assert.AreEqual(account.Id, restored.SelectedAccountId);
+        Assert.AreEqual(sent.Id, restored.SelectedMailboxId);
+
+        shell.ListSort = ThreadListSort.From;
+        await shell.PersistListSortAsync();
+        var fromSort = new BrowseShell(app);
+        await fromSort.LoadAccountsAsync();
+        await fromSort.RestoreBrowseAsync();
+        Assert.AreEqual(ThreadListSort.From, fromSort.ListSort);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_restores_Outbox_nav()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.ShowOutboxAsync(account.Id);
+
+        var restored = new BrowseShell(app);
+        await restored.LoadAccountsAsync();
+        await restored.RestoreBrowseAsync();
+
+        Assert.IsTrue(restored.ShowingOutbox);
+        Assert.AreEqual(account.Id, restored.SelectedAccountId);
+        Assert.IsFalse(restored.ShowingUnifiedInbox);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_SelectMailbox_first_visit_does_not_auto_select_a_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "hi"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+
+        Assert.IsNull(shell.SelectedThreadId);
+        Assert.HasCount(1, shell.Threads);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_restores_last_Thread_when_returning_to_a_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "in-1",
+                Subject: "Keep me",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "keep")
+            {
+                InternetMessageId = "<keep@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "in-2",
+                Subject: "Other",
+                FromAddress: "carol@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "other")
+            {
+                InternetMessageId = "<other@example.com>",
+            });
+        fixture.Imap.SeedMessages(
+            "Sent",
+            new RemoteMessage(
+                RemoteId: "s-1",
+                Subject: "Sent",
+                FromAddress: "alice@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 12, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "sent")
+            {
+                InternetMessageId = "<sent@example.com>",
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var sent = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Sent);
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        var kept = shell.Threads.Single(thread => thread.Latest.Subject == "Keep me");
+        await shell.SelectThreadAsync(kept.Latest.Id);
+        Assert.AreEqual(kept.Latest.Id, shell.SelectedThreadId);
+
+        await shell.SelectMailboxAsync(sent.Id);
+        Assert.AreNotEqual(kept.Latest.Id, shell.SelectedThreadId);
+
+        await shell.SelectMailboxAsync(inbox.Id);
+        Assert.AreEqual(kept.Latest.Id, shell.SelectedThreadId);
+        Assert.AreEqual("Keep me", shell.Conversation.Single(card => card.IsSelected).Message.Subject);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_RestoreBrowse_restores_last_Thread_in_the_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Keep me",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "keep"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+        var kept = shell.SelectedThreadId;
+
+        var restored = new BrowseShell(app);
+        await restored.LoadAccountsAsync();
+        await restored.RestoreBrowseAsync();
+
+        Assert.AreEqual(inbox.Id, restored.SelectedMailboxId);
+        Assert.AreEqual(kept, restored.SelectedThreadId);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_RevealInMailbox_does_not_open_a_different_remembered_Thread()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "older",
+                Subject: "Older",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "old")
+            {
+                InternetMessageId = "<older@example.com>",
+            },
+            new RemoteMessage(
+                RemoteId: "newer",
+                Subject: "Newer",
+                FromAddress: "carol@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 11, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "new")
+            {
+                InternetMessageId = "<newer@example.com>",
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        var older = shell.Threads.Single(thread => thread.Latest.Subject == "Older");
+        await shell.SelectThreadAsync(older.Latest.Id);
+        await shell.MarkSelectedUnreadAsync();
+
+        await shell.ShowUnifiedInboxAsync();
+        var newer = shell.Threads.Single(thread => thread.Latest.Subject == "Newer");
+        await shell.SelectThreadAsync(newer.Latest.Id);
+        await shell.RevealInMailboxAsync();
+
+        Assert.AreEqual(inbox.Id, shell.SelectedMailboxId);
+        Assert.AreEqual(newer.Latest.Id, shell.SelectedThreadId);
+        var olderAfter = (await app.ListMessagesAsync(account.Id, inbox.Id))
+            .Single(message => message.Subject == "Older");
+        Assert.IsFalse(olderAfter.IsRead);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToMailbox_selects_the_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var sent = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Sent);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.ShowUnifiedInboxAsync();
+        await shell.GoToMailboxAsync(sent.Id);
+
+        Assert.AreEqual(sent.Id, shell.SelectedMailboxId);
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToMailbox_same_Mailbox_keeps_search()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "hi"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("Hello");
+        Assert.AreEqual("Hello", shell.SearchQuery);
+
+        await shell.GoToMailboxAsync(inbox.Id);
+        Assert.AreEqual("Hello", shell.SearchQuery);
+        Assert.AreEqual(inbox.Id, shell.SelectedMailboxId);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToInbox_opens_the_Account_Inbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var sent = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Sent);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(sent.Id);
+        await shell.GoToInboxAsync();
+
+        Assert.AreEqual(inbox.Id, shell.SelectedMailboxId);
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+        Assert.IsFalse(shell.ShowingOutbox);
+        Assert.IsTrue(shell.IsOnAccountInbox());
+        await shell.SelectMailboxAsync(sent.Id);
+        Assert.IsFalse(shell.IsOnAccountInbox());
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToInbox_from_Unified_Inbox_stays_put()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.ShowUnifiedInboxAsync();
+        await shell.GoToInboxAsync();
+
+        Assert.IsTrue(shell.ShowingUnifiedInbox);
+        await shell.GoToUnifiedInboxAsync();
+        Assert.IsTrue(shell.ShowingUnifiedInbox);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToAccountIndex_opens_that_Account_Inbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        await using var app = await fixture.OpenAppAsync();
+        var personal = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var work = await app.AddManualAccountAsync(ValidDraft("Work", "work@example.com"));
+        await app.SyncNowAsync(personal.Id);
+        await app.SyncNowAsync(work.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        var personalIndex = -1;
+        var workIndex = -1;
+        for (var i = 0; i < shell.Accounts.Count; i++)
+        {
+            if (shell.Accounts[i].Id == personal.Id)
+            {
+                personalIndex = i;
+            }
+
+            if (shell.Accounts[i].Id == work.Id)
+            {
+                workIndex = i;
+            }
+        }
+
+        Assert.IsTrue(personalIndex >= 0);
+        Assert.IsTrue(workIndex >= 0);
+        await shell.ShowUnifiedInboxAsync();
+        await shell.GoToAccountIndexAsync(workIndex);
+
+        Assert.AreEqual(work.Id, shell.SelectedAccountId);
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+        Assert.IsTrue(shell.IsOnAccountInbox());
+        var workInbox = shell.SelectedMailboxId;
+        await shell.GoToAccountIndexAsync(workIndex);
+        Assert.AreEqual(workInbox, shell.SelectedMailboxId);
+        await shell.GoToAccountIndexAsync(personalIndex);
+        Assert.AreEqual(personal.Id, shell.SelectedAccountId);
+        Assert.IsTrue(shell.IsOnAccountInbox());
+        await shell.GoToAccountIndexAsync(9);
+        Assert.AreEqual(personal.Id, shell.SelectedAccountId);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToAccountOutbox_opens_the_current_Account_Outbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.GoToAccountOutboxAsync();
+
+        Assert.IsTrue(shell.ShowingOutbox);
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_ExportSelectedMessage_writes_eml()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello / world",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "hi"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SelectThreadAsync(shell.Threads[0].Latest.Id);
+
+        Assert.AreEqual("Hello _ world.eml", shell.SelectedMessageEmlFileName());
+        using var stream = new MemoryStream();
+        await shell.ExportSelectedMessageAsync(stream);
+        var raw = System.Text.Encoding.UTF8.GetString(stream.ToArray());
+        StringAssert.Contains(raw, "Hello / world");
+        StringAssert.Contains(raw, "bob@example.com");
+        StringAssert.Contains(raw, "hi");
+        var source = await shell.ReadSelectedMessageSourceAsync();
+        StringAssert.Contains(source, "Hello / world");
+        StringAssert.Contains(source, "bob@example.com");
+        StringAssert.Contains(source, "hi");
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_MaterializeMessageEml_writes_a_temp_eml()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello / world",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "hi"));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+
+        var shell = new BrowseShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        var message = shell.Threads[0].Latest;
+        var path = await shell.MaterializeMessageEmlAsync(message.AccountId, message.Id, message.Subject);
+
+        Assert.IsNotNull(path);
+        Assert.AreEqual("Hello _ world.eml", Path.GetFileName(path));
+        var raw = await File.ReadAllTextAsync(path);
+        StringAssert.Contains(raw, "Hello / world");
+        StringAssert.Contains(raw, "bob@example.com");
+        StringAssert.Contains(raw, "hi");
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_remembers_collapsed_nav_nodes()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        var accountNav = shell.BuildNavItems().Single(item => item.AccountId == account.Id);
+        Assert.IsTrue(accountNav.IsExpanded);
+        await shell.SetNavExpandedAsync(accountNav, false);
+
+        var rebuilt = shell.BuildNavItems().Single(item => item.AccountId == account.Id);
+        Assert.IsFalse(rebuilt.IsExpanded);
+        Assert.IsTrue(rebuilt.Children.All(child => child.IsExpanded));
+
+        var reloaded = new BrowseShell(app);
+        await reloaded.LoadAccountsAsync();
+        Assert.IsFalse(reloaded.BuildNavItems().Single(item => item.AccountId == account.Id).IsExpanded);
+
+        var restored = new BrowseShell(app);
+        await restored.LoadAccountsAsync();
+        await restored.RestoreBrowseAsync();
+        var restoredNav = restored.BuildNavItems().Single(item => item.AccountId == account.Id);
+        Assert.IsFalse(restoredNav.IsExpanded);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_pin_Favorite_Mailbox_appears_under_Favorites()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Work", "INBOX/Work", null));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var work = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Name == "Work");
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        Assert.IsEmpty(shell.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children);
+        await shell.PinFavoriteAsync(work.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        await shell.PinFavoriteAsync(inbox.Id);
+        Assert.AreEqual(inbox.Id, shell.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children[0].MailboxId);
+        Assert.AreEqual(work.Id, shell.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children[1].MailboxId);
+        await shell.UnpinFavoriteAsync(inbox.Id);
+
+        var reloaded = new BrowseShell(app);
+        await reloaded.LoadAccountsAsync();
+        Assert.IsTrue(reloaded.IsFavorite(work.Id));
+        Assert.AreEqual(
+            work.Id,
+            reloaded.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children.Single().MailboxId);
+
+        var nav = shell.BuildNavItems();
+        var favorites = nav.Single(item => item.Kind == ShellNavKind.Favorites);
+        Assert.AreEqual("Favorites", favorites.Title);
+        Assert.AreEqual(work.Id, favorites.Children.Single().MailboxId);
+        Assert.IsTrue(shell.IsFavorite(work.Id));
+
+        var restored = new BrowseShell(app);
+        await restored.LoadAccountsAsync();
+        await restored.RestoreBrowseAsync();
+        Assert.IsTrue(restored.IsFavorite(work.Id));
+        Assert.AreEqual(
+            work.Id,
+            restored.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children.Single().MailboxId);
+
+        await restored.UnpinFavoriteAsync(work.Id);
+        Assert.IsFalse(restored.IsFavorite(work.Id));
+        Assert.IsEmpty(restored.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_MoveFavorite_reorders_and_persists()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Work", "INBOX/Work", null),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var work = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Name == "Work");
+        var sent = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Sent);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.PinFavoriteAsync(work.Id);
+        await shell.PinFavoriteAsync(inbox.Id);
+        await shell.PinFavoriteAsync(sent.Id);
+        var before = shell.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children
+            .Select(item => item.MailboxId)
+            .ToList();
+        Assert.AreEqual(sent.Id, before[0]);
+        Assert.AreEqual(inbox.Id, before[1]);
+        Assert.AreEqual(work.Id, before[2]);
+        Assert.IsTrue(before.All(id => shell.BuildNavItems()
+            .Single(item => item.Kind == ShellNavKind.Favorites).Children
+            .Single(child => child.MailboxId == id).IsFavoritePin));
+
+        var dest = MailShellFormatting.FavoriteDestinationIndex(shell.FavoriteMailboxIds, sent.Id, false, work.Id);
+        Assert.AreEqual(1, dest);
+        await shell.MoveFavoriteAsync(sent.Id, dest!.Value);
+
+        var after = shell.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children
+            .Select(item => item.MailboxId)
+            .ToList();
+        CollectionAssert.AreEqual(new Guid?[] { inbox.Id, sent.Id, work.Id }, after);
+
+        var reloaded = new BrowseShell(app);
+        await reloaded.LoadAccountsAsync();
+        CollectionAssert.AreEqual(
+            new Guid?[] { inbox.Id, sent.Id, work.Id },
+            reloaded.BuildNavItems().Single(item => item.Kind == ShellNavKind.Favorites).Children
+                .Select(item => item.MailboxId)
+                .ToList());
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToSent_opens_the_Account_Sent_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent),
+            new RemoteMailbox("Drafts", "Drafts", MailboxRole.Drafts));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var sent = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Sent);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("Hello");
+        await shell.GoToMailboxRoleAsync(MailboxRole.Sent);
+
+        Assert.AreEqual(sent.Id, shell.SelectedMailboxId);
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+        Assert.IsFalse(shell.ShowingOutbox);
+        Assert.IsTrue(shell.IsOnAccountRole(MailboxRole.Sent));
+        Assert.AreEqual(string.Empty, shell.SearchQuery);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToArchive_opens_the_Account_Archive_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", MailboxRole.Archive));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Archive);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.GoToMailboxRoleAsync(MailboxRole.Archive);
+
+        Assert.AreEqual(archive.Id, shell.SelectedMailboxId);
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.IsTrue(shell.IsOnAccountRole(MailboxRole.Archive));
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToSent_same_Mailbox_keeps_search()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var sent = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Sent);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(sent.Id);
+        await shell.SearchAsync("Hello");
+        await shell.GoToMailboxRoleAsync(MailboxRole.Sent);
+
+        Assert.AreEqual("Hello", shell.SearchQuery);
+        Assert.AreEqual(sent.Id, shell.SelectedMailboxId);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToSent_from_Unified_Inbox_opens_Sent()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Sent", "Sent", MailboxRole.Sent));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var sent = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Sent);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.ShowUnifiedInboxAsync();
+        await shell.GoToMailboxRoleAsync(MailboxRole.Sent);
+
+        Assert.AreEqual(sent.Id, shell.SelectedMailboxId);
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.IsFalse(shell.ShowingUnifiedInbox);
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToSent_without_Sent_Mailbox_stays_put()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("Hello");
+        await shell.GoToMailboxRoleAsync(MailboxRole.Sent);
+
+        Assert.AreEqual(inbox.Id, shell.SelectedMailboxId);
+        Assert.AreEqual("Hello", shell.SearchQuery);
+        Assert.IsNull(shell.AccountMailbox(MailboxRole.Sent));
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToDrafts_opens_the_Account_Drafts_Mailbox()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Drafts", "Drafts", MailboxRole.Drafts));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var drafts = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Drafts);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.GoToMailboxRoleAsync(MailboxRole.Drafts);
+
+        Assert.AreEqual(drafts.Id, shell.SelectedMailboxId);
+        Assert.IsTrue(shell.IsOnAccountRole(MailboxRole.Drafts));
+        Assert.IsFalse(shell.IsOnAccountInbox());
+    }
+
+    [TestMethod]
+    public async Task BrowseShell_GoToTrash_and_Junk_open_those_Mailboxes()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Trash", "Trash", MailboxRole.Trash),
+            new RemoteMailbox("Junk", "Junk", MailboxRole.Junk));
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Inbox);
+        var trash = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Trash);
+        var junk = (await app.ListMailboxesAsync(account.Id)).Single(item => item.Role == MailboxRole.Junk);
+
+        var shell = new BrowseShell(app);
+        await shell.LoadAccountsAsync();
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SelectMailboxAsync(inbox.Id);
+        await shell.SearchAsync("Hello");
+        await shell.GoToMailboxRoleAsync(MailboxRole.Trash);
+        Assert.AreEqual(trash.Id, shell.SelectedMailboxId);
+        Assert.IsTrue(shell.IsOnAccountRole(MailboxRole.Trash));
+        await shell.SearchAsync("Hello");
+        await shell.GoToMailboxRoleAsync(MailboxRole.Trash);
+        Assert.AreEqual("Hello", shell.SearchQuery);
+        await shell.GoToMailboxRoleAsync(MailboxRole.Junk);
+        Assert.AreEqual(junk.Id, shell.SelectedMailboxId);
+        Assert.IsTrue(shell.IsOnAccountRole(MailboxRole.Junk));
+        Assert.AreEqual(string.Empty, shell.SearchQuery);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));

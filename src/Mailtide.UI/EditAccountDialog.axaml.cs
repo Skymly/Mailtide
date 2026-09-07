@@ -58,7 +58,7 @@ public partial class EditAccountDialog : UserControl
         PasswordFields.IsVisible = _mode is EditMode.Manual or EditMode.QqMail;
         QqSecretFields.IsVisible = _mode == EditMode.QqMail;
         ManualServerFields.IsVisible = _mode == EditMode.Manual;
-        SaveButton.IsVisible = _mode is EditMode.Manual or EditMode.QqMail;
+        SaveButton.IsVisible = true;
         ReauthorizeButton.IsVisible = _mode == EditMode.OAuth;
 
         AccountKindLabel.Text = _mode switch
@@ -72,6 +72,8 @@ public partial class EditAccountDialog : UserControl
             EditMode.QqMail => "QQ Mail",
             _ => "Manual IMAP/SMTP",
         };
+
+        SignatureBox.Text = _account.Signature ?? string.Empty;
 
         if (_mode == EditMode.OAuth)
         {
@@ -99,21 +101,27 @@ public partial class EditAccountDialog : UserControl
         SaveButton.IsEnabled = false;
         try
         {
-            UpdatedAccount = _mode switch
+            if (_mode == EditMode.QqMail)
             {
-                EditMode.QqMail => await _browse
+                await _browse
                     .UpdateQqMailAccountAsync(
                         _account.Id,
                         new QqMailAccountDraft(
                             DisplayNameOr(_account.DisplayName),
                             EmailBox.Text?.Trim() ?? string.Empty,
                             QqAuthCodeBox.Text ?? string.Empty))
-                    .ConfigureAwait(true),
-                EditMode.Manual => await _browse
+                    .ConfigureAwait(true);
+            }
+            else if (_mode == EditMode.Manual)
+            {
+                await _browse
                     .UpdateManualAccountAsync(_account.Id, BuildManualDraft())
-                    .ConfigureAwait(true),
-                _ => throw new InvalidOperationException("Save is not available for this Account."),
-            };
+                    .ConfigureAwait(true);
+            }
+
+            UpdatedAccount = await _browse
+                .SetAccountSignatureAsync(_account.Id, SignatureBox.Text)
+                .ConfigureAwait(true);
             _completion.TrySetResult(true);
         }
         catch (Exception ex)

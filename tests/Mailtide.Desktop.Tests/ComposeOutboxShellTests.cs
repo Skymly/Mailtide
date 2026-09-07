@@ -140,6 +140,7 @@ public sealed class ComposeOutboxShellTests
         Assert.HasCount(1, shell.OutboxItems);
         Assert.AreEqual(OutboxItemState.Queued, shell.OutboxItems[0].State);
         Assert.AreEqual("Hello", shell.OutboxItems[0].Subject);
+        CollectionAssert.AreEqual(new[] { "bob@example.com" }, shell.OutboxItems[0].ToAddresses.ToArray());
         Assert.IsNull(shell.OutboxItems[0].ErrorMessage);
     }
 
@@ -354,6 +355,78 @@ public sealed class ComposeOutboxShellTests
         Assert.IsEmpty(draft.ToAddresses);
         Assert.HasCount(1, shell.Drafts);
         Assert.AreEqual(draft.Id, shell.Drafts[0].Id);
+        Assert.IsEmpty(shell.DraftAttachments);
+    }
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_StartEditAsNew_copies_recipients_and_keeps_subject()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: true,
+                BodyText: "hi")
+            {
+                ToAddresses = ["alice@example.com"],
+                CcAddresses = ["carol@example.com"],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var message = (await app.ListUnifiedInboxAsync()).Single();
+
+        var shell = new ComposeOutboxShell(app);
+        var draft = await shell.StartEditAsNewAsync(message.AccountId, message.Id);
+
+        Assert.AreEqual(account.Id, shell.SelectedAccountId);
+        Assert.AreEqual("Hello", draft.Subject);
+        CollectionAssert.AreEqual(new[] { "alice@example.com" }, draft.ToAddresses.ToArray());
+        CollectionAssert.AreEqual(new[] { "carol@example.com" }, draft.CcAddresses.ToArray());
+        Assert.AreEqual("hi", draft.BodyText);
+        Assert.IsNull(draft.InReplyTo);
+        Assert.AreEqual(draft.Id, shell.SelectedDraftId);
+    }
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_StartForward_copies_Message_attachments()
+    {
+        using var fixture = new DesktopAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "m-1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "hi")
+            {
+                Attachments =
+                [
+                    new RemoteAttachment(
+                        FileName: "notes.txt",
+                        ContentType: "text/plain",
+                        Content: "hello"u8.ToArray()),
+                ],
+            });
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        await app.SyncNowAsync(account.Id);
+        var message = (await app.ListUnifiedInboxAsync()).Single();
+
+        var shell = new ComposeOutboxShell(app);
+        var draft = await shell.StartForwardAsync(message.AccountId, message.Id);
+
+        Assert.AreEqual(draft.Id, shell.SelectedDraftId);
+        Assert.HasCount(1, shell.DraftAttachments);
+        Assert.AreEqual("notes.txt", shell.DraftAttachments.Single().FileName);
     }
     [TestMethod]
     public async Task ComposeOutboxShell_StartReplyAll_drops_self_and_keeps_other_recipients()
@@ -412,6 +485,26 @@ public sealed class ComposeOutboxShellTests
     }
 
     [TestMethod]
+    public async Task ComposeOutboxShell_SaveDraft_keeps_quoted_display_name_with_comma()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+
+        await shell.SaveDraftAsync(
+            toAddresses: "\"Smith, Alice\" <alice@example.com>; bob@example.com",
+            subject: "Hello",
+            bodyText: "Body");
+
+        Assert.HasCount(2, shell.Drafts[0].ToAddresses);
+        StringAssert.Contains(shell.Drafts[0].ToAddresses[0], "alice@example.com");
+        StringAssert.Contains(shell.Drafts[0].ToAddresses[0], "Smith");
+        Assert.AreEqual("bob@example.com", shell.Drafts[0].ToAddresses[1]);
+    }
+
+    [TestMethod]
     public async Task ComposeOutboxShell_add_and_remove_Draft_attachments()
     {
         using var fixture = new DesktopAppFixture();
@@ -424,6 +517,22 @@ public sealed class ComposeOutboxShellTests
         Assert.AreEqual("notes.txt", shell.DraftAttachments.Single().FileName);
         await shell.RemoveDraftAttachmentAsync(shell.DraftAttachments.Single().Id);
         Assert.IsEmpty(shell.DraftAttachments);
+    }
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_can_attach_multiple_files()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.SelectAccountAsync(account.Id);
+        await shell.SaveDraftAsync("bob@example.com", "Hello", "Body");
+        await shell.AddDraftAttachmentAsync("a.txt", "text/plain", "one"u8.ToArray());
+        await shell.AddDraftAttachmentAsync("b.txt", "text/plain", "two"u8.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "a.txt", "b.txt" },
+            shell.DraftAttachments.Select(item => item.FileName).ToArray());
     }
 
     [TestMethod]
@@ -449,6 +558,33 @@ public sealed class ComposeOutboxShellTests
         await shell.SaveDraftAsync("bob@example.com", "Hello", "Body", ccAddresses: "", bccAddresses: "hidden@example.com");
         CollectionAssert.AreEqual(new[] { "hidden@example.com" }, shell.Drafts[0].BccAddresses.ToArray());
     }
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_remembers_last_From_Account()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        await shell.RememberLastFromAsync(account.Id);
+
+        var restored = new ComposeOutboxShell(app);
+        Assert.AreEqual(account.Id, await restored.GetLastFromAsync());
+    }
+
+    [TestMethod]
+    public async Task ComposeOutboxShell_remembers_showing_CcBcc()
+    {
+        using var fixture = new DesktopAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
+        var shell = new ComposeOutboxShell(app);
+        Assert.IsFalse(await shell.GetShowCcBccAsync());
+        await shell.RememberShowCcBccAsync(true);
+        var restored = new ComposeOutboxShell(app);
+        Assert.IsTrue(await restored.GetShowCcBccAsync());
+    }
+
     private static ManualAccountDraft ValidDraft(string displayName, string email) =>
         new(
             DisplayName: displayName,

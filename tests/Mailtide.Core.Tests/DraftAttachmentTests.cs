@@ -30,6 +30,26 @@ public sealed class DraftAttachmentTests
     }
 
     [TestMethod]
+    public async Task AddDraftAttachment_infers_ContentType_from_file_name()
+    {
+        using var fixture = new CoreAppFixture();
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft());
+        var draft = await app.SaveDraftAsync(
+            account.Id,
+            new DraftContent(["bob@example.com"], "Hello", "Body"));
+
+        var added = await app.AddDraftAttachmentAsync(
+            account.Id,
+            draft.Id,
+            "photo.PNG",
+            "application/octet-stream",
+            [1, 2, 3]);
+        Assert.AreEqual("image/png", added.ContentType);
+        Assert.AreEqual("image/png", (await app.ListDraftAttachmentsAsync(account.Id, draft.Id)).Single().ContentType);
+    }
+
+    [TestMethod]
     public async Task DiscardDraft_removes_attachments()
     {
         using var fixture = new CoreAppFixture();
