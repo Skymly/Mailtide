@@ -1844,7 +1844,8 @@ public static class MailShellFormatting
     public static string UniqueFileName(string? fileName, Func<string, bool> exists)
     {
         ArgumentNullException.ThrowIfNull(exists);
-        var name = Path.GetFileName(string.IsNullOrWhiteSpace(fileName) ? "attachment" : fileName);
+        var raw = string.IsNullOrWhiteSpace(fileName) ? "attachment" : fileName.Trim();
+        var name = Path.GetFileName(raw.Replace('\\', '/'));
         if (name.Length == 0 || name is "." or "..")
         {
             name = "attachment";

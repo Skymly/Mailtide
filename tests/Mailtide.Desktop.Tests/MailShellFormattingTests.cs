@@ -773,6 +773,7 @@ public sealed class MailShellFormattingTests
         Assert.AreEqual("notes (1).txt", MailShellFormatting.UniqueFileName("notes.txt", used.Contains));
         Assert.AreEqual("photo.png", MailShellFormatting.UniqueFileName("photo.png", used.Contains));
         Assert.AreEqual("secret.txt", MailShellFormatting.UniqueFileName(@"C:\Windows\secret.txt", used.Contains));
+        Assert.AreEqual("secret.txt", MailShellFormatting.UniqueFileName("/home/secret.txt", used.Contains));
         Assert.AreEqual("attachment", MailShellFormatting.UniqueFileName("..", used.Contains));
     }
 
