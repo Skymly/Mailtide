@@ -18,6 +18,7 @@ public class MailtideAndroidApplication : AvaloniaAndroidApplication<App>
     {
         HostBootstrap.OpenCoreAsync = ct => AndroidComposition.OpenCoreAsync(this, ct);
         HostBootstrap.OpenDownloadedAttachment = new AndroidOpenDownloadedAttachment(this);
+        HostBootstrap.OpenExternalUri = new AndroidOpenExternalUri(this);
         HostBootstrap.NotifyInboxArrival = new AndroidNotifyInboxArrival(this);
         base.OnCreate();
     }

@@ -66,6 +66,12 @@ public interface IImapClient : IAsyncDisposable
         string remoteId,
         CancellationToken cancellationToken = default);
 
+    Task<string> CopyAsync(
+        string sourceMailboxPath,
+        string destinationMailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default);
+
     Task<string> CreateMailboxAsync(
         string name,
         CancellationToken cancellationToken = default);
@@ -82,6 +88,11 @@ public interface IImapClient : IAsyncDisposable
     Task ExpungeAllAsync(
         string mailboxPath,
         CancellationToken cancellationToken = default);
+
+    Task ExpungeAsync(
+        string mailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record RemoteMessageSummary(
@@ -90,7 +101,10 @@ public sealed record RemoteMessageSummary(
     string Subject,
     string FromAddress,
     DateTimeOffset ReceivedAt,
-    bool IsFlagged = false);
+    bool IsFlagged = false)
+{
+    public long SizeBytes { get; init; }
+}
 
 public sealed record RemoteMailbox(
     string Name,
@@ -120,6 +134,10 @@ public sealed record RemoteMessage(
 
     public IReadOnlyList<string> CcAddresses { get; init; } = Array.Empty<string>();
 
+    public IReadOnlyList<string> BccAddresses { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> ReplyToAddresses { get; init; } = Array.Empty<string>();
+
     public string? BodyHtml { get; init; }
 
     public string? InternetMessageId { get; init; }
@@ -127,6 +145,8 @@ public sealed record RemoteMessage(
     public bool IsFlagged { get; init; }
 
     public IReadOnlyList<string> References { get; init; } = Array.Empty<string>();
+
+    public long SizeBytes { get; init; }
 
     public IReadOnlyList<RemoteAttachment> Attachments { get; init; } =
         Array.Empty<RemoteAttachment>();

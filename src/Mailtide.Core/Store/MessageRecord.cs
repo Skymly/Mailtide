@@ -28,7 +28,13 @@ internal sealed class MessageRecord
 
     public string CcAddresses { get; set; } = "[]";
 
+    public string BccAddresses { get; set; } = "[]";
+
+    public string ReplyToAddresses { get; set; } = "[]";
+
     public string? InternetMessageId { get; set; }
 
     public string ReferencesJson { get; set; } = "[]";
+
+    public long SizeBytes { get; set; }
 }

@@ -173,6 +173,12 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastMoveRemoteId { get; private set; }
 
+    public string? LastCopySourcePath { get; private set; }
+
+    public string? LastCopyDestinationPath { get; private set; }
+
+    public string? LastCopyRemoteId { get; private set; }
+
     public string? LastCreatedMailboxPath { get; set; }
 
     public string? LastRenamedMailboxPath { get; set; }
@@ -182,6 +188,8 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
     public string? LastDeletedMailboxPath { get; set; }
 
     public string? LastExpungeMailboxPath { get; private set; }
+
+    public string? LastExpungeRemoteId { get; private set; }
 
 
 
@@ -321,7 +329,10 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             }
 
             return Task.FromResult<IReadOnlyList<RemoteMessageSummary>>(
-                messages.Select(m => new RemoteMessageSummary(m.RemoteId, m.IsRead, m.Subject, m.FromAddress, m.ReceivedAt, m.IsFlagged)).ToList());
+                messages.Select(m => new RemoteMessageSummary(m.RemoteId, m.IsRead, m.Subject, m.FromAddress, m.ReceivedAt, m.IsFlagged)
+                {
+                    SizeBytes = m.SizeBytes,
+                }).ToList());
         }
 
         public Task<IReadOnlyList<RemoteMessage>> FetchMessagesAsync(
@@ -442,6 +453,46 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             return Task.FromResult(assigned);
         }
 
+        public Task<string> CopyAsync(
+            string sourceMailboxPath,
+            string destinationMailboxPath,
+            string remoteId,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            ThrowIfFailed();
+            _factory.LastCopySourcePath = sourceMailboxPath;
+            _factory.LastCopyDestinationPath = destinationMailboxPath;
+            _factory.LastCopyRemoteId = remoteId;
+            if (_factory._messagesByPath.TryGetValue(sourceMailboxPath, out var source))
+            {
+                var copied = source.Where(m => m.RemoteId == remoteId).ToList();
+                if (!_factory._messagesByPath.TryGetValue(destinationMailboxPath, out var dest))
+                {
+                    dest = [];
+                }
+
+                var used = dest.Select(m => m.RemoteId).ToHashSet(StringComparer.Ordinal);
+                var placed = new List<RemoteMessage>();
+                foreach (var message in copied)
+                {
+                    var destRemoteId = message.RemoteId;
+                    if (used.Contains(destRemoteId))
+                    {
+                        destRemoteId = message.RemoteId + "-copy";
+                    }
+
+                    used.Add(destRemoteId);
+                    placed.Add(message with { RemoteId = destRemoteId });
+                }
+
+                _factory._messagesByPath[destinationMailboxPath] = dest.Concat(placed).ToList();
+                return Task.FromResult(placed.FirstOrDefault()?.RemoteId ?? remoteId);
+            }
+
+            return Task.FromResult(remoteId);
+        }
+
         public Task<string> CreateMailboxAsync(
             string name,
             CancellationToken cancellationToken = default)
@@ -505,6 +556,25 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             ThrowIfFailed();
             _factory.LastExpungeMailboxPath = mailboxPath;
             _factory._messagesByPath[mailboxPath] = [];
+            return Task.CompletedTask;
+        }
+
+        public Task ExpungeAsync(
+            string mailboxPath,
+            string remoteId,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureAuthenticated();
+            ThrowIfFailed();
+            _factory.LastExpungeMailboxPath = mailboxPath;
+            _factory.LastExpungeRemoteId = remoteId;
+            if (_factory._messagesByPath.TryGetValue(mailboxPath, out var messages))
+            {
+                _factory._messagesByPath[mailboxPath] = messages
+                    .Where(m => m.RemoteId != remoteId)
+                    .ToList();
+            }
+
             return Task.CompletedTask;
         }
 

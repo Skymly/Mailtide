@@ -431,6 +431,12 @@ internal sealed record SeededImapMessage(
 
     public string? ReferencesHeader { get; init; }
 
+    public string? To { get; init; }
+
+    public string? Bcc { get; init; }
+
+    public string? ReplyTo { get; init; }
+
     private string ThreadHeaders
     {
         get
@@ -444,6 +450,21 @@ internal sealed record SeededImapMessage(
             if (!string.IsNullOrWhiteSpace(ReferencesHeader))
             {
                 sb.Append("References: ").Append(ReferencesHeader).Append("\r\n");
+            }
+
+            if (!string.IsNullOrWhiteSpace(To))
+            {
+                sb.Append("To: ").Append(To).Append("\r\n");
+            }
+
+            if (!string.IsNullOrWhiteSpace(Bcc))
+            {
+                sb.Append("Bcc: ").Append(Bcc).Append("\r\n");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ReplyTo))
+            {
+                sb.Append("Reply-To: ").Append(ReplyTo).Append("\r\n");
             }
 
             return sb.ToString();

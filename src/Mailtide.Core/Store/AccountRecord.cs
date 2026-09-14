@@ -27,4 +27,6 @@ internal sealed class AccountRecord
     public string? OAuthAuthority { get; set; }
 
     public string? OAuthClientId { get; set; }
+
+    public string? Signature { get; set; }
 }

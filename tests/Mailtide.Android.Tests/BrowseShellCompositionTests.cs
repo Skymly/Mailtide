@@ -142,6 +142,13 @@ internal sealed class FakeImapClient : IImapClient
         CancellationToken cancellationToken = default) =>
         Task.FromResult<string?>(null);
 
+    public Task<string> CopyAsync(
+        string sourceMailboxPath,
+        string destinationMailboxPath,
+        string remoteId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(remoteId);
+
     public Task<string> CreateMailboxAsync(
         string name,
         CancellationToken cancellationToken = default) =>
@@ -160,6 +167,12 @@ internal sealed class FakeImapClient : IImapClient
 
     public Task ExpungeAllAsync(
         string mailboxPath,
+        CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public Task ExpungeAsync(
+        string mailboxPath,
+        string remoteId,
         CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 

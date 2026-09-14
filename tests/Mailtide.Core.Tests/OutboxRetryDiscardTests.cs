@@ -60,6 +60,27 @@ public sealed class OutboxRetryDiscardTests
     }
 
     [TestMethod]
+    public async Task RetryFailedOutbox_requeues_all_failed_items()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Smtp.FailWith = new SmtpProtocolException("temporary");
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidAccountDraft());
+
+        var first = await app.SaveDraftAsync(account.Id, new DraftContent(["bob@example.com"], "One", "a"));
+        var second = await app.SaveDraftAsync(account.Id, new DraftContent(["carol@example.com"], "Two", "b"));
+        await app.SendAsync(account.Id, first.Id);
+        await app.SendAsync(account.Id, second.Id);
+        await app.SendNowAsync(account.Id);
+
+        Assert.HasCount(2, await app.ListOutboxAsync(account.Id));
+        Assert.AreEqual(2, await app.RetryFailedOutboxAsync(account.Id));
+        Assert.IsTrue((await app.ListOutboxAsync(account.Id)).All(item => item.State == OutboxItemState.Queued));
+        Assert.AreEqual(0, await app.RetryFailedOutboxAsync(account.Id));
+    }
+
+    [TestMethod]
     public async Task Discard_removes_Outbox_attachment_blobs()
     {
         using var fixture = new CoreAppFixture();

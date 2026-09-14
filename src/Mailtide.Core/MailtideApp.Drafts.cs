@@ -5,29 +5,86 @@ namespace Mailtide.Core;
 
 public sealed partial class MailtideApp
 {
-    public Task<DraftInfo> StartForwardAsync(
+    public async Task<DraftInfo> StartForwardAsync(
         Guid accountId,
         Guid messageId,
-        CancellationToken cancellationToken = default) =>
-        CreateOriginDraftAsync(
-            accountId,
-            messageId,
-            (_, message) => NewOriginDraft(
+        CancellationToken cancellationToken = default)
+    {
+        var draft = await CreateOriginDraftAsync(
                 accountId,
-                message,
-                to: [],
-                cc: [],
-                subject: ForwardSubject(message.Subject),
-                bodyText: FormatForwardedBody(
-                    message.FromAddress,
-                    message.ReceivedAt,
-                    message.Subject,
-                    message.BodyText)),
-            cancellationToken);
+                messageId,
+                (account, message) => NewOriginDraft(
+                    accountId,
+                    message,
+                    to: [],
+                    cc: [],
+                    subject: ForwardSubject(message.Subject),
+                    bodyText: MailSignature.Apply(
+                        FormatForwardedBody(
+                            message.FromAddress,
+                            message.ReceivedAt,
+                            message.Subject,
+                            PlainBody(message)),
+                        account.Signature,
+                        beforeQuoted: true)),
+                cancellationToken)
+            .ConfigureAwait(false);
+        await CopyMessageAttachmentsToDraftAsync(accountId, messageId, draft.Id, cancellationToken)
+            .ConfigureAwait(false);
+        return draft;
+    }
+
+    public async Task<DraftInfo> StartForwardAsAttachmentAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        var fileName = "message.eml";
+        var draft = await CreateOriginDraftAsync(
+                accountId,
+                messageId,
+                (account, message) =>
+                {
+                    fileName = MessageRfc822.FileName(message.Subject);
+                    return new DraftRecord
+                    {
+                        Id = Guid.NewGuid(),
+                        AccountId = accountId,
+                        ToAddresses = PackedStringList.Encode([]),
+                        Subject = ForwardSubject(message.Subject),
+                        BodyText = MailSignature.Apply(string.Empty, account.Signature),
+                        InReplyTo = null,
+                        ReferencesJson = "[]",
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                    };
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        using var stream = new MemoryStream();
+        await WriteMessageRfc822Async(accountId, messageId, stream, cancellationToken)
+            .ConfigureAwait(false);
+        await AddDraftAttachmentAsync(
+                accountId,
+                draft.Id,
+                fileName,
+                "message/rfc822",
+                stream.ToArray(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return draft;
+    }
 
     public Task<DraftInfo> StartReplyAllAsync(
         Guid accountId,
         Guid messageId,
+        CancellationToken cancellationToken = default) =>
+        StartReplyAllAsync(accountId, messageId, quoteBody: null, cancellationToken);
+
+    public Task<DraftInfo> StartReplyAllAsync(
+        Guid accountId,
+        Guid messageId,
+        string? quoteBody,
         CancellationToken cancellationToken = default) =>
         CreateOriginDraftAsync(
             accountId,
@@ -36,7 +93,7 @@ public sealed partial class MailtideApp
             {
                 var self = account.EmailAddress;
                 var to = DistinctAddresses(
-                    [message.FromAddress, ..PackedStringList.Decode(message.ToAddresses)],
+                    [..ReplyDestinations(account, message), ..PackedStringList.Decode(message.ToAddresses)],
                     except: [self]);
                 var cc = DistinctAddresses(
                     PackedStringList.Decode(message.CcAddresses),
@@ -47,7 +104,13 @@ public sealed partial class MailtideApp
                     to,
                     cc,
                     ReplySubject(message.Subject),
-                    QuoteForReply(message.FromAddress, message.ReceivedAt, message.BodyText));
+                    MailSignature.Apply(
+                        QuoteForReply(
+                            message.FromAddress,
+                            message.ReceivedAt,
+                            ReplyQuoteBody(message, quoteBody)),
+                        account.Signature,
+                        beforeQuoted: true));
             },
             cancellationToken);
 
@@ -55,17 +118,62 @@ public sealed partial class MailtideApp
         Guid accountId,
         Guid messageId,
         CancellationToken cancellationToken = default) =>
+        StartReplyAsync(accountId, messageId, quoteBody: null, cancellationToken);
+
+    public Task<DraftInfo> StartReplyAsync(
+        Guid accountId,
+        Guid messageId,
+        string? quoteBody,
+        CancellationToken cancellationToken = default) =>
         CreateOriginDraftAsync(
             accountId,
             messageId,
-            (_, message) => NewOriginDraft(
+            (account, message) => NewOriginDraft(
                 accountId,
                 message,
-                to: [message.FromAddress],
+                to: ReplyDestinations(account, message),
                 cc: [],
                 subject: ReplySubject(message.Subject),
-                bodyText: QuoteForReply(message.FromAddress, message.ReceivedAt, message.BodyText)),
+                bodyText: MailSignature.Apply(
+                    QuoteForReply(
+                        message.FromAddress,
+                        message.ReceivedAt,
+                        ReplyQuoteBody(message, quoteBody)),
+                    account.Signature,
+                    beforeQuoted: true)),
             cancellationToken);
+
+    private static string ReplyQuoteBody(MessageRecord message, string? quoteBody) =>
+        string.IsNullOrWhiteSpace(quoteBody) ? PlainBody(message) : quoteBody.Trim();
+
+    public async Task<DraftInfo> StartEditAsNewAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        var draft = await CreateOriginDraftAsync(
+                accountId,
+                messageId,
+                (_, message) => new DraftRecord
+                {
+                    Id = Guid.NewGuid(),
+                    AccountId = accountId,
+                    ToAddresses = message.ToAddresses,
+                    CcAddresses = message.CcAddresses,
+                    BccAddresses = message.BccAddresses,
+                    Subject = message.Subject,
+                    BodyText = PlainBody(message),
+                    BodyHtml = message.BodyHtml,
+                    InReplyTo = null,
+                    ReferencesJson = "[]",
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        await CopyMessageAttachmentsToDraftAsync(accountId, messageId, draft.Id, cancellationToken)
+            .ConfigureAwait(false);
+        return draft;
+    }
 
     public async Task<DraftInfo> SaveDraftAsync(
         Guid accountId,
@@ -212,6 +320,23 @@ public sealed partial class MailtideApp
             throw new InvalidOperationException($"Draft '{draftId}' was not found.");
         }
 
+        var to = PackedStringList.Decode(draft.ToAddresses);
+        var cc = PackedStringList.Decode(draft.CcAddresses);
+        var bcc = PackedStringList.Decode(draft.BccAddresses);
+        if (to.Count == 0 && cc.Count == 0 && bcc.Count == 0)
+        {
+            throw new InvalidOperationException("Add at least one recipient before sending.");
+        }
+
+        var invalid = MailAddresses.Invalid([..to, ..cc, ..bcc]);
+        if (invalid.Count > 0)
+        {
+            throw new InvalidOperationException(
+                invalid.Count == 1
+                    ? $"This address looks invalid: {invalid[0]}"
+                    : "These addresses look invalid: " + string.Join(", ", invalid));
+        }
+
         var now = DateTimeOffset.UtcNow;
         var outboxItemId = Guid.NewGuid();
         _db.OutboxItems.Add(new OutboxItemRecord
@@ -250,6 +375,58 @@ public sealed partial class MailtideApp
         _db.DraftAttachments.RemoveRange(draftAttachments);
         _db.Drafts.Remove(draft);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CopyMessageAttachmentsToDraftAsync(
+        Guid accountId,
+        Guid messageId,
+        Guid draftId,
+        CancellationToken cancellationToken)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var attachments = await _db.Attachments
+                .AsNoTracking()
+                .Where(a => a.AccountId == accountId && a.MessageId == messageId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (attachments.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var attachment in attachments)
+            {
+                var sourcePath = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
+                if (!File.Exists(sourcePath))
+                {
+                    continue;
+                }
+
+                var attachmentId = Guid.NewGuid();
+                var blobRelativePath = BlobRelativePath(accountId, attachmentId);
+                var blobPath = Path.Combine(_appDataDirectory, blobRelativePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(blobPath)!);
+                File.Copy(sourcePath, blobPath, overwrite: true);
+                _db.DraftAttachments.Add(
+                    new DraftAttachmentRecord
+                    {
+                        Id = attachmentId,
+                        AccountId = accountId,
+                        DraftId = draftId,
+                        FileName = attachment.FileName,
+                        ContentType = attachment.ContentType,
+                        BlobRelativePath = blobRelativePath,
+                    });
+            }
+
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
     }
 
     private async Task RequireAccountExistsAsync(Guid accountId, CancellationToken cancellationToken)

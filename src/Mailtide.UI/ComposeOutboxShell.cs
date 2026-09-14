@@ -15,6 +15,10 @@ public sealed class ComposeOutboxShell
         _app = app;
     }
 
+    public const string LastFromPreferenceKey = "compose.lastFrom";
+
+    public const string ShowCcBccPreferenceKey = "compose.showCcBcc";
+
     public Guid? SelectedAccountId { get; private set; }
 
     public Guid? SelectedDraftId { get; private set; }
@@ -25,6 +29,8 @@ public sealed class ComposeOutboxShell
 
     public IReadOnlyList<DraftAttachmentInfo> DraftAttachments { get; private set; } = [];
 
+    public IReadOnlyList<string> RecentAddresses { get; private set; } = [];
+
     public async Task SelectAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
         if (SelectedAccountId != accountId)
@@ -34,6 +40,24 @@ public sealed class ComposeOutboxShell
 
         SelectedAccountId = accountId;
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task RememberLastFromAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+        _app.SetPreferenceAsync(LastFromPreferenceKey, accountId.ToString("D"), cancellationToken);
+
+    public async Task<Guid?> GetLastFromAsync(CancellationToken cancellationToken = default)
+    {
+        var raw = await _app.GetPreferenceAsync(LastFromPreferenceKey, cancellationToken).ConfigureAwait(false);
+        return Guid.TryParse(raw, out var id) ? id : null;
+    }
+
+    public Task RememberShowCcBccAsync(bool visible, CancellationToken cancellationToken = default) =>
+        _app.SetPreferenceAsync(ShowCcBccPreferenceKey, visible ? "1" : "0", cancellationToken);
+
+    public async Task<bool> GetShowCcBccAsync(CancellationToken cancellationToken = default)
+    {
+        var raw = await _app.GetPreferenceAsync(ShowCcBccPreferenceKey, cancellationToken).ConfigureAwait(false);
+        return raw == "1";
     }
 
     public void ClearSelection()
@@ -50,6 +74,13 @@ public sealed class ComposeOutboxShell
         _ = RequireSelectedAccount();
         SelectedDraftId = null;
         DraftAttachments = [];
+    }
+
+    public async Task LoadRecentAddressesAsync(CancellationToken cancellationToken = default)
+    {
+        RecentAddresses = await _app
+            .ListRecentAddressesAsync(cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task SaveDraftAsync(
@@ -113,13 +144,14 @@ public sealed class ComposeOutboxShell
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
         return draft;
     }
-    public async Task<DraftInfo> StartReplyAllAsync(
+
+    public async Task<DraftInfo> StartForwardAsAttachmentAsync(
         Guid accountId,
         Guid messageId,
         CancellationToken cancellationToken = default)
     {
         var draft = await _app
-            .StartReplyAllAsync(accountId, messageId, cancellationToken)
+            .StartForwardAsAttachmentAsync(accountId, messageId, cancellationToken)
             .ConfigureAwait(false);
         SelectedAccountId = accountId;
         SelectedDraftId = draft.Id;
@@ -127,13 +159,55 @@ public sealed class ComposeOutboxShell
         return draft;
     }
 
+    public Task<DraftInfo> StartReplyAllAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default) =>
+        StartReplyAllAsync(accountId, messageId, quoteBody: null, cancellationToken);
+
+    public async Task<DraftInfo> StartReplyAllAsync(
+        Guid accountId,
+        Guid messageId,
+        string? quoteBody,
+        CancellationToken cancellationToken = default)
+    {
+        var draft = await _app
+            .StartReplyAllAsync(accountId, messageId, quoteBody, cancellationToken)
+            .ConfigureAwait(false);
+        SelectedAccountId = accountId;
+        SelectedDraftId = draft.Id;
+        await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
+        return draft;
+    }
+
+    public Task<DraftInfo> StartReplyAsync(
+        Guid accountId,
+        Guid messageId,
+        CancellationToken cancellationToken = default) =>
+        StartReplyAsync(accountId, messageId, quoteBody: null, cancellationToken);
+
     public async Task<DraftInfo> StartReplyAsync(
+        Guid accountId,
+        Guid messageId,
+        string? quoteBody,
+        CancellationToken cancellationToken = default)
+    {
+        var draft = await _app
+            .StartReplyAsync(accountId, messageId, quoteBody, cancellationToken)
+            .ConfigureAwait(false);
+        SelectedAccountId = accountId;
+        SelectedDraftId = draft.Id;
+        await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
+        return draft;
+    }
+
+    public async Task<DraftInfo> StartEditAsNewAsync(
         Guid accountId,
         Guid messageId,
         CancellationToken cancellationToken = default)
     {
         var draft = await _app
-            .StartReplyAsync(accountId, messageId, cancellationToken)
+            .StartEditAsNewAsync(accountId, messageId, cancellationToken)
             .ConfigureAwait(false);
         SelectedAccountId = accountId;
         SelectedDraftId = draft.Id;
@@ -225,6 +299,14 @@ public sealed class ComposeOutboxShell
         await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<int> RetryFailedOutboxAsync(CancellationToken cancellationToken = default)
+    {
+        var accountId = RequireSelectedAccount();
+        var count = await _app.RetryFailedOutboxAsync(accountId, cancellationToken).ConfigureAwait(false);
+        await RefreshListsAsync(accountId, cancellationToken).ConfigureAwait(false);
+        return count;
+    }
+
     public async Task DiscardOutboxItemAsync(Guid outboxItemId, CancellationToken cancellationToken = default)
     {
         var accountId = RequireSelectedAccount();
@@ -253,6 +335,5 @@ public sealed class ComposeOutboxShell
         ?? throw new InvalidOperationException("Select an Account before composing.");
 
     private static IReadOnlyList<string> ParseAddresses(string toAddresses) =>
-        toAddresses
-            .Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        MailAddresses.Parse(toAddresses);
 }

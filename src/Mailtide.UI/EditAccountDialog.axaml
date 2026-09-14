@@ -39,6 +39,12 @@
         </StackPanel>
       </StackPanel>
 
+      <TextBox Name="SignatureBox"
+               PlaceholderText="Signature"
+               AcceptsReturn="True"
+               TextWrapping="Wrap"
+               MinHeight="72" />
+
       <TextBlock Name="FormError" TextWrapping="Wrap" Opacity="0.85" Foreground="IndianRed" />
     </StackPanel>
   </DockPanel>

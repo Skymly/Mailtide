@@ -767,10 +767,12 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
+            var attachments = await AttachmentMessageIdsAsync(records, cancellationToken)
+                .ConfigureAwait(false);
             return records
                 .OrderByDescending(m => m.ReceivedAt)
                 .ThenBy(m => m.Subject)
-                .Select(ToMessageInfo)
+                .Select(record => ToMessageInfo(record, attachments))
                 .ToList();
         }
         finally
@@ -792,7 +794,9 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 .Where(m => m.AccountId == accountId && m.MailboxId == mailboxId)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
-            return ReplyThreadIndex.Group(records, ToMessageInfo);
+            var attachments = await AttachmentMessageIdsAsync(records, cancellationToken)
+                .ConfigureAwait(false);
+            return ReplyThreadIndex.Group(records, record => ToMessageInfo(record, attachments));
         }
         finally
         {
@@ -828,10 +832,12 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
+            var attachments = await AttachmentMessageIdsAsync(records, cancellationToken)
+                .ConfigureAwait(false);
             return records
                 .OrderByDescending(m => m.ReceivedAt)
                 .ThenBy(m => m.Subject)
-                .Select(ToMessageInfo)
+                .Select(record => ToMessageInfo(record, attachments))
                 .ToList();
         }
         finally
@@ -863,8 +869,9 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 .Where(m => inboxMailboxIds.Contains(m.MailboxId))
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
-
-            return ReplyThreadIndex.Group(records, ToMessageInfo);
+            var attachments = await AttachmentMessageIdsAsync(records, cancellationToken)
+                .ConfigureAwait(false);
+            return ReplyThreadIndex.Group(records, record => ToMessageInfo(record, attachments));
         }
         finally
         {
@@ -887,7 +894,18 @@ public sealed partial class MailtideApp : IAsyncDisposable
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            return record?.BodyText;
+            if (record is null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(record.BodyText))
+            {
+                return record.BodyText;
+            }
+
+            var stripped = HtmlText.Strip(record.BodyHtml);
+            return string.IsNullOrWhiteSpace(stripped) ? record.BodyText : stripped;
         }
         finally
         {
@@ -1157,6 +1175,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
         ArgumentNullException.ThrowIfNull(content);
+        contentType = AttachmentContentType.Resolve(fileName, contentType);
 
         await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -1603,6 +1622,34 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
+    public async Task<int> RetryFailedOutboxAsync(
+        Guid accountId,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        List<Guid> ids;
+        try
+        {
+            ids = await _db.OutboxItems
+                .AsNoTracking()
+                .Where(item => item.AccountId == accountId && item.State == OutboxItemState.Failed)
+                .Select(item => item.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+
+        foreach (var id in ids)
+        {
+            await RetryOutboxItemAsync(accountId, id, cancellationToken).ConfigureAwait(false);
+        }
+
+        return ids.Count;
+    }
+
     public async Task DiscardOutboxItemAsync(
         Guid accountId,
         Guid outboxItemId,
@@ -1789,22 +1836,25 @@ public sealed partial class MailtideApp : IAsyncDisposable
         string subject,
         string bodyText)
     {
-        var when = receivedAt.UtcDateTime.ToString(
+        var when = receivedAt.ToLocalTime().ToString(
             "yyyy-MM-dd HH:mm",
             System.Globalization.CultureInfo.InvariantCulture);
-        return $"\n---------- Forwarded Message ----------\nFrom: {fromAddress}\nDate: {when} UTC\nSubject: {subject}\n\n{bodyText}";
+        return $"\n---------- Forwarded Message ----------\nFrom: {fromAddress}\nDate: {when}\nSubject: {subject}\n\n{bodyText}";
     }
     private static IReadOnlyList<string> DistinctAddresses(
         IEnumerable<string> addresses,
         IEnumerable<string> except)
     {
         var skip = except
-            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .Select(MailboxKey)
+            .Where(key => key.Length > 0)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<string>();
         foreach (var address in addresses)
         {
-            if (string.IsNullOrWhiteSpace(address) || skip.Contains(address) || result.Contains(address, StringComparer.OrdinalIgnoreCase))
+            var key = MailboxKey(address);
+            if (key.Length == 0 || skip.Contains(key) || !seen.Add(key))
             {
                 continue;
             }
@@ -1814,20 +1864,65 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
         return result;
     }
+
+    private static IReadOnlyList<string> ReplyDestinations(AccountRecord account, MessageRecord message)
+    {
+        if (IsFromSelf(account, message))
+        {
+            var to = PackedStringList.Decode(message.ToAddresses);
+            var withoutSelf = DistinctAddresses(to, except: [account.EmailAddress]);
+            if (withoutSelf.Count > 0)
+            {
+                return withoutSelf;
+            }
+
+            if (to.Count > 0)
+            {
+                return to;
+            }
+
+            return DistinctAddresses(
+                PackedStringList.Decode(message.CcAddresses),
+                except: [account.EmailAddress]);
+        }
+
+        var replyTo = PackedStringList.Decode(message.ReplyToAddresses);
+        return replyTo.Count > 0 ? replyTo : [message.FromAddress];
+    }
+
+    private static bool IsFromSelf(AccountRecord account, MessageRecord message)
+    {
+        var self = MailboxKey(account.EmailAddress);
+        var from = MailboxKey(message.FromAddress);
+        return self.Length > 0 && from.Equals(self, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string MailboxKey(string? value) =>
+        MailAddresses.TryGetMailbox(value, out var address, out _) ? address : (value ?? string.Empty).Trim();
     private static string ReplySubject(string subject) =>
         subject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase)
             ? subject
             : "Re: " + subject;
 
+    private static string PlainBody(MessageRecord message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.BodyText))
+        {
+            return message.BodyText;
+        }
+
+        return HtmlText.Strip(message.BodyHtml);
+    }
+
     private static string QuoteForReply(string fromAddress, DateTimeOffset receivedAt, string bodyText)
     {
-        var when = receivedAt.UtcDateTime.ToString(
+        var when = receivedAt.ToLocalTime().ToString(
             "yyyy-MM-dd HH:mm",
             System.Globalization.CultureInfo.InvariantCulture);
         var quoted = string.Join(
             "\n",
             bodyText.ReplaceLineEndings("\n").Split('\n').Select(line => "> " + line));
-        return $"\nOn {when} UTC, {fromAddress} wrote:\n\n{quoted}";
+        return $"\nOn {when}, {fromAddress} wrote:\n\n{quoted}";
     }
 
     private static DraftInfo ToDraftInfo(DraftRecord record) =>
@@ -1853,7 +1948,10 @@ public sealed partial class MailtideApp : IAsyncDisposable
             record.State,
             record.Subject,
             record.ErrorMessage,
-            record.UpdatedAt);
+            record.UpdatedAt)
+        {
+            ToAddresses = PackedStringList.Decode(record.ToAddresses),
+        };
 
     private void RaiseInboxArrivals(IReadOnlyList<InboxArrival> arrivals)
     {
@@ -1880,6 +1978,32 @@ public sealed partial class MailtideApp : IAsyncDisposable
     private static string BlobRelativePath(Guid accountId, Guid attachmentId) =>
         Path.Combine("accounts", accountId.ToString("D"), "blobs", attachmentId.ToString("D"));
 
+    public async Task<AccountInfo?> SetAccountSignatureAsync(
+        Guid accountId,
+        string? signature,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var record = await _db.Accounts
+                .SingleOrDefaultAsync(a => a.Id == accountId, cancellationToken)
+                .ConfigureAwait(false);
+            if (record is null)
+            {
+                return null;
+            }
+
+            record.Signature = string.IsNullOrWhiteSpace(signature) ? null : signature.TrimEnd();
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return ToInfo(record);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
     private static AccountInfo ToInfo(AccountRecord record) =>
         new(
             record.Id,
@@ -1892,7 +2016,10 @@ public sealed partial class MailtideApp : IAsyncDisposable
             record.CredentialKind,
             record.CredentialHandle,
             record.OAuthProvider,
-            record.OAuthAuthority);
+            record.OAuthAuthority)
+        {
+            Signature = record.Signature,
+        };
 
     private static OAuthTokenMetadata RequireOAuthMetadata(AccountRecord account)
     {
@@ -1940,7 +2067,32 @@ public sealed partial class MailtideApp : IAsyncDisposable
         return accessToken;
     }
 
+    private async Task<HashSet<Guid>> AttachmentMessageIdsAsync(
+        IReadOnlyCollection<MessageRecord> records,
+        CancellationToken cancellationToken)
+    {
+        if (records.Count == 0)
+        {
+            return [];
+        }
+
+        var messageIds = records.Select(record => record.Id).ToList();
+        var matches = await _db.Attachments
+            .AsNoTracking()
+            .Where(attachment => messageIds.Contains(attachment.MessageId))
+            .Select(attachment => attachment.MessageId)
+            .Distinct()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return matches.ToHashSet();
+    }
+
     private static MessageInfo ToMessageInfo(MessageRecord record) =>
+        ToMessageInfo(record, attachmentMessageIds: null);
+
+    private static MessageInfo ToMessageInfo(
+        MessageRecord record,
+        HashSet<Guid>? attachmentMessageIds) =>
         new(
             record.Id,
             record.AccountId,
@@ -1952,9 +2104,17 @@ public sealed partial class MailtideApp : IAsyncDisposable
             record.IsRead,
             record.IsFlagged)
         {
-            Preview = MessagePreview.FromBodyText(record.BodyText),
+            Preview = MessagePreview.FromBodyText(
+                string.IsNullOrWhiteSpace(record.BodyText)
+                    ? HtmlText.Strip(record.BodyHtml)
+                    : record.BodyText),
             ToAddresses = PackedStringList.Decode(record.ToAddresses),
             CcAddresses = PackedStringList.Decode(record.CcAddresses),
+            BccAddresses = PackedStringList.Decode(record.BccAddresses),
+            ReplyToAddresses = PackedStringList.Decode(record.ReplyToAddresses),
+            HasAttachments = attachmentMessageIds?.Contains(record.Id) == true,
+            SizeBytes = record.SizeBytes,
+            InternetMessageId = record.InternetMessageId,
         };
 
 }

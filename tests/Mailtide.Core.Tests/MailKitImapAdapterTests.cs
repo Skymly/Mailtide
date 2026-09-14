@@ -51,6 +51,49 @@ public sealed class MailKitImapAdapterTests
     }
 
     [TestMethod]
+    public async Task Real_IMAP_adapter_keeps_display_names_on_From_and_To()
+    {
+        await using var server = LoopbackImapServer.Start(
+        [
+            new SeededMailbox(
+                Path: "INBOX",
+                Attributes: ["Inbox"],
+                Messages:
+                [
+                    new SeededImapMessage(
+                        Uid: 1,
+                        Subject: "Named",
+                        From: "Bob Example <bob@example.com>",
+                        InternalDate: new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero),
+                        IsRead: true,
+                        BodyText: "hi")
+                    {
+                        To = "Pat Person <pat@example.com>",
+                        Bcc = "Sam Secret <sam@example.com>",
+                    },
+                ]),
+        ]);
+
+        await using var client = new MailKitImapClientFactory().Create();
+        await client.ConnectAndAuthenticateAsync(
+            "127.0.0.1",
+            server.Port,
+            "alice@example.com",
+            "s3cret-password");
+
+        var messages = await client.FetchMessagesAsync("INBOX");
+        Assert.HasCount(1, messages);
+        StringAssert.Contains(messages[0].FromAddress, "bob@example.com");
+        StringAssert.Contains(messages[0].FromAddress, "Bob");
+        Assert.HasCount(1, messages[0].ToAddresses);
+        StringAssert.Contains(messages[0].ToAddresses[0], "pat@example.com");
+        StringAssert.Contains(messages[0].ToAddresses[0], "Pat");
+        Assert.HasCount(1, messages[0].BccAddresses);
+        StringAssert.Contains(messages[0].BccAddresses[0], "sam@example.com");
+        StringAssert.Contains(messages[0].BccAddresses[0], "Sam");
+    }
+
+    [TestMethod]
     public async Task Real_IMAP_adapter_stores_Seen_flag()
     {
         await using var server = LoopbackImapServer.Start(
