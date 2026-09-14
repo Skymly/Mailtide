@@ -23,11 +23,15 @@ public sealed class RestoreFromJunkTests
         var original = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
 
         await app.MoveToJunkAsync(account.Id, original.Id);
+        var junked = (await app.ListMessagesAsync(account.Id, junk.Id)).Single();
+        Assert.AreEqual("uid-1", fixture.Imap.LastMoveRemoteId);
+        Assert.AreNotEqual("uid-1", junked.RemoteId);
+
         await app.RestoreFromJunkAsync(account.Id, original.Id);
 
         Assert.AreEqual("Junk", fixture.Imap.LastMoveSourcePath);
         Assert.AreEqual("INBOX", fixture.Imap.LastMoveDestinationPath);
-        Assert.AreEqual("uid-1", fixture.Imap.LastMoveRemoteId);
+        Assert.AreEqual(junked.RemoteId, fixture.Imap.LastMoveRemoteId);
         Assert.IsEmpty(await app.ListMessagesAsync(account.Id, junk.Id));
         var restored = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
         Assert.AreEqual(original.Id, restored.Id);
