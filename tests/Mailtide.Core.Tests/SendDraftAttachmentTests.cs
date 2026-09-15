@@ -30,6 +30,28 @@ public sealed class SendDraftAttachmentTests
         Assert.AreEqual("text/plain", submitted.Attachments.Single().ContentType);
         CollectionAssert.AreEqual("hello"u8.ToArray(), submitted.Attachments.Single().Content);
         Assert.IsEmpty(await app.ListDraftAttachmentsAsync(account.Id, draft.Id));
+        Assert.IsFalse(
+            FolderContainsBytes(fixture.AppDataDirectory, "hello"u8.ToArray()),
+            "Sent Outbox attachment blobs must be deleted after SMTP accepts the Message.");
+    }
+
+    private static bool FolderContainsBytes(string root, byte[] payload)
+    {
+        if (!Directory.Exists(root))
+        {
+            return false;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            var bytes = File.ReadAllBytes(file);
+            if (bytes.AsSpan().SequenceEqual(payload))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static ManualAccountDraft ValidAccountDraft() =>

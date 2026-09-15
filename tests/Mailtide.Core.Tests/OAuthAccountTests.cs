@@ -99,6 +99,104 @@ public sealed class OAuthAccountTests
     }
 
     [TestMethod]
+    public async Task OAuth_refresh_persists_rotated_refresh_Credential()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.OAuth.AuthorizeResult = GoogleAuthorization("rotate@gmail.com", "original-refresh");
+        fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-1", "rotated-refresh");
+        fixture.OAuth.RejectStaleRefreshSecrets = true;
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddGoogleAccountAsync("Gmail");
+
+        await app.SyncNowAsync(account.Id);
+
+        Assert.AreEqual(
+            "rotated-refresh",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+        Assert.AreEqual("original-refresh", fixture.OAuth.LastRefreshRequest?.RefreshSecret);
+
+        fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-2", "rotated-again");
+        await app.SyncNowAsync(account.Id);
+
+        Assert.AreEqual("rotated-refresh", fixture.OAuth.LastRefreshRequest?.RefreshSecret);
+        Assert.AreEqual(
+            "rotated-again",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+        Assert.AreEqual(AccountSyncState.Idle, app.GetAccountStatus(account.Id).State);
+    }
+
+    [TestMethod]
+    public async Task Concurrent_OAuth_refresh_does_not_reuse_a_rotated_refresh_Credential()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "1",
+                Subject: "Hello",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 8, 10, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "body"));
+        fixture.OAuth.AuthorizeResult = GoogleAuthorization("race@gmail.com", "original-refresh");
+        fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-token", "rotated-refresh");
+        fixture.OAuth.RejectStaleRefreshSecrets = true;
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddGoogleAccountAsync("Gmail");
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+        var message = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+
+        fixture.OAuth.RefreshResult = new OAuthAccessTokenResult("access-next", "rotated-again");
+        var holdRefresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.OAuth.BlockRefreshUntil = holdRefresh;
+        var refreshCountAfterFirstSync = fixture.OAuth.RefreshCallCount;
+
+        var sync = app.SyncNowAsync(account.Id);
+        await WaitUntilAsync(() => fixture.OAuth.RefreshCallCount == refreshCountAfterFirstSync + 1);
+
+        var mark = app.MarkReadAsync(account.Id, message.Id);
+        await WaitUntilAsync(async () =>
+            (await app.ListMessagesAsync(account.Id, inbox.Id)).Single().IsRead);
+        Assert.AreEqual(
+            refreshCountAfterFirstSync + 1,
+            fixture.OAuth.RefreshCallCount,
+            "A second refresh must wait for the in-flight refresh to persist the rotated Credential.");
+
+        holdRefresh.SetResult();
+        await Task.WhenAll(sync, mark);
+
+        Assert.AreEqual(AccountSyncState.Idle, app.GetAccountStatus(account.Id).State);
+        Assert.AreEqual(
+            "rotated-again",
+            await fixture.SecureStorage.RetrieveSecretAsync(account.CredentialHandle));
+        Assert.IsTrue(fixture.OAuth.RefreshCallCount >= refreshCountAfterFirstSync + 2);
+    }
+
+    private static Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null) =>
+        WaitUntilAsync(() => Task.FromResult(condition()), timeout);
+
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await condition().ConfigureAwait(false))
+            {
+                return;
+            }
+
+            await Task.Delay(20).ConfigureAwait(false);
+        }
+
+        Assert.Fail("Timed out waiting for condition.");
+    }
+
+    [TestMethod]
     public async Task OAuth_refresh_failure_surfaces_as_Account_relogin_error_and_invalidates()
     {
         using var fixture = new CoreAppFixture();

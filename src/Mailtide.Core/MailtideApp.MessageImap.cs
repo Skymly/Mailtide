@@ -47,16 +47,25 @@ public sealed partial class MailtideApp
                 return;
             }
 
-            await UsingAuthenticatedImapAsync(
-                    prep.Endpoint,
-                    prep.Secret,
-                    client => client.MoveAsync(
-                        prep.SourcePath,
-                        prep.DestinationPath,
-                        prep.RemoteId,
-                        cancellationToken),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            string? destinationRemoteId = null;
+            if (!IsLocalMovedRemoteId(prep.RemoteId))
+            {
+                await UsingAuthenticatedImapAsync(
+                        prep.Endpoint,
+                        prep.Secret,
+                        async client =>
+                        {
+                            destinationRemoteId = await client
+                                .MoveAsync(
+                                    prep.SourcePath,
+                                    prep.DestinationPath,
+                                    prep.RemoteId,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -69,6 +78,14 @@ public sealed partial class MailtideApp
                 if (message is not null)
                 {
                     message.MailboxId = prep.DestinationMailboxId;
+                    message.RemoteId = await AssignDestinationRemoteIdAsync(
+                            accountId,
+                            message.Id,
+                            prep.DestinationMailboxId,
+                            destinationRemoteId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+
                     await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -596,12 +613,15 @@ public sealed partial class MailtideApp
                 _dbGate.Release();
             }
 
-            await UsingAuthenticatedImapAsync(
-                    endpoint,
-                    secret,
-                    client => client.ExpungeAsync(mailboxPath, remoteId, cancellationToken),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            if (!IsLocalMovedRemoteId(remoteId))
+            {
+                await UsingAuthenticatedImapAsync(
+                        endpoint,
+                        secret,
+                        client => client.ExpungeAsync(mailboxPath, remoteId, cancellationToken),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             await _dbGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -682,6 +702,11 @@ public sealed partial class MailtideApp
             var account = await RequireAccountAsync(accountId, cancellationToken).ConfigureAwait(false);
             applyLocal(message);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            if (IsLocalMovedRemoteId(message.RemoteId))
+            {
+                return;
+            }
 
             var (endpoint, secret) = await BindImapEndpointAsync(account, cancellationToken)
                 .ConfigureAwait(false);
@@ -794,5 +819,41 @@ public sealed partial class MailtideApp
         }
 
         return account;
+    }
+
+    private const string MovedRemoteIdPrefix = "moved:";
+
+    private static bool IsLocalMovedRemoteId(string remoteId) =>
+        remoteId.StartsWith(MovedRemoteIdPrefix, StringComparison.Ordinal);
+
+    private static string NewMovedRemoteId() =>
+        MovedRemoteIdPrefix + Guid.NewGuid().ToString("N");
+
+    private async Task<string> AssignDestinationRemoteIdAsync(
+        Guid accountId,
+        Guid messageId,
+        Guid destinationMailboxId,
+        string? reportedRemoteId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(reportedRemoteId)
+            && !IsLocalMovedRemoteId(reportedRemoteId))
+        {
+            var collision = await _db.Messages
+                .AsNoTracking()
+                .AnyAsync(
+                    m => m.AccountId == accountId
+                        && m.MailboxId == destinationMailboxId
+                        && m.RemoteId == reportedRemoteId
+                        && m.Id != messageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!collision)
+            {
+                return reportedRemoteId;
+            }
+        }
+
+        return NewMovedRemoteId();
     }
 }

@@ -23,11 +23,15 @@ public sealed class RestoreFromTrashTests
         var original = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
 
         await app.MoveToTrashAsync(account.Id, original.Id);
+        var trashed = (await app.ListMessagesAsync(account.Id, trash.Id)).Single();
+        Assert.AreEqual("uid-1", fixture.Imap.LastMoveRemoteId);
+        Assert.AreNotEqual("uid-1", trashed.RemoteId);
+
         await app.RestoreFromTrashAsync(account.Id, original.Id);
 
         Assert.AreEqual("Trash", fixture.Imap.LastMoveSourcePath);
         Assert.AreEqual("INBOX", fixture.Imap.LastMoveDestinationPath);
-        Assert.AreEqual("uid-1", fixture.Imap.LastMoveRemoteId);
+        Assert.AreEqual(trashed.RemoteId, fixture.Imap.LastMoveRemoteId);
         Assert.IsEmpty(await app.ListMessagesAsync(account.Id, trash.Id));
         var restored = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
         Assert.AreEqual(original.Id, restored.Id);

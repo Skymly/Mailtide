@@ -115,7 +115,10 @@ public sealed class AndroidOidcOAuthClient : IOAuthClient
                 throw new OAuthAuthenticationException("OAuth refresh did not return an access token.");
             }
 
-            return new OAuthAccessTokenResult(refreshed.AccessToken);
+            var rotatedRefresh = string.IsNullOrWhiteSpace(refreshed.RefreshToken)
+                ? null
+                : refreshed.RefreshToken;
+            return new OAuthAccessTokenResult(refreshed.AccessToken, rotatedRefresh);
         }
         catch (OAuthAuthenticationException)
         {

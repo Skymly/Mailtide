@@ -357,11 +357,16 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 .Where(o => o.AccountId == accountId)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var outboxAttachments = await _db.OutboxAttachments
+                .Where(a => a.AccountId == accountId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
             _db.Attachments.RemoveRange(attachments);
             _db.Messages.RemoveRange(messages);
             _db.Mailboxes.RemoveRange(mailboxes);
             _db.DraftAttachments.RemoveRange(draftAttachments);
             _db.Drafts.RemoveRange(drafts);
+            _db.OutboxAttachments.RemoveRange(outboxAttachments);
             _db.OutboxItems.RemoveRange(outboxItems);
 
             _db.Accounts.Remove(record);
@@ -1532,8 +1537,14 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
                         if (item is not null)
                         {
+                            var blobs = await DetachOutboxAttachmentsLockedAsync(
+                                    accountId,
+                                    item.Id,
+                                    CancellationToken.None)
+                                .ConfigureAwait(false);
                             _db.OutboxItems.Remove(item);
                             await _db.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
+                            TryDeleteFiles(blobs);
                         }
                     }
                     finally
@@ -1659,8 +1670,11 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 return;
             }
 
+            var blobs = await DetachOutboxAttachmentsLockedAsync(accountId, item.Id, cancellationToken)
+                .ConfigureAwait(false);
             _db.OutboxItems.Remove(item);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            TryDeleteFiles(blobs);
         }
         finally
         {
@@ -1681,6 +1695,42 @@ public sealed partial class MailtideApp : IAsyncDisposable
         {
             _dbGate.Release();
             _dbGate.Dispose();
+        }
+    }
+
+    private async Task<List<string>> DetachOutboxAttachmentsLockedAsync(
+        Guid accountId,
+        Guid outboxItemId,
+        CancellationToken cancellationToken)
+    {
+        var attachments = await _db.OutboxAttachments
+            .Where(a => a.AccountId == accountId && a.OutboxItemId == outboxItemId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var blobs = attachments
+            .Select(attachment => Path.Combine(_appDataDirectory, attachment.BlobRelativePath))
+            .ToList();
+        _db.OutboxAttachments.RemoveRange(attachments);
+        return blobs;
+    }
+
+    private static void TryDeleteFiles(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
     }
 
@@ -2024,15 +2074,12 @@ public sealed partial class MailtideApp : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(oauthMetadata);
 
         var accessToken = await _auth
-            .GetAccessTokenAsync(oauthMetadata, credentialSecret, cancellationToken)
+            .GetAccessTokenAsync(
+                oauthMetadata,
+                credentialHandle,
+                invalidateOnAuthFailure,
+                cancellationToken)
             .ConfigureAwait(false);
-
-        if (accessToken is null && invalidateOnAuthFailure)
-        {
-            await _auth
-                .InvalidateAsync(credentialHandle, cancellationToken)
-                .ConfigureAwait(false);
-        }
 
         return accessToken;
     }
