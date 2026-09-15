@@ -1537,13 +1537,14 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
                         if (item is not null)
                         {
-                            await DeleteOutboxAttachmentsLockedAsync(
+                            var blobs = await DetachOutboxAttachmentsLockedAsync(
                                     accountId,
                                     item.Id,
                                     CancellationToken.None)
                                 .ConfigureAwait(false);
                             _db.OutboxItems.Remove(item);
                             await _db.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
+                            TryDeleteFiles(blobs);
                         }
                     }
                     finally
@@ -1669,10 +1670,11 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 return;
             }
 
-            await DeleteOutboxAttachmentsLockedAsync(accountId, item.Id, cancellationToken)
+            var blobs = await DetachOutboxAttachmentsLockedAsync(accountId, item.Id, cancellationToken)
                 .ConfigureAwait(false);
             _db.OutboxItems.Remove(item);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            TryDeleteFiles(blobs);
         }
         finally
         {
@@ -1696,7 +1698,7 @@ public sealed partial class MailtideApp : IAsyncDisposable
         }
     }
 
-    private async Task DeleteOutboxAttachmentsLockedAsync(
+    private async Task<List<string>> DetachOutboxAttachmentsLockedAsync(
         Guid accountId,
         Guid outboxItemId,
         CancellationToken cancellationToken)
@@ -1705,16 +1707,31 @@ public sealed partial class MailtideApp : IAsyncDisposable
             .Where(a => a.AccountId == accountId && a.OutboxItemId == outboxItemId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        foreach (var attachment in attachments)
+        var blobs = attachments
+            .Select(attachment => Path.Combine(_appDataDirectory, attachment.BlobRelativePath))
+            .ToList();
+        _db.OutboxAttachments.RemoveRange(attachments);
+        return blobs;
+    }
+
+    private static void TryDeleteFiles(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
         {
-            var blobPath = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
-            if (File.Exists(blobPath))
+            try
             {
-                File.Delete(blobPath);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
             }
         }
-
-        _db.OutboxAttachments.RemoveRange(attachments);
     }
 
     private async Task FailQueuedOutboxItemsAsync(

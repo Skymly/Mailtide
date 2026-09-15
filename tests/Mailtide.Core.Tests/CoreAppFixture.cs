@@ -173,6 +173,10 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
 
     public string? LastMoveRemoteId { get; private set; }
 
+    public bool OmitMoveCopyUid { get; set; }
+
+    public string? MoveCopyUidOverride { get; set; }
+
     public string? LastCopySourcePath { get; private set; }
 
     public string? LastCopyDestinationPath { get; private set; }
@@ -450,7 +454,12 @@ internal sealed class FakeImapClientFactory : IImapClientFactory
             }
 
             _factory._messagesByPath[destinationMailboxPath] = dest.Concat(remapped).ToList();
-            return Task.FromResult(assigned);
+            if (_factory.OmitMoveCopyUid)
+            {
+                return Task.FromResult<string?>(null);
+            }
+
+            return Task.FromResult(_factory.MoveCopyUidOverride ?? assigned);
         }
 
         public Task<string> CopyAsync(

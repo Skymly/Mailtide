@@ -160,7 +160,8 @@ public sealed class OAuthAccountTests
         await WaitUntilAsync(() => fixture.OAuth.RefreshCallCount == refreshCountAfterFirstSync + 1);
 
         var mark = app.MarkReadAsync(account.Id, message.Id);
-        await Task.Delay(100);
+        await WaitUntilAsync(async () =>
+            (await app.ListMessagesAsync(account.Id, inbox.Id)).Single().IsRead);
         Assert.AreEqual(
             refreshCountAfterFirstSync + 1,
             fixture.OAuth.RefreshCallCount,
@@ -176,17 +177,20 @@ public sealed class OAuthAccountTests
         Assert.IsTrue(fixture.OAuth.RefreshCallCount >= refreshCountAfterFirstSync + 2);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
+    private static Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null) =>
+        WaitUntilAsync(() => Task.FromResult(condition()), timeout);
+
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
         while (DateTime.UtcNow < deadline)
         {
-            if (condition())
+            if (await condition().ConfigureAwait(false))
             {
                 return;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(20).ConfigureAwait(false);
         }
 
         Assert.Fail("Timed out waiting for condition.");

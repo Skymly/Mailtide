@@ -109,6 +109,93 @@ public sealed class MoveMessageTests
     }
 
     [TestMethod]
+    public async Task MoveMessage_without_COPYUID_uses_local_sentinel_and_skips_later_IMAP_flags()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.OmitMoveCopyUid = true;
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages("INBOX", Message("1", "From inbox"));
+        fixture.Imap.SeedMessages("Archive", Message("1", "Already archived"));
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft());
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Name == "Archive");
+        var original = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+
+        await app.MoveMessageAsync(account.Id, original.Id, archive.Id);
+
+        var moved = (await app.ListMessagesAsync(account.Id, archive.Id))
+            .Single(m => m.Subject == "From inbox");
+        Assert.IsTrue(
+            moved.RemoteId.StartsWith("moved:", StringComparison.Ordinal),
+            moved.RemoteId);
+        Assert.AreEqual("1", fixture.Imap.LastMoveRemoteId);
+
+        await app.MarkReadAsync(account.Id, moved.Id);
+
+        var reread = (await app.ListMessagesAsync(account.Id, archive.Id))
+            .Single(m => m.Id == moved.Id);
+        Assert.IsTrue(reread.IsRead);
+        Assert.IsNull(fixture.Imap.LastSetSeenRemoteId);
+    }
+
+    [TestMethod]
+    public async Task MoveMessage_without_COPYUID_does_not_keep_source_UID()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.OmitMoveCopyUid = true;
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages("INBOX", Message("1", "From inbox"));
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft());
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Name == "Archive");
+        var original = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+
+        await app.MoveMessageAsync(account.Id, original.Id, archive.Id);
+
+        var moved = (await app.ListMessagesAsync(account.Id, archive.Id)).Single();
+        Assert.AreNotEqual("1", moved.RemoteId);
+        Assert.IsTrue(moved.RemoteId.StartsWith("moved:", StringComparison.Ordinal), moved.RemoteId);
+    }
+
+    [TestMethod]
+    public async Task MoveMessage_when_COPYUID_collides_uses_local_sentinel()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.MoveCopyUidOverride = "1";
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox),
+            new RemoteMailbox("Archive", "Archive", Role: null));
+        fixture.Imap.SeedMessages("INBOX", Message("9", "From inbox"));
+        fixture.Imap.SeedMessages("Archive", Message("1", "Already archived"));
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft());
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Role == MailboxRole.Inbox);
+        var archive = (await app.ListMailboxesAsync(account.Id)).Single(m => m.Name == "Archive");
+        var original = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+
+        await app.MoveMessageAsync(account.Id, original.Id, archive.Id);
+
+        var archived = await app.ListMessagesAsync(account.Id, archive.Id);
+        Assert.HasCount(2, archived);
+        Assert.IsTrue(
+            archived.Single(m => m.Subject == "From inbox").RemoteId
+                .StartsWith("moved:", StringComparison.Ordinal));
+        Assert.AreEqual("1", archived.Single(m => m.Subject == "Already archived").RemoteId);
+    }
+
+    [TestMethod]
     public async Task MoveMessage_IMAP_failure_leaves_Message_in_place()
     {
         using var fixture = new CoreAppFixture();
