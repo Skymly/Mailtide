@@ -19,7 +19,7 @@ namespace Mailtide.Android;
 [IntentFilter(
     [Intent.ActionView],
     Categories = [Intent.CategoryDefault, Intent.CategoryBrowsable],
-    DataScheme = "mailtide",
+    DataScheme = "com.skymly.mailtide",
     DataHost = "oauth",
     DataPathPrefix = "/callback")]
 public class MainActivity : AvaloniaMainActivity
@@ -59,7 +59,7 @@ public class MainActivity : AvaloniaMainActivity
             return;
         }
 
-        if (!string.Equals(data.Scheme, "mailtide", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(data.Scheme, "com.skymly.mailtide", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

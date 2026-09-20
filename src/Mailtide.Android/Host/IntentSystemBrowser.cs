@@ -9,7 +9,7 @@ namespace Mailtide.Android.Host;
 /// </summary>
 public sealed class IntentSystemBrowser : IBrowser
 {
-    public const string RedirectUri = "mailtide://oauth/callback";
+    public const string RedirectUri = "com.skymly.mailtide://oauth/callback";
 
     private static TaskCompletionSource<string>? _pending;
 
