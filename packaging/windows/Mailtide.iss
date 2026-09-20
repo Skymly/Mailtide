@@ -20,7 +20,8 @@ AppId={{A7C3E8F1-9B2D-4E6A-8C1F-0D5B7A9E3F24}
 AppName=Mailtide
 AppVersion={#MyAppVersion}
 AppPublisher=Skymly
-DefaultDirName={localappdata}\Mailtide
+DefaultDirName={localappdata}\Mailtide\app
+UsePreviousAppDir=no
 DefaultGroupName=Mailtide
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -38,6 +39,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+[Dirs]
+Name: "{localappdata}\Mailtide"; Flags: uninsneveruninstall
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
