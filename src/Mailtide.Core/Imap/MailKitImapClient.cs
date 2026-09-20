@@ -503,7 +503,7 @@ internal sealed class MailKitImapClient : IImapClient
             }
 
             var created = await parent
-                .CreateAsync(name.Trim(), false, cancellationToken)
+                .CreateAsync(name.Trim(), true, cancellationToken)
                 .ConfigureAwait(false);
             if (created is null)
             {

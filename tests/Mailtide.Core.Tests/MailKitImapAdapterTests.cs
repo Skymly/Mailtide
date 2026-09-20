@@ -371,4 +371,31 @@ public sealed class MailKitImapAdapterTests
 
         await client.MoveAsync("INBOX", "Trash", "1");
     }
+
+    [TestMethod]
+    public async Task Real_IMAP_adapter_creates_a_selectable_message_folder()
+    {
+        await using var server = LoopbackImapServer.Start(
+        [
+            new SeededMailbox(
+                Path: "INBOX",
+                Attributes: ["Inbox"],
+                Messages: []),
+        ]);
+
+        await using var client = new MailKitImapClientFactory().Create();
+        await client.ConnectAndAuthenticateAsync(
+            "127.0.0.1",
+            server.Port,
+            "alice@example.com",
+            "s3cret-password");
+
+        var path = await client.CreateMailboxAsync("Projects");
+
+        Assert.AreEqual("Projects", path);
+        Assert.AreEqual("Projects", server.LastCreateArgument);
+        Assert.IsFalse(server.LastCreateArgument!.EndsWith('/'));
+        var listed = await client.ListMailboxesAsync();
+        Assert.IsTrue(listed.Any(m => m.Path == "Projects"));
+    }
 }
