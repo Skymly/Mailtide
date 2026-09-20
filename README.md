@@ -88,8 +88,8 @@ Useful targets:
 |--------|---------|
 | `Restore` / `Compile` / `Test` | Restore, build, and run managed test projects. Does not restore or build the Android host. Default target is `Test`. |
 | `CompileAndroid` | Restore and build the Android host (requires the Android workload) |
-| `PublishDesktopWindows` / `PackWindowsInstaller` | Windows self-contained publish + Inno Setup installer (Windows only) |
-| `PublishDesktopLinux` / `PackAppImage` | Linux self-contained publish + AppImage (Linux only) |
+| `PublishDesktopWindows` / `PackWindowsInstaller` | Windows trimmed self-contained publish + Inno Setup installer (Windows only) |
+| `PublishDesktopLinux` / `PackAppImage` | Linux trimmed self-contained publish + AppImage (Linux only) |
 | `PublishAndroidApk` | Sideload APK under `artifacts/release/` |
 | `Pack` / `Release` | Aggregate release artifacts / upload via `gh` |
 
