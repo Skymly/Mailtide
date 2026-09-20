@@ -35,6 +35,12 @@ internal sealed class DesktopOpenDownloadedAttachment : IOpenDownloadedAttachmen
         {
             Directory.CreateDirectory(_tempDirectory);
             var uniqueName = AttachmentTempFileNames.BuildUniqueFileName(fileName, contentType);
+            if (AttachmentTempFileNames.IsUnsafeToOpen(fileName)
+                || AttachmentTempFileNames.IsUnsafeToOpen(uniqueName))
+            {
+                throw new OpenAttachmentException("Could not open the attachment.");
+            }
+
             path = Path.Combine(_tempDirectory, uniqueName);
             await File.WriteAllBytesAsync(path, content.ToArray(), cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();

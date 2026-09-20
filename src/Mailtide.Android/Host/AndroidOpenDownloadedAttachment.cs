@@ -36,6 +36,12 @@ internal sealed class AndroidOpenDownloadedAttachment : IOpenDownloadedAttachmen
             }
 
             var uniqueName = AttachmentTempFileNames.BuildUniqueFileName(fileName, contentType);
+            if (AttachmentTempFileNames.IsUnsafeToOpen(fileName)
+                || AttachmentTempFileNames.IsUnsafeToOpen(uniqueName))
+            {
+                throw new OpenAttachmentException("Could not open the attachment.");
+            }
+
             file = new Java.IO.File(dir, uniqueName);
             await System.IO.File.WriteAllBytesAsync(file.AbsolutePath, content.ToArray(), cancellationToken)
                 .ConfigureAwait(false);
