@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Common.Tooling;
@@ -418,16 +419,37 @@ sealed class Build : NukeBuild
 
     AbsolutePath EnsureAppImageTool()
     {
+        const string url = "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage";
+        const string sha256 = "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0";
+
         var tools = ArtifactsDirectory / "tools";
         tools.CreateDirectory();
         var tool = tools / "appimagetool-x86_64.AppImage";
-        if (!tool.FileExists())
+        if (!tool.FileExists() || !FileHasSha256(tool, sha256))
         {
-            var url = "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage";
+            if (tool.FileExists())
+            {
+                tool.DeleteFile();
+            }
+
             HttpTasks.HttpDownloadFile(url, tool);
+            if (!FileHasSha256(tool, sha256))
+            {
+                tool.DeleteFile();
+                throw new InvalidOperationException(
+                    "Downloaded appimagetool 1.9.1 failed SHA-256 verification.");
+            }
+
             ProcessTasks.StartProcess("chmod", $"+x \"{tool}\"", logOutput: true).AssertZeroExitCode();
         }
 
         return tool;
+    }
+
+    static bool FileHasSha256(AbsolutePath path, string expectedHex)
+    {
+        using var stream = File.OpenRead(path);
+        var hash = SHA256.HashData(stream);
+        return string.Equals(Convert.ToHexString(hash), expectedHex, StringComparison.OrdinalIgnoreCase);
     }
 }
