@@ -88,7 +88,7 @@ internal sealed class MailKitImapClient : IImapClient
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    // Leave UidValidity at 0 when STATUS UIDVALIDITY is unavailable.
+                    // 0 stays unknown — not a confirmed epoch to persist or reuse mappings against.
                     _ = ex;
                 }
             }

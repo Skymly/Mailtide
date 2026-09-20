@@ -155,6 +155,7 @@ internal sealed class RemoteSnapshotSync
                     Name = entry.Mailbox.Name,
                     Path = entry.Mailbox.Path,
                     Role = entry.Mailbox.Role,
+                    // 0 means STATUS/SELECT did not report an epoch — not a real UIDVALIDITY.
                     UidValidity = entry.Mailbox.UidValidity,
                 };
                 _db.Mailboxes.Add(mailbox);
@@ -162,7 +163,11 @@ internal sealed class RemoteSnapshotSync
             }
             else
             {
-                if (UidValidityChanged(mailbox.UidValidity, entry.Mailbox.UidValidity))
+                var hasLocalMapping = existingMessages.Exists(m => m.MailboxId == mailbox.Id);
+                if (UidValidityChanged(
+                    mailbox.UidValidity,
+                    entry.Mailbox.UidValidity,
+                    hasLocalMapping))
                 {
                     InvalidateMailboxMessages(
                         mailbox.Id,
@@ -357,8 +362,21 @@ internal sealed class RemoteSnapshotSync
         existingMessages.RemoveAll(m => m.MailboxId == mailboxId);
     }
 
-    public static bool UidValidityChanged(uint stored, uint remote) =>
-        stored != 0 && remote != 0 && stored != remote;
+    public static bool UidValidityChanged(
+        uint stored,
+        uint remote,
+        bool hasLocalMapping = false)
+    {
+        if (remote == 0 || stored == 0)
+        {
+            // Unknown epoch is not a confirmed UIDVALIDITY. Reusing RemoteIds while
+            // STATUS fails (0, 0) or when 0 later becomes a real epoch would keep
+            // old bodies under new envelopes.
+            return hasLocalMapping;
+        }
+
+        return stored != remote;
+    }
 
     private static IReadOnlySet<string> KnownRemoteIds(
         IReadOnlyDictionary<string, KnownRemoteMailbox> known,
@@ -369,7 +387,10 @@ internal sealed class RemoteSnapshotSync
             return new HashSet<string>(StringComparer.Ordinal);
         }
 
-        if (UidValidityChanged(local.UidValidity, mailbox.UidValidity))
+        if (UidValidityChanged(
+            local.UidValidity,
+            mailbox.UidValidity,
+            local.RemoteIds.Count > 0))
         {
             return new HashSet<string>(StringComparer.Ordinal);
         }

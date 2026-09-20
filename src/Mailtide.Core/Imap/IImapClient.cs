@@ -111,7 +111,7 @@ public sealed record RemoteMailbox(
     string Path,
     MailboxRole? Role)
 {
-    public uint UidValidity { get; init; }
+    public uint UidValidity { get; init; } = 1;
 }
 
 public sealed record RemoteAttachment(
