@@ -9,6 +9,8 @@ namespace Mailtide.Core;
 /// </summary>
 internal sealed class ImapSessionPool : IAsyncDisposable
 {
+    internal static readonly TimeSpan DisposeGateTimeout = TimeSpan.FromSeconds(2);
+
     public enum Kind
     {
         Command = 0,
@@ -99,14 +101,18 @@ internal sealed class ImapSessionPool : IAsyncDisposable
     {
         foreach (var slot in _slots.Values)
         {
-            await slot.Gate.WaitAsync().ConfigureAwait(false);
+            var acquired = await slot.Gate.WaitAsync(DisposeGateTimeout).ConfigureAwait(false);
             try
             {
                 await DisposeClientAsync(slot).ConfigureAwait(false);
             }
             finally
             {
-                slot.Gate.Release();
+                if (acquired)
+                {
+                    slot.Gate.Release();
+                }
+
                 slot.Gate.Dispose();
             }
         }
