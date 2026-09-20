@@ -41,6 +41,20 @@ public sealed class NukeAndroidRestoreGuardTests
     }
 
     [TestMethod]
+    public void Agents_md_names_Test_gate_without_Android_workload()
+    {
+        var agents = File.ReadAllText(Path.Combine(FindRepoRoot(), "AGENTS.md"));
+
+        Assert.Contains(".\\build.ps1 Test", agents, StringComparison.Ordinal);
+        Assert.Contains("CompileAndroid", agents, StringComparison.Ordinal);
+        Assert.Contains("dotnet workload install android", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "when building the Android host or running the full Nuke `Test` / `Compile` pipeline",
+            agents,
+            StringComparison.Ordinal);
+    }
+
+    [TestMethod]
     public void Ci_test_job_does_not_install_Android_workload()
     {
         var ci = File.ReadAllText(Path.Combine(FindRepoRoot(), ".github", "workflows", "ci.yml"));
