@@ -245,7 +245,12 @@ public partial class App : Application
         _core.InboxMessageArrived -= OnInboxMessageArrived;
         HostBootstrap.SetAppForeground = null;
         HostBootstrap.InboxArrivalActivated = null;
-        _core.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        var disposing = _core.DisposeAsync().AsTask();
+        if (!disposing.Wait(TimeSpan.FromSeconds(3)))
+        {
+            // IMAP session dispose is bounded; do not freeze window close on IDLE/sync.
+        }
+
         _core = null;
     }
 }
