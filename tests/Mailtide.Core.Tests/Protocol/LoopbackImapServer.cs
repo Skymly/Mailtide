@@ -19,6 +19,8 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
     private readonly bool _rejectAuth;
     private readonly HashSet<(string Path, uint Uid)> _seen = new();
 
+    public string? LastCreateArgument { get; private set; }
+
     private LoopbackImapServer(
         TcpListener listener,
         IEnumerable<SeededMailbox> mailboxes,
@@ -184,6 +186,18 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
             {
                 await writer.WriteLineAsync("* NAMESPACE ((\"\" \"/\")) NIL NIL").ConfigureAwait(false);
                 await writer.WriteLineAsync($"{tag} OK NAMESPACE completed").ConfigureAwait(false);
+            }
+            else if (upper.StartsWith("CREATE", StringComparison.Ordinal))
+            {
+                var argument = command.Length > 6 ? command[6..].Trim() : string.Empty;
+                var name = Unquote(argument);
+                LastCreateArgument = name;
+                var path = name.TrimEnd('/');
+                IReadOnlyList<string> attrs = name.EndsWith('/')
+                    ? ["Noselect"]
+                    : [];
+                _mailboxes.Add(new SeededMailbox(path, attrs, []));
+                await writer.WriteLineAsync($"{tag} OK CREATE completed").ConfigureAwait(false);
             }
             else if (upper.StartsWith("LIST", StringComparison.Ordinal))
             {
