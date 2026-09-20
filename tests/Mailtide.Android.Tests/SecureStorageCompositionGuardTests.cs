@@ -39,6 +39,19 @@ public sealed class SecureStorageCompositionGuardTests
     }
 
     [TestMethod]
+    public void AndroidOidcOAuthClient_uses_Microsoft_consumer_discovery_issuer_alias()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(FindAndroidHostDirectory(), "AndroidOidcOAuthClient.cs"));
+        var strategy = File.ReadAllText(
+            Path.Combine(FindAndroidHostDirectory(), "MicrosoftConsumerAuthorityValidationStrategy.cs"));
+
+        Assert.Contains("MicrosoftConsumerAuthorityValidationStrategy", source, StringComparison.Ordinal);
+        Assert.Contains("MicrosoftConsumerMailPreset.DiscoveryIssuer", strategy, StringComparison.Ordinal);
+        Assert.Contains("MicrosoftConsumerMailPreset.Authority", strategy, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
     public void Android_csproj_uses_trimmed_Mono_AOT_path_not_PublishAot()
     {
         var csprojPath = Path.Combine(FindAndroidProjectDirectory(), "Mailtide.Android.csproj");

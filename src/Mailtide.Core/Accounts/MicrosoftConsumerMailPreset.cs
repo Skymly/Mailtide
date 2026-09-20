@@ -11,4 +11,7 @@ public static class MicrosoftConsumerMailPreset
     public const string SmtpHost = "smtp.office365.com";
     public const int SmtpPort = 587;
     public const string Authority = "https://login.microsoftonline.com/consumers";
+
+    public const string DiscoveryIssuer =
+        "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0";
 }
