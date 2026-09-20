@@ -16,9 +16,6 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Install Android workload
-        run: dotnet workload install android --skip-manifest-update
-
       - name: Test
         run: ./build.sh Test
 

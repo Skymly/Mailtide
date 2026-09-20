@@ -69,8 +69,6 @@ sealed class Build : NukeBuild
             {
                 DotNetRestore(s => s.SetProjectFile(project));
             }
-
-            RestoreAndroidHost();
         });
 
     Target Compile => _ => _
@@ -84,16 +82,13 @@ sealed class Build : NukeBuild
                     .SetConfiguration(Configuration)
                     .EnableNoRestore());
             }
-
-            BuildAndroidHost();
         });
 
     Target Test => _ => _
         .DependsOn(Compile)
         .Executes(() =>
         {
-            // Run net10.0 test projects explicitly. The Android host (net10.0-android) is
-            // compiled via Compile but is not itself a test assembly.
+            // Run net10.0 test projects explicitly. The Android host stays on CompileAndroid.
             foreach (var project in new[]
                      {
                          CoreTestsProject,
@@ -112,7 +107,11 @@ sealed class Build : NukeBuild
 
     Target CompileAndroid => _ => _
         .DependsOn(Restore)
-        .Executes(BuildAndroidHost);
+        .Executes(() =>
+        {
+            RestoreAndroidHost();
+            BuildAndroidHost();
+        });
 
     Target PublishDesktopWindows => _ => _
         .DependsOn(Restore)

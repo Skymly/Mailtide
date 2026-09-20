@@ -54,11 +54,13 @@ See [ADR-0001](docs/adr/0001-core-thin-hosts.md) (Core + thin hosts), [ADR-0002]
 ## Prerequisites
 
 - **.NET SDK** matching [`global.json`](global.json) (currently `10.0.302`, `rollForward: latestFeature`)
-- **Android workload** when building the Android host or running the full Nuke `Test` / `Compile` pipeline:
+- **Android workload** only when building the Android host (`CompileAndroid` / `PublishAndroidApk`):
 
   ```bash
   dotnet workload install android
   ```
+
+  Default `Restore` / `Compile` / `Test` and Desktop publish do not restore the Android host. If `CompileAndroid` then fails with `NETSDK1147` (`wasm-tools`), run `dotnet workload restore` so workloads match the SDK selected by `rollForward`.
 
 - **Linux Desktop credentials:** a working Freedesktop Secret Service (libsecret) for Credential storage
 - **Optional — OAuth Account types:** public OAuth client IDs (see [OAuth setup](#oauth-setup) below). QQ Mail and manual IMAP/SMTP do not need these.
@@ -84,8 +86,8 @@ Useful targets:
 
 | Target | Purpose |
 |--------|---------|
-| `Restore` / `Compile` / `Test` | Restore, build, run test projects (default target is `Test`) |
-| `CompileAndroid` | Build the Android host only |
+| `Restore` / `Compile` / `Test` | Restore, build, and run managed test projects. Does not restore or build the Android host. Default target is `Test`. |
+| `CompileAndroid` | Restore and build the Android host (requires the Android workload) |
 | `PublishDesktopWindows` / `PackWindowsInstaller` | Windows self-contained publish + Inno Setup installer (Windows only) |
 | `PublishDesktopLinux` / `PackAppImage` | Linux self-contained publish + AppImage (Linux only) |
 | `PublishAndroidApk` | Sideload APK under `artifacts/release/` |
