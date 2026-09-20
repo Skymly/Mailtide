@@ -58,10 +58,11 @@ public sealed class OAuthAccountTests
 
         Assert.AreEqual("Outlook", account.DisplayName);
         Assert.AreEqual("bob@outlook.com", account.EmailAddress);
-        Assert.AreEqual(MicrosoftConsumerMailPreset.ImapHost, account.ImapHost);
-        Assert.AreEqual(MicrosoftConsumerMailPreset.ImapPort, account.ImapPort);
-        Assert.AreEqual(MicrosoftConsumerMailPreset.SmtpHost, account.SmtpHost);
-        Assert.AreEqual(MicrosoftConsumerMailPreset.SmtpPort, account.SmtpPort);
+        Assert.AreEqual("outlook.office365.com", account.ImapHost);
+        Assert.AreEqual(993, account.ImapPort);
+        Assert.AreEqual("smtp-mail.outlook.com", account.SmtpHost);
+        Assert.AreEqual(587, account.SmtpPort);
+        Assert.AreNotEqual("smtp.office365.com", account.SmtpHost);
         Assert.AreEqual(CredentialKind.OAuth, account.CredentialKind);
         Assert.AreEqual(OAuthProvider.MicrosoftConsumer, account.OAuthProvider);
         Assert.AreEqual(MicrosoftConsumerMailPreset.Authority, account.OAuthAuthority);
