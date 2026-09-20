@@ -15,3 +15,9 @@ Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/doma
 ### Scratch
 
 Local agent trash can: `.scratch/` (gitignored). See `docs/agents/scratch.md`.
+
+### Build gate
+
+Default gate: `.\build.ps1 Test` (Linux: `./build.sh Test`). Restores, builds, and runs managed tests. Does not restore or build the Android host and does not need the Android workload.
+
+Android host: `.\build.ps1 CompileAndroid` after `dotnet workload install android`. That is the CI `android` job; the default `Test` target is not that job.
