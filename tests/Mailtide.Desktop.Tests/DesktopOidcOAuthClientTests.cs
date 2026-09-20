@@ -46,7 +46,7 @@ public sealed class DesktopOidcOAuthClientTests
     {
         var browser = new ScriptedBrowser();
         using var handler = new ScriptedOidcBackchannel(
-            issuer: "https://login.microsoftonline.com/consumers/v2.0",
+            issuer: "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
             authorizeEndpoint: "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize",
             tokenEndpoint: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
             email: "bob@outlook.com",
@@ -60,6 +60,7 @@ public sealed class DesktopOidcOAuthClientTests
         var result = await client.AuthorizeAsync(
             new OAuthAuthorizeRequest(OAuthProvider.MicrosoftConsumer));
 
+        Assert.IsTrue(browser.WasInvoked);
         Assert.AreEqual("bob@outlook.com", result.EmailAddress);
         Assert.AreEqual("ms-refresh-secret", result.RefreshSecret);
         Assert.AreEqual(OAuthProvider.MicrosoftConsumer, result.Metadata.Provider);
@@ -68,6 +69,33 @@ public sealed class DesktopOidcOAuthClientTests
         Assert.DoesNotContain("/organizations", result.Metadata.Authority, StringComparison.Ordinal);
         Assert.DoesNotContain("/common", result.Metadata.Authority, StringComparison.Ordinal);
         Assert.AreEqual("test-ms-client", result.Metadata.ClientId);
+    }
+
+    [TestMethod]
+    public async Task RefreshAsync_Microsoft_accepts_live_consumers_discovery_issuer()
+    {
+        using var handler = new ScriptedOidcBackchannel(
+            issuer: "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
+            authorizeEndpoint: "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize",
+            tokenEndpoint: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
+            email: "bob@outlook.com",
+            refreshToken: "ms-refresh-secret",
+            accessTokenOnRefresh: "ms-access-token");
+
+        var client = new DesktopOidcOAuthClient(
+            new DesktopOAuthOptions(GoogleClientId: "unused", MicrosoftClientId: "test-ms-client"),
+            new ScriptedBrowser(),
+            handler);
+
+        var result = await client.RefreshAsync(
+            new OAuthRefreshRequest(
+                "ms-refresh-secret",
+                new OAuthTokenMetadata(
+                    OAuthProvider.MicrosoftConsumer,
+                    MicrosoftConsumerMailPreset.Authority,
+                    "test-ms-client")));
+
+        Assert.AreEqual("ms-access-token", result.AccessToken);
     }
 
     [TestMethod]

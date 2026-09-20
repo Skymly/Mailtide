@@ -160,6 +160,12 @@ public sealed class DesktopOidcOAuthClient : IOAuthClient
         options.Policy.Discovery.AdditionalEndpointBaseAddresses.Add(
             "https://login.microsoftonline.com");
 
+        if (provider == OAuthProvider.MicrosoftConsumer)
+        {
+            options.Policy.Discovery.AuthorityValidationStrategy =
+                new MicrosoftConsumerAuthorityValidationStrategy();
+        }
+
         if (_backchannelHandler is not null)
         {
             // Test seam: scripted discovery/token HTTP uses unsigned JWTs.
