@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Mailtide.Core;
 
 namespace Mailtide.UI;
@@ -260,9 +261,24 @@ public static class HtmlRemoteContentPolicy
         return false;
     }
 
+    public static string StripDisallowedSubresources(string html)
+    {
+        ArgumentNullException.ThrowIfNull(html);
+        return SubresourceUrl.Replace(html, static match =>
+        {
+            var value = match.Groups[1].Value;
+            return IsAllowed(value) ? value : "about:blank";
+        });
+    }
+
+    private static readonly Regex SubresourceUrl = new(
+        """(?<=\b(?:src|href|srcset|poster)\s*=\s*["'])([^"']+)(?=["'])""",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     public static string WrapForOfflineRender(string html, bool showQuoted = false)
     {
         ArgumentNullException.ThrowIfNull(html);
+        html = StripDisallowedSubresources(html);
         var quoteChrome = HasQuotedHtml(html) ? QuotedHtmlChrome(showQuoted) : string.Empty;
         return
             "<!DOCTYPE html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\""

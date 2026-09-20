@@ -26,10 +26,13 @@ public sealed class HtmlRemoteContentPolicyTests
     [TestMethod]
     public void WrapForOfflineRender_injects_CSP_without_dropping_the_body()
     {
-        var wrapped = HtmlRemoteContentPolicy.WrapForOfflineRender("<p>Hello <img src=\"https://x/y.png\"></p>");
+        var wrapped = HtmlRemoteContentPolicy.WrapForOfflineRender(
+            "<p>Hello <img src=\"https://x/y.png\"><img src=\"data:image/png;base64,abc\"></p>");
         StringAssert.Contains(wrapped, HtmlRemoteContentPolicy.OfflineContentSecurityPolicy);
         StringAssert.Contains(wrapped, "<style>mark{background:#ffe08a;color:inherit}mark.mailtide-current{background:#ffb347}</style>");
-        StringAssert.Contains(wrapped, "<p>Hello <img src=\"https://x/y.png\"></p>");
+        StringAssert.Contains(wrapped, "<p>Hello");
+        Assert.DoesNotContain("https://x/y.png", wrapped, StringComparison.Ordinal);
+        StringAssert.Contains(wrapped, "data:image/png;base64,abc");
     }
 
     [TestMethod]
@@ -96,5 +99,31 @@ public sealed class HtmlRemoteContentPolicyTests
             "<p>Hello payload</p><blockquote>old</blockquote>",
             "payload"));
         Assert.IsFalse(HtmlRemoteContentPolicy.QuoteCollapsedHidesFind("<p>Hello</p>", "payload"));
+    }
+
+    [TestMethod]
+    public void MailShellView_wraps_HTML_through_offline_allow_list()
+    {
+        var root = FindRepoRoot();
+        var view = File.ReadAllText(Path.Combine(root, "src", "Mailtide.UI", "MailShellView.axaml.cs"));
+        Assert.Contains("HtmlRemoteContentPolicy.WrapForOfflineRender", view, StringComparison.Ordinal);
+        Assert.Contains("HtmlRemoteContentPolicy.IsAllowed", view, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Mailtide.slnx")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        Assert.Fail("Could not locate repo root from the test output directory.");
+        return null!;
     }
 }
