@@ -26,6 +26,22 @@ public static class AttachmentTempFileNames
         return $"{Guid.NewGuid():N}-{leaf}";
     }
 
+    public static bool IsUnsafeToOpen(string fileName)
+    {
+        var leaf = Path.GetFileName(fileName.Replace('\\', '/'));
+        var extension = Path.GetExtension(leaf);
+        return extension.Length > 0 && BlockedExtensions.Contains(extension);
+    }
+
+    private static readonly HashSet<string> BlockedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".apk", ".app", ".application", ".bat", ".cmd", ".com", ".command",
+        ".cpl", ".exe", ".gadget", ".hta", ".inf", ".jar", ".js", ".jse",
+        ".lnk", ".msc", ".msi", ".msp", ".pif", ".ps1", ".psd1", ".psm1",
+        ".reg", ".scf", ".scr", ".sh", ".vb", ".vbe", ".vbs", ".ws",
+        ".wsc", ".wsf", ".wsh",
+    };
+
     private static string ExtensionFor(string contentType, string originalName)
     {
         var fromName = Path.GetExtension(Path.GetFileName(originalName.Replace('\\', '/')));

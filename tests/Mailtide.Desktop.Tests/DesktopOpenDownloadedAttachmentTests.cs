@@ -92,6 +92,48 @@ public sealed class DesktopOpenDownloadedAttachmentTests
     }
 
     [TestMethod]
+    public void IsUnsafeToOpen_blocks_scripts_and_allows_documents()
+    {
+        Assert.IsTrue(AttachmentTempFileNames.IsUnsafeToOpen("payload.exe"));
+        Assert.IsTrue(AttachmentTempFileNames.IsUnsafeToOpen(@"C:\temp\note.PS1"));
+        Assert.IsTrue(AttachmentTempFileNames.IsUnsafeToOpen("run.sh"));
+        Assert.IsTrue(AttachmentTempFileNames.IsUnsafeToOpen("track.js"));
+        Assert.IsFalse(AttachmentTempFileNames.IsUnsafeToOpen("report.pdf"));
+        Assert.IsFalse(AttachmentTempFileNames.IsUnsafeToOpen("photo.png"));
+        Assert.IsFalse(AttachmentTempFileNames.IsUnsafeToOpen("notes.txt"));
+    }
+
+    [TestMethod]
+    public async Task OpenAsync_refuses_executable_extension_without_launching()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "MailtideTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        var launched = false;
+
+        try
+        {
+            var opener = new DesktopOpenDownloadedAttachment(
+                tempDirectory: tempRoot,
+                openPath: _ => launched = true,
+                scheduleCleanup: _ => Task.CompletedTask);
+
+            var ex = await Assert.ThrowsAsync<OpenAttachmentException>(
+                () => opener.OpenAsync("payload.exe", "application/octet-stream", "MZ"u8.ToArray()));
+
+            Assert.AreEqual("Could not open the attachment.", ex.Message);
+            Assert.IsFalse(launched);
+            Assert.IsFalse(Directory.EnumerateFiles(tempRoot).Any());
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
     public async Task OpenAsync_wraps_launch_failures_as_OpenAttachmentException()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "MailtideTests", Guid.NewGuid().ToString("N"));
