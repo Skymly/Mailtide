@@ -82,6 +82,30 @@ public sealed class ImapIdleTests
         await client.WaitForMailboxChangeAsync("INBOX", cts.Token);
     }
 
+    [TestMethod]
+    public async Task Real_IMAP_adapter_completes_when_IDLE_connection_drops()
+    {
+        await using var server = LoopbackImapServer.Start(
+        [
+            new SeededMailbox(
+                Path: "INBOX",
+                Attributes: ["Inbox"],
+                Messages: []),
+        ],
+            dropOnIdle: true);
+
+        await using var client = new MailKitImapClientFactory().Create();
+        await client.ConnectAndAuthenticateAsync(
+            "127.0.0.1",
+            server.Port,
+            "alice@example.com",
+            "s3cret-password");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsExactlyAsync<ImapProtocolException>(
+            () => client.WaitForMailboxChangeAsync("INBOX", cts.Token));
+    }
+
     private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));

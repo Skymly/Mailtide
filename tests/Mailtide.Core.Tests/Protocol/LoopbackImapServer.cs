@@ -17,6 +17,7 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
     private readonly string _username;
     private readonly string _password;
     private readonly bool _rejectAuth;
+    private readonly bool _dropOnIdle;
     private readonly HashSet<(string Path, uint Uid)> _seen = new();
 
     public string? LastCreateArgument { get; private set; }
@@ -26,13 +27,15 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
         IEnumerable<SeededMailbox> mailboxes,
         string username,
         string password,
-        bool rejectAuth)
+        bool rejectAuth,
+        bool dropOnIdle)
     {
         _listener = listener;
         _mailboxes = mailboxes.ToList();
         _username = username;
         _password = password;
         _rejectAuth = rejectAuth;
+        _dropOnIdle = dropOnIdle;
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_cts.Token);
     }
@@ -43,11 +46,12 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
         IEnumerable<SeededMailbox> mailboxes,
         string username = "alice@example.com",
         string password = "s3cret-password",
-        bool rejectAuth = false)
+        bool rejectAuth = false,
+        bool dropOnIdle = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
-        return new LoopbackImapServer(listener, mailboxes, username, password, rejectAuth);
+        return new LoopbackImapServer(listener, mailboxes, username, password, rejectAuth, dropOnIdle);
     }
 
     public async ValueTask DisposeAsync()
@@ -224,6 +228,11 @@ internal sealed class LoopbackImapServer : IAsyncDisposable
                 var mailbox = FindMailbox(selectedPath);
                 var count = mailbox?.Messages.Count ?? 0;
                 await writer.WriteLineAsync("+ idling").ConfigureAwait(false);
+                if (_dropOnIdle)
+                {
+                    return;
+                }
+
                 await writer.WriteLineAsync($"* {count + 1} EXISTS").ConfigureAwait(false);
                 while (true)
                 {

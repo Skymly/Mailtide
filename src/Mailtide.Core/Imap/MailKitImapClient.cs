@@ -663,7 +663,13 @@ internal sealed class MailKitImapClient : IImapClient
                 using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 using var registration = cancellationToken.Register(() => arrived.TrySetCanceled(cancellationToken));
                 var idle = client.IdleAsync(idleCts.Token);
-                await arrived.Task.ConfigureAwait(false);
+                var completed = await Task.WhenAny(arrived.Task, idle).ConfigureAwait(false);
+                if (completed == idle)
+                {
+                    await idle.ConfigureAwait(false);
+                    return;
+                }
+
                 await idleCts.CancelAsync().ConfigureAwait(false);
                 try
                 {
@@ -672,6 +678,8 @@ internal sealed class MailKitImapClient : IImapClient
                 catch (OperationCanceledException)
                 {
                 }
+
+                await arrived.Task.ConfigureAwait(false);
             }
             finally
             {
