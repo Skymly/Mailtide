@@ -62,6 +62,88 @@ public sealed class UidValidityTests
         Assert.AreEqual(1, created);
     }
 
+    [TestMethod]
+    public async Task Sync_unknown_UIDVALIDITY_does_not_keep_old_bodies_on_same_RemoteId()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox) { UidValidity = 0 });
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "1",
+                Subject: "First envelope",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "first body"));
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft());
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+        var original = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+        Assert.AreEqual("first body", await app.GetMessageBodyAsync(account.Id, original.Id));
+
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox) { UidValidity = 0 });
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "1",
+                Subject: "Rebuilt envelope",
+                FromAddress: "carol@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 8, 2, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "second body"));
+
+        await app.SyncNowAsync(account.Id);
+        var listed = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+        Assert.AreEqual("Rebuilt envelope", listed.Subject);
+        Assert.AreEqual("second body", await app.GetMessageBodyAsync(account.Id, listed.Id));
+    }
+
+    [TestMethod]
+    public async Task Sync_unknown_then_real_UIDVALIDITY_invalidates_local_mapping()
+    {
+        using var fixture = new CoreAppFixture();
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox) { UidValidity = 0 });
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "1",
+                Subject: "Unknown epoch",
+                FromAddress: "bob@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "old mapping"));
+
+        await using var app = await fixture.OpenAppAsync();
+        var account = await app.AddManualAccountAsync(ValidDraft());
+        await app.SyncNowAsync(account.Id);
+        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
+        var original = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+
+        fixture.Imap.SeedMailboxes(
+            new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox) { UidValidity = 7 });
+        fixture.Imap.SeedMessages(
+            "INBOX",
+            new RemoteMessage(
+                RemoteId: "1",
+                Subject: "New epoch",
+                FromAddress: "carol@example.com",
+                ReceivedAt: new DateTimeOffset(2026, 8, 2, 9, 0, 0, TimeSpan.Zero),
+                IsRead: false,
+                BodyText: "new mapping"));
+
+        await app.SyncNowAsync(account.Id);
+        var replaced = (await app.ListMessagesAsync(account.Id, inbox.Id)).Single();
+        Assert.AreEqual("New epoch", replaced.Subject);
+        Assert.AreNotEqual(original.Id, replaced.Id);
+        Assert.AreEqual("new mapping", await app.GetMessageBodyAsync(account.Id, replaced.Id));
+    }
+
     private static ManualAccountDraft ValidDraft() =>
         new(
             DisplayName: "Personal",
