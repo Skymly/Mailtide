@@ -33,6 +33,50 @@ internal static class MessageSearchIndex
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public static async Task UpdateEnvelopeAsync(
+        MailtideDbContext db,
+        Guid messageId,
+        string subject,
+        string fromAddress,
+        CancellationToken cancellationToken)
+    {
+        var id = messageId.ToString("D");
+        string? body = null;
+        string? html = null;
+        var found = false;
+        await using (var command = db.Database.GetDbConnection().CreateCommand())
+        {
+            command.CommandText = "SELECT BodyText, HtmlText FROM MessageFts WHERE MessageId = @id";
+            Add(command, "@id", id);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                found = true;
+                body = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+                html = reader.IsDBNull(1) ? null : reader.GetString(1);
+            }
+        }
+
+        if (!found)
+        {
+            return;
+        }
+
+        await DeleteAsync(db, messageId, cancellationToken).ConfigureAwait(false);
+        await using var insert = db.Database.GetDbConnection().CreateCommand();
+        insert.CommandText =
+            """
+            INSERT INTO MessageFts (MessageId, Subject, FromAddress, BodyText, HtmlText)
+            VALUES (@id, @subject, @from, @body, @html)
+            """;
+        Add(insert, "@id", id);
+        Add(insert, "@subject", subject);
+        Add(insert, "@from", fromAddress);
+        Add(insert, "@body", body ?? string.Empty);
+        Add(insert, "@html", html ?? string.Empty);
+        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public static async Task DeleteAsync(
         MailtideDbContext db,
         Guid messageId,
