@@ -11,6 +11,7 @@ Built with **.NET 10** and **Avalonia 12** (Fluent theme). Core mail logic stays
 People who keep several personal mail Accounts on one device and need mail to stay readable when the network drops. Mailtide is a local client (IMAP/SMTP), not a webmail wrapper and not an enterprise / Entra work-account product.
 
 **v1 platforms:** Windows · Linux (Ubuntu 24.04 x64 baseline) · Android  
+v1 Android uses the shared desktop/tablet-width shell. Phone / narrow-width folding is out of scope.  
 **Not in v1:** macOS · iOS · Microsoft Store / Play Store / Flatpak / deb as distribution channels
 
 ## Status
@@ -28,7 +29,8 @@ Build from source below when developing. Local `dotnet run` still needs OAuth en
 | Accounts | Google (OAuth), Microsoft consumer / Outlook.com (OAuth), QQ Mail (预设 + 授权码), manual IMAP/SMTP + password / app password |
 | Offline | Install-wide EF Core + SQLite store; attachment blobs on disk; read synced Messages without network |
 | Sync | In-process sync engine; per-Account parallel sync; drafts → Outbox → SMTP |
-| UI | Compact Fluent 3-pane daily shell (left Account/Mailbox tree, Thread list, reading/compose). Unified Inbox and per-Mailbox Threads, conversation reading pane, compose-in-pane with local Drafts, per-Account Outbox, HTML Message view, local search (`is:unread` / `is:flagged` + text), move a Message or Mailbox reply thread, Mailbox create/rename/delete. Outlook-style Ctrl+ shortcuts. |
+| UI | Compact Fluent 3-pane daily shell (left Account/Mailbox tree, Thread list, reading/compose), shared by Desktop and Android at desktop/tablet width. Unified Inbox and per-Mailbox Threads, conversation reading pane, compose-in-pane with local Drafts, per-Account Outbox, HTML Message view, local search, move a Message or Mailbox reply thread, Mailbox create/rename/delete. Outlook-style Ctrl+ shortcuts. |
+| Search | Local search in the current nav scope. Public operators: `is:unread`, `is:read`, `is:flagged`, `is:starred`, `is:failed`, `has:attachment` (also `has:attach`, `has:attachments`), `from:`, `to:`, `cc:`, `bcc:`, `subject:`, `filename:` / `file:`, `in:` / `label:`, `after:`, `before:`, `on:`, `older_than:`, `newer_than:`, `larger:` / `size:`, `smaller:`, `rfc822msgid:` / `msgid:`, plus text. `from:me`, `to:me`, `cc:me`, and `bcc:me` match the Account address. `is:` and `in:` accept Mailbox role words (`inbox`, `sent`, `draft` / `drafts`, `trash` / `bin` / `deleted`, `junk` / `spam`, `archive`) and `in:anywhere` / `in:all` / `in:any`. A leading `-` negates an operator. |
 | Security | Credentials only via OS-backed secure storage (Windows DPAPI, Linux libsecret, Android Keystore) — no plaintext fallback |
 | Updates | Desktop checks GitHub Releases (private repo: set `MAILTIDE_GITHUB_TOKEN`); Android updates by installing a newer APK from Releases |
 
