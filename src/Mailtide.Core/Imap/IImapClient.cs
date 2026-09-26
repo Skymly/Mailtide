@@ -120,6 +120,12 @@ public sealed record RemoteAttachment(
     byte[] Content)
 {
     public string? ContentId { get; init; }
+
+    internal Func<Stream, CancellationToken, Task>? WriteContentAsync { get; init; }
+
+    internal long? DeclaredDecodedBytes { get; init; }
+
+    internal bool ContentOmitted { get; init; }
 }
 
 public sealed record RemoteMessage(

@@ -1547,6 +1547,21 @@ public sealed class BrowseShell
         AttachmentOpenError = "Attachment is not available.";
     }
 
+
+    private const string OmittedAttachmentMessage =
+        "This attachment was omitted because it is over the size limit.";
+
+    private bool RejectOmittedAttachment(AttachmentInfo attachment)
+    {
+        if (!attachment.ContentOmitted)
+        {
+            return false;
+        }
+
+        AttachmentOpenError = OmittedAttachmentMessage;
+        return true;
+    }
+
     public async Task OpenAttachmentAsync(
         Guid attachmentId,
         CancellationToken cancellationToken = default)
@@ -1558,6 +1573,11 @@ public sealed class BrowseShell
         if (attachment is null)
         {
             AttachmentOpenError = "Attachment is not available.";
+            return;
+        }
+
+        if (RejectOmittedAttachment(attachment))
+        {
             return;
         }
 
@@ -1602,6 +1622,11 @@ public sealed class BrowseShell
             return;
         }
 
+        if (RejectOmittedAttachment(attachment))
+        {
+            return;
+        }
+
         var content = await _app
             .OpenAttachmentAsync(attachment.AccountId, attachmentId, cancellationToken)
             .ConfigureAwait(false);
@@ -1625,6 +1650,11 @@ public sealed class BrowseShell
         if (attachment is null)
         {
             AttachmentOpenError = "Attachment is not available.";
+            return null;
+        }
+
+        if (RejectOmittedAttachment(attachment))
+        {
             return null;
         }
 

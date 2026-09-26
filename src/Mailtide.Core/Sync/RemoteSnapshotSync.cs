@@ -238,24 +238,14 @@ internal sealed class RemoteSnapshotSync
 
                     foreach (var remoteAttachment in fetched.Attachments)
                     {
-                        var attachmentId = Guid.NewGuid();
-                        var blobRelativePath = BlobRelativePath(accountId, attachmentId);
-                        var blobAbsolutePath = Path.Combine(_appDataDirectory, blobRelativePath);
-                        Directory.CreateDirectory(Path.GetDirectoryName(blobAbsolutePath)!);
-                        await File
-                            .WriteAllBytesAsync(blobAbsolutePath, remoteAttachment.Content, cancellationToken)
-                            .ConfigureAwait(false);
-
-                        _db.Attachments.Add(new AttachmentRecord
-                        {
-                            Id = attachmentId,
-                            AccountId = accountId,
-                            MessageId = messageId,
-                            FileName = remoteAttachment.FileName,
-                            ContentType = remoteAttachment.ContentType,
-                            BlobRelativePath = blobRelativePath,
-                            ContentId = remoteAttachment.ContentId,
-                        });
+                        _db.Attachments.Add(await AttachmentBlob
+                            .StoreAsync(
+                                accountId,
+                                messageId,
+                                remoteAttachment,
+                                _appDataDirectory,
+                                cancellationToken)
+                            .ConfigureAwait(false));
                     }
                 }
                 else
@@ -398,6 +388,4 @@ internal sealed class RemoteSnapshotSync
         return local.RemoteIds;
     }
 
-    private static string BlobRelativePath(Guid accountId, Guid attachmentId) =>
-        Path.Combine("accounts", accountId.ToString("D"), "blobs", attachmentId.ToString("D"));
 }
