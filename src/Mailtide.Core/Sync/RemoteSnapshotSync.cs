@@ -120,7 +120,20 @@ internal sealed class RemoteSnapshotSync
         var mailboxByPath = existingMailboxes.ToDictionary(m => m.Path, StringComparer.Ordinal);
 
         var existingMessages = await _db.Messages
+            .AsNoTracking()
             .Where(m => m.AccountId == accountId)
+            .Select(m => new KnownMessageRow
+            {
+                Id = m.Id,
+                MailboxId = m.MailboxId,
+                RemoteId = m.RemoteId,
+                Subject = m.Subject,
+                FromAddress = m.FromAddress,
+                ReceivedAt = m.ReceivedAt,
+                IsRead = m.IsRead,
+                IsFlagged = m.IsFlagged,
+                SizeBytes = m.SizeBytes,
+            })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -143,6 +156,7 @@ internal sealed class RemoteSnapshotSync
         var seenMailboxIds = new HashSet<Guid>();
         var seenMessageIds = new HashSet<Guid>();
         var searchUpserts = new List<MessageRecord>();
+        var envelopeUpdates = new List<(Guid Id, string Subject, string FromAddress)>();
 
         foreach (var entry in snapshot)
         {
@@ -169,10 +183,12 @@ internal sealed class RemoteSnapshotSync
                     entry.Mailbox.UidValidity,
                     hasLocalMapping))
                 {
-                    InvalidateMailboxMessages(
-                        mailbox.Id,
-                        existingMessages,
-                        existingAttachments);
+                    await InvalidateMailboxMessagesAsync(
+                            mailbox.Id,
+                            existingMessages,
+                            existingAttachments,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 mailbox.Name = entry.Mailbox.Name;
@@ -192,7 +208,8 @@ internal sealed class RemoteSnapshotSync
             foreach (var summary in entry.Summaries)
             {
                 entry.FetchedByRemoteId.TryGetValue(summary.RemoteId, out var fetched);
-                if (!messagesByRemote.TryGetValue(summary.RemoteId, out var message))
+                Guid seenId;
+                if (!messagesByRemote.TryGetValue(summary.RemoteId, out var known))
                 {
                     if (fetched is null)
                     {
@@ -200,7 +217,7 @@ internal sealed class RemoteSnapshotSync
                     }
 
                     var messageId = Guid.NewGuid();
-                    message = new MessageRecord
+                    var inserted = new MessageRecord
                     {
                         Id = messageId,
                         AccountId = accountId,
@@ -221,18 +238,30 @@ internal sealed class RemoteSnapshotSync
                         ReplyToAddresses = PackedStringList.Encode(fetched.ReplyToAddresses),
                         SizeBytes = fetched.SizeBytes != 0 ? fetched.SizeBytes : summary.SizeBytes,
                     };
-                    _db.Messages.Add(message);
-                    existingMessages.Add(message);
+                    _db.Messages.Add(inserted);
+                    existingMessages.Add(new KnownMessageRow
+                    {
+                        Id = inserted.Id,
+                        MailboxId = inserted.MailboxId,
+                        RemoteId = inserted.RemoteId,
+                        Subject = inserted.Subject,
+                        FromAddress = inserted.FromAddress,
+                        ReceivedAt = inserted.ReceivedAt,
+                        IsRead = inserted.IsRead,
+                        IsFlagged = inserted.IsFlagged,
+                        SizeBytes = inserted.SizeBytes,
+                    });
+                    searchUpserts.Add(inserted);
                     if (mailbox.Role == MailboxRole.Inbox
                         && existingInboxMailboxIds.Contains(mailbox.Id)
                         && !summary.IsRead)
                     {
                         arrivals.Add(new InboxArrival(
-                            message.Id,
+                            inserted.Id,
                             accountId,
                             mailbox.Id,
-                            message.Subject,
-                            message.FromAddress,
+                            inserted.Subject,
+                            inserted.FromAddress,
                             accountDisplayName));
                     }
 
@@ -257,30 +286,75 @@ internal sealed class RemoteSnapshotSync
                             ContentId = remoteAttachment.ContentId,
                         });
                     }
+
+                    seenId = inserted.Id;
                 }
                 else
                 {
-                    message.IsRead = summary.IsRead;
-                    message.IsFlagged = summary.IsFlagged;
-                    message.Subject = summary.Subject;
-                    message.FromAddress = summary.FromAddress;
-                    message.ReceivedAt = summary.ReceivedAt;
-                    message.SizeBytes = fetched is { SizeBytes: not 0 } ? fetched.SizeBytes : summary.SizeBytes;
-                    if (fetched is not null)
+                    var sizeBytes = fetched is { SizeBytes: not 0 } ? fetched.SizeBytes : summary.SizeBytes;
+                    var envelopeChanged = !string.Equals(known.Subject, summary.Subject, StringComparison.Ordinal)
+                        || !string.Equals(known.FromAddress, summary.FromAddress, StringComparison.Ordinal);
+                    if (fetched is null)
                     {
-                        message.BodyText = fetched.BodyText;
-                        message.BodyHtml = fetched.BodyHtml;
-                        message.InternetMessageId = fetched.InternetMessageId;
-                        message.ReferencesJson = PackedStringList.Encode(fetched.References);
-                        message.ToAddresses = PackedStringList.Encode(fetched.ToAddresses);
-                        message.CcAddresses = PackedStringList.Encode(fetched.CcAddresses);
-                        message.BccAddresses = PackedStringList.Encode(fetched.BccAddresses);
-                        message.ReplyToAddresses = PackedStringList.Encode(fetched.ReplyToAddresses);
+                        await _db.Messages
+                            .Where(m => m.Id == known.Id)
+                            .ExecuteUpdateAsync(
+                                setters => setters
+                                    .SetProperty(m => m.IsRead, summary.IsRead)
+                                    .SetProperty(m => m.IsFlagged, summary.IsFlagged)
+                                    .SetProperty(m => m.Subject, summary.Subject)
+                                    .SetProperty(m => m.FromAddress, summary.FromAddress)
+                                    .SetProperty(m => m.ReceivedAt, summary.ReceivedAt)
+                                    .SetProperty(m => m.SizeBytes, sizeBytes),
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        if (envelopeChanged)
+                        {
+                            envelopeUpdates.Add((known.Id, summary.Subject, summary.FromAddress));
+                        }
                     }
+                    else
+                    {
+                        await _db.Messages
+                            .Where(m => m.Id == known.Id)
+                            .ExecuteUpdateAsync(
+                                setters => setters
+                                    .SetProperty(m => m.IsRead, summary.IsRead)
+                                    .SetProperty(m => m.IsFlagged, summary.IsFlagged)
+                                    .SetProperty(m => m.Subject, summary.Subject)
+                                    .SetProperty(m => m.FromAddress, summary.FromAddress)
+                                    .SetProperty(m => m.ReceivedAt, summary.ReceivedAt)
+                                    .SetProperty(m => m.SizeBytes, sizeBytes)
+                                    .SetProperty(m => m.BodyText, fetched.BodyText)
+                                    .SetProperty(m => m.BodyHtml, fetched.BodyHtml)
+                                    .SetProperty(m => m.InternetMessageId, fetched.InternetMessageId)
+                                    .SetProperty(m => m.ReferencesJson, PackedStringList.Encode(fetched.References))
+                                    .SetProperty(m => m.ToAddresses, PackedStringList.Encode(fetched.ToAddresses))
+                                    .SetProperty(m => m.CcAddresses, PackedStringList.Encode(fetched.CcAddresses))
+                                    .SetProperty(m => m.BccAddresses, PackedStringList.Encode(fetched.BccAddresses))
+                                    .SetProperty(m => m.ReplyToAddresses, PackedStringList.Encode(fetched.ReplyToAddresses)),
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        searchUpserts.Add(new MessageRecord
+                        {
+                            Id = known.Id,
+                            AccountId = accountId,
+                            MailboxId = known.MailboxId,
+                            RemoteId = known.RemoteId,
+                            Subject = summary.Subject,
+                            FromAddress = summary.FromAddress,
+                            ReceivedAt = summary.ReceivedAt,
+                            IsRead = summary.IsRead,
+                            IsFlagged = summary.IsFlagged,
+                            BodyText = fetched.BodyText,
+                            BodyHtml = fetched.BodyHtml,
+                        });
+                    }
+
+                    seenId = known.Id;
                 }
 
-                seenMessageIds.Add(message.Id);
-                searchUpserts.Add(message);
+                seenMessageIds.Add(seenId);
             }
         }
 
@@ -302,7 +376,14 @@ internal sealed class RemoteSnapshotSync
         }
 
         _db.Attachments.RemoveRange(attachmentsToRemove);
-        _db.Messages.RemoveRange(messagesToRemove);
+        if (removedMessageIds.Count > 0)
+        {
+            await _db.Messages
+                .Where(m => removedMessageIds.Contains(m.Id))
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         _db.Mailboxes.RemoveRange(existingMailboxes.Where(m => !seenMailboxIds.Contains(m.Id)));
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -330,6 +411,18 @@ internal sealed class RemoteSnapshotSync
                         cancellationToken)
                     .ConfigureAwait(false);
             }
+
+            foreach (var update in envelopeUpdates)
+            {
+                await MessageSearchIndex
+                    .UpdateEnvelopeAsync(
+                        _db,
+                        update.Id,
+                        update.Subject,
+                        update.FromAddress,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -339,13 +432,16 @@ internal sealed class RemoteSnapshotSync
         return arrivals;
     }
 
-    private void InvalidateMailboxMessages(
+    private async Task InvalidateMailboxMessagesAsync(
         Guid mailboxId,
-        List<MessageRecord> existingMessages,
-        List<AttachmentRecord> existingAttachments)
+        List<KnownMessageRow> existingMessages,
+        List<AttachmentRecord> existingAttachments,
+        CancellationToken cancellationToken)
     {
-        var doomed = existingMessages.Where(m => m.MailboxId == mailboxId).ToList();
-        var doomedIds = doomed.Select(m => m.Id).ToHashSet();
+        var doomedIds = existingMessages
+            .Where(m => m.MailboxId == mailboxId)
+            .Select(m => m.Id)
+            .ToHashSet();
         var attachments = existingAttachments.Where(a => doomedIds.Contains(a.MessageId)).ToList();
         foreach (var attachment in attachments)
         {
@@ -357,7 +453,14 @@ internal sealed class RemoteSnapshotSync
         }
 
         _db.Attachments.RemoveRange(attachments);
-        _db.Messages.RemoveRange(doomed);
+        if (doomedIds.Count > 0)
+        {
+            await _db.Messages
+                .Where(m => doomedIds.Contains(m.Id))
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         existingAttachments.RemoveAll(a => doomedIds.Contains(a.MessageId));
         existingMessages.RemoveAll(m => m.MailboxId == mailboxId);
     }
@@ -396,6 +499,27 @@ internal sealed class RemoteSnapshotSync
         }
 
         return local.RemoteIds;
+    }
+
+    private sealed class KnownMessageRow
+    {
+        public Guid Id { get; set; }
+
+        public Guid MailboxId { get; set; }
+
+        public string RemoteId { get; set; } = string.Empty;
+
+        public string Subject { get; set; } = string.Empty;
+
+        public string FromAddress { get; set; } = string.Empty;
+
+        public DateTimeOffset ReceivedAt { get; set; }
+
+        public bool IsRead { get; set; }
+
+        public bool IsFlagged { get; set; }
+
+        public long SizeBytes { get; set; }
     }
 
     private static string BlobRelativePath(Guid accountId, Guid attachmentId) =>
