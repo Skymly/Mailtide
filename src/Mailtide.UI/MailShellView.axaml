@@ -111,7 +111,7 @@
                           Padding="8,4"
                           Cursor="Hand"
                           Tapped="OnConversationAttachmentTapped">
-                    <TextBlock Text="{Binding FileName}" FontSize="12" />
+                    <TextBlock Text="{Binding ListLabel}" FontSize="12" />
                   </Border>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
@@ -612,7 +612,7 @@
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="core:AttachmentInfo">
                   <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" CornerRadius="4" Padding="8,4">
-                    <TextBlock Text="{Binding FileName}" FontSize="12" />
+                    <TextBlock Text="{Binding ListLabel}" FontSize="12" />
                   </Border>
                 </DataTemplate>
               </ListBox.ItemTemplate>

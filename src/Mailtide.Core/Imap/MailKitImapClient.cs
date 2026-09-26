@@ -858,18 +858,60 @@ internal sealed class MailKitImapClient : IImapClient
                 continue;
             }
 
-            using var memory = new MemoryStream();
-            part.Content.DecodeTo(memory);
-            attachments.Add(
-                new RemoteAttachment(
-                    FileName: part.FileName ?? (contentId is null ? "attachment" : "inline"),
-                    ContentType: part.ContentType.MimeType,
-                    Content: memory.ToArray())
-                {
-                    ContentId = contentId,
-                });
+            attachments.Add(ToRemoteAttachment(part, contentId));
         }
 
         return attachments;
+    }
+
+    private static RemoteAttachment ToRemoteAttachment(MimePart part, string? contentId)
+    {
+        var fileName = part.FileName ?? (contentId is null ? "attachment" : "inline");
+        var contentType = part.ContentType.MimeType;
+        var declared = DeclaredDecodedBytes(part);
+        if (declared is long size && AttachmentBlobLimits.ExceedsLimit(size))
+        {
+            return new RemoteAttachment(fileName, contentType, Array.Empty<byte>())
+            {
+                ContentId = contentId,
+                DeclaredDecodedBytes = size,
+                ContentOmitted = true,
+            };
+        }
+
+        var content = part.Content
+            ?? throw new InvalidOperationException("Attachment part has no content.");
+        return new RemoteAttachment(fileName, contentType, Array.Empty<byte>())
+        {
+            ContentId = contentId,
+            DeclaredDecodedBytes = declared,
+            WriteContentAsync = (destination, cancellationToken) =>
+            {
+                content.DecodeTo(destination, cancellationToken);
+                return Task.CompletedTask;
+            },
+        };
+    }
+
+    private static long? DeclaredDecodedBytes(MimePart part)
+    {
+        if (part.ContentDisposition?.Size is long size and > 0)
+        {
+            return size;
+        }
+
+        var content = part.Content;
+        if (content?.Stream is not { CanSeek: true } stream)
+        {
+            return null;
+        }
+
+        var encoded = stream.Length;
+        if (content.Encoding == ContentEncoding.Base64)
+        {
+            return encoded / 4 * 3;
+        }
+
+        return encoded;
     }
 }

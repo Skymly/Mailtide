@@ -1060,7 +1060,10 @@ public sealed partial class MailtideApp : IAsyncDisposable
                     a.MessageId,
                     a.AccountId,
                     a.FileName,
-                    a.ContentType))
+                    a.ContentType)
+                {
+                    ContentOmitted = a.ContentOmitted,
+                })
                 .ToList();
         }
         finally

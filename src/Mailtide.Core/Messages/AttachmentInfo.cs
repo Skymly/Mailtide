@@ -5,7 +5,13 @@ public sealed record AttachmentInfo(
     Guid MessageId,
     Guid AccountId,
     string FileName,
-    string ContentType);
+    string ContentType)
+{
+    public bool ContentOmitted { get; init; }
+
+    public string ListLabel =>
+        ContentOmitted ? FileName + " (omitted, over size limit)" : FileName;
+}
 
 public sealed record AttachmentContent(
     Guid Id,

@@ -18,4 +18,9 @@ internal sealed class AttachmentRecord
     public required string BlobRelativePath { get; set; }
 
     public string? ContentId { get; set; }
+
+    /// <summary>
+    /// True when the part was over the attachment size limit and no blob was stored.
+    /// </summary>
+    public bool ContentOmitted { get; set; }
 }
