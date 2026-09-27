@@ -116,19 +116,6 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8"
-                        Margin="0,10,0,0"
-                        IsVisible="{Binding ShowActions}">
-              <Button Content="Reply" Padding="8,4" Click="OnReplyClick" />
-              <Button Content="Reply All" Padding="8,4" Click="OnReplyAllClick" />
-              <Button Content="Forward" Padding="8,4" Click="OnForwardClick" />
-              <Button Content="Flag" Padding="8,4" IsVisible="{Binding ShowFlag}" Click="OnFlagClick" />
-              <Button Content="Unflag" Padding="8,4" IsVisible="{Binding ShowUnflag}" Click="OnFlagClick" />
-              <Button Content="Unread" Padding="8,4" IsVisible="{Binding ShowMarkUnread}" Click="OnMarkUnreadShortcut" />
-              <Button Content="Read" Padding="8,4" IsVisible="{Binding ShowMarkRead}" Click="OnMarkReadClick" />
-              <Button Content="Delete" Padding="8,4" Click="OnDeleteClick" />
-            </StackPanel>
           </StackPanel>
         </DockPanel>
       </Border>
