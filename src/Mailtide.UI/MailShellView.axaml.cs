@@ -30,6 +30,7 @@ public partial class MailShellView : UserControl
     private bool _showCcBccPreferred;
     private ShellNavItem? _navMenuItem;
     private UpdateCheckResult? _pendingUpdate;
+    private bool _updateDismissed;
     private TextBox? _addressSuggestBox;
     private static readonly DataFormat<ThreadRow> ThreadDragFormat =
         DataFormat.CreateInProcessFormat<ThreadRow>("mailtide.thread");
@@ -203,7 +204,7 @@ public partial class MailShellView : UserControl
         var remoteTag = result.Remote?.TagName ?? "a newer release";
         UpdateBannerText.Text =
             $"A newer Mailtide release ({remoteTag}) is available. Current install: {result.CurrentVersion}.";
-        UpdateBanner.IsVisible = true;
+        ApplyUpdateBannerVisibility();
     }
 
     private void AttachShellHandlers()
@@ -293,15 +294,29 @@ public partial class MailShellView : UserControl
         }
     }
 
-    private void OnDismissUpdateClick(object? sender, RoutedEventArgs e) => HideUpdateBanner();
+    private void OnDismissUpdateClick(object? sender, RoutedEventArgs e)
+    {
+        _updateDismissed = true;
+        ApplyUpdateBannerVisibility();
+    }
 
     private void HideUpdateBanner()
     {
         _pendingUpdate = null;
-        if (UpdateBanner is not null)
+        ApplyUpdateBannerVisibility();
+    }
+
+    private void ApplyUpdateBannerVisibility()
+    {
+        if (UpdateBanner is null)
         {
-            UpdateBanner.IsVisible = false;
+            return;
         }
+
+        UpdateBanner.IsVisible = MailShellFormatting.ShowUpdateStrip(
+            _browse?.Accounts.Count > 0,
+            _updateDismissed,
+            _pendingUpdate is not null);
     }
 
     private void BindAuthFailureBanner()
@@ -4856,6 +4871,7 @@ public partial class MailShellView : UserControl
             EmptyStatePanel.IsVisible = !hasAccounts;
             DailyShell.IsVisible = hasAccounts;
             ShellCommandBar.IsVisible = hasAccounts;
+            ApplyUpdateBannerVisibility();
 
             var previousNav = NavTree.SelectedItem as ShellNavItem;
             var navItems = browse.BuildNavItems();
