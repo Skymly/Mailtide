@@ -2178,7 +2178,7 @@ public sealed class ConversationCard
 
     public bool ShowUnavailable => BodyUnavailable && !IsSelected;
 
-    public bool ShowRemoteImagesCaption => IsSelected && HasRemoteImages;
+    public bool ShowRemoteImagesCaption => HasRemoteImages;
 
     public IReadOnlyList<AttachmentInfo> Attachments { get; init; } = [];
 
