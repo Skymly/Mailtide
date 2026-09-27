@@ -7,6 +7,9 @@ public static class MailShellFormatting
 {
     public const int ConversationSnippetLength = 160;
 
+    public static bool ShowUpdateStrip(bool hasAccounts, bool dismissedThisSession, bool updateAvailable) =>
+        hasAccounts && !dismissedThisSession && updateAvailable;
+
     public const int MaxRecentSearches = 10;
 
     public const int ThreadListPageSize = 10;
