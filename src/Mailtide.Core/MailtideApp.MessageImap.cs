@@ -283,13 +283,30 @@ public sealed partial class MailtideApp
                 foreach (var attachment in attachments)
                 {
                     var sourceBlob = Path.Combine(_appDataDirectory, attachment.BlobRelativePath);
+                    var attachmentId = Guid.NewGuid();
+                    var blobRelativePath = BlobRelativePath(accountId, attachmentId);
                     if (!File.Exists(sourceBlob))
                     {
+                        if (!attachment.ContentOmitted)
+                        {
+                            continue;
+                        }
+
+                        _db.Attachments.Add(
+                            new AttachmentRecord
+                            {
+                                Id = attachmentId,
+                                AccountId = accountId,
+                                MessageId = copyId,
+                                FileName = attachment.FileName,
+                                ContentType = attachment.ContentType,
+                                BlobRelativePath = blobRelativePath,
+                                ContentId = attachment.ContentId,
+                                ContentOmitted = true,
+                            });
                         continue;
                     }
 
-                    var attachmentId = Guid.NewGuid();
-                    var blobRelativePath = BlobRelativePath(accountId, attachmentId);
                     var blobPath = Path.Combine(_appDataDirectory, blobRelativePath);
                     Directory.CreateDirectory(Path.GetDirectoryName(blobPath)!);
                     File.Copy(sourceBlob, blobPath, overwrite: true);
@@ -303,6 +320,7 @@ public sealed partial class MailtideApp
                             ContentType = attachment.ContentType,
                             BlobRelativePath = blobRelativePath,
                             ContentId = attachment.ContentId,
+                            ContentOmitted = attachment.ContentOmitted,
                         });
                 }
 
