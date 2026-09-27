@@ -2184,7 +2184,7 @@ public sealed class ConversationCard
     public bool ShowAttachmentClip => !IsSelected && Attachments.Count > 0;
 
     public string AttachmentTip =>
-        string.Join(", ", Attachments.Select(attachment => attachment.FileName));
+        string.Join(", ", Attachments.Select(attachment => attachment.ListLabel));
 
     public bool ShowActions => IsSelected;
 

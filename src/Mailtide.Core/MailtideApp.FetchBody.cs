@@ -87,27 +87,14 @@ public sealed partial class MailtideApp
                 {
                     foreach (var remoteAttachment in remote.Attachments)
                     {
-                        var attachmentId = Guid.NewGuid();
-                        var blobRelativePath = Path.Combine(
-                            "accounts",
-                            accountId.ToString("D"),
-                            "blobs",
-                            attachmentId.ToString("D"));
-                        var blobAbsolutePath = Path.Combine(_appDataDirectory, blobRelativePath);
-                        Directory.CreateDirectory(Path.GetDirectoryName(blobAbsolutePath)!);
-                        await File
-                            .WriteAllBytesAsync(blobAbsolutePath, remoteAttachment.Content, cancellationToken)
-                            .ConfigureAwait(false);
-                        _db.Attachments.Add(new AttachmentRecord
-                        {
-                            Id = attachmentId,
-                            AccountId = accountId,
-                            MessageId = messageId,
-                            FileName = remoteAttachment.FileName,
-                            ContentType = remoteAttachment.ContentType,
-                            BlobRelativePath = blobRelativePath,
-                            ContentId = remoteAttachment.ContentId,
-                        });
+                        _db.Attachments.Add(await AttachmentBlob
+                            .StoreAsync(
+                                accountId,
+                                messageId,
+                                remoteAttachment,
+                                _appDataDirectory,
+                                cancellationToken)
+                            .ConfigureAwait(false));
                     }
                 }
 
