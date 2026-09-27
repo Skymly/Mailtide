@@ -524,7 +524,13 @@ internal sealed record SeededImapMessage(
 
                     sb.Append("Content-Disposition: attachment; filename=\"")
                         .Append(attachment.FileName)
-                        .Append("\"\r\n\r\n");
+                        .Append('"');
+                    if (attachment.DeclaredSize is long declaredSize)
+                    {
+                        sb.Append("; size=").Append(declaredSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    }
+
+                    sb.Append("\r\n\r\n");
                     sb.Append(Convert.ToBase64String(attachment.Content)).Append("\r\n");
                 }
 
@@ -564,4 +570,6 @@ internal sealed record SeededImapAttachment(
     byte[] Content)
 {
     public string? ContentId { get; init; }
+
+    public long? DeclaredSize { get; init; }
 }

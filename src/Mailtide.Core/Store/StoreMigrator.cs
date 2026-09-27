@@ -8,7 +8,7 @@ namespace Mailtide.Core.Store;
 /// </summary>
 internal static class StoreMigrator
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     public static async Task ApplyAsync(MailtideDbContext db, CancellationToken cancellationToken)
     {
@@ -74,6 +74,13 @@ internal static class StoreMigrator
             {
                 await ApplyV6Async(db, cancellationToken).ConfigureAwait(false);
                 await SetVersionAsync(db, 6, cancellationToken).ConfigureAwait(false);
+                version = 6;
+            }
+
+            if (version < 7)
+            {
+                await ApplyV7Async(db, cancellationToken).ConfigureAwait(false);
+                await SetVersionAsync(db, 7, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -343,6 +350,17 @@ internal static class StoreMigrator
     private static async Task ApplyV6Async(MailtideDbContext db, CancellationToken cancellationToken)
     {
         await AddColumnIfMissingAsync(db, "Messages", "SizeBytes", "INTEGER NOT NULL DEFAULT 0", cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task ApplyV7Async(MailtideDbContext db, CancellationToken cancellationToken)
+    {
+        await AddColumnIfMissingAsync(
+                db,
+                "Attachments",
+                "ContentOmitted",
+                "INTEGER NOT NULL DEFAULT 0",
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
