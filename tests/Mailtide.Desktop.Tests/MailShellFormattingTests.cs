@@ -68,6 +68,8 @@ public sealed class MailShellFormattingTests
         Assert.IsTrue(expanded.ShowToLine);
         Assert.IsTrue(expanded.ShowCcLine);
         Assert.IsTrue(expanded.ShowRemoteImagesCaption);
+        Assert.IsTrue(Card(selected: false, remote: true).ShowRemoteImagesCaption);
+        Assert.IsFalse(Card(selected: true, remote: false).ShowRemoteImagesCaption);
         Assert.IsFalse(Card(selected: true, bodyText: "plain").ShowBodyText);
         Assert.IsTrue(Card(unavailable: true).ShowUnavailable);
         Assert.IsFalse(Card(selected: true, unavailable: true).ShowUnavailable);
