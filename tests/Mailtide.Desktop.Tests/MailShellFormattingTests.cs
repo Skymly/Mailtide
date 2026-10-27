@@ -47,6 +47,38 @@ public sealed class MailShellFormattingTests
     }
 
     [TestMethod]
+    public void OutboxTimeline_lists_recorded_attempts_and_falls_back_to_queued()
+    {
+        var at = new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero);
+        var item = new OutboxItemInfo(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            OutboxItemState.Failed,
+            "Invoice",
+            "SMTP rejected",
+            at)
+        {
+            Attempts =
+            [
+                new OutboxAttemptInfo(at, OutboxAttemptKind.Queued, null),
+                new OutboxAttemptInfo(at.AddMinutes(1), OutboxAttemptKind.Attempted, null),
+                new OutboxAttemptInfo(at.AddMinutes(2), OutboxAttemptKind.Failed, "SMTP rejected"),
+                new OutboxAttemptInfo(at.AddMinutes(3), OutboxAttemptKind.Requeued, null),
+            ],
+        };
+
+        var lines = MailShellFormatting.OutboxTimeline(item).Split('\n');
+        Assert.HasCount(4, lines);
+        Assert.StartsWith("Queued ", lines[0]);
+        Assert.StartsWith("Send attempt ", lines[1]);
+        StringAssert.Contains(lines[2], "SMTP rejected");
+        Assert.StartsWith("Re-queued ", lines[3]);
+
+        var legacy = item with { Attempts = [] };
+        Assert.StartsWith("Queued ", MailShellFormatting.OutboxTimeline(legacy));
+    }
+
+    [TestMethod]
     public void ConversationCard_unselected_html_shows_snippet_not_the_webview_slot()
     {
         var older = Card(selected: false, bodyText: "older html", bodyHtml: "<p>older html</p>");

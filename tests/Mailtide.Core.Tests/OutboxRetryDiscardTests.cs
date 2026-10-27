@@ -23,12 +23,27 @@ public sealed class OutboxRetryDiscardTests
 
         var failed = (await app.ListOutboxAsync(account.Id)).Single();
         Assert.AreEqual(OutboxItemState.Failed, failed.State);
+        Assert.AreEqual("Body", failed.BodyText);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                OutboxAttemptKind.Queued,
+                OutboxAttemptKind.Attempted,
+                OutboxAttemptKind.Failed,
+            },
+            failed.Attempts.Select(attempt => attempt.Kind).ToArray());
+        Assert.AreEqual(
+            failed.ErrorMessage,
+            failed.Attempts.Last(attempt => attempt.Kind == OutboxAttemptKind.Failed).Error);
 
         await app.RetryOutboxItemAsync(account.Id, failed.Id);
 
         var retried = (await app.ListOutboxAsync(account.Id)).Single();
         Assert.AreEqual(OutboxItemState.Queued, retried.State);
         Assert.IsNull(retried.ErrorMessage);
+        Assert.AreEqual(
+            OutboxAttemptKind.Requeued,
+            retried.Attempts[^1].Kind);
 
         fixture.Smtp.FailWith = null;
         await app.SendNowAsync(account.Id);

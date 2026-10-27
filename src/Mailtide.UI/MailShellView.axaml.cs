@@ -1441,6 +1441,14 @@ public partial class MailShellView : UserControl
         }
     }
 
+    private void OnOutboxMenuOpening(object? sender, EventArgs e)
+    {
+        if (sender is MenuFlyout flyout)
+        {
+            RebuildObjectMenu(flyout.Items, ObjectMenuSurface.Outbox, CurrentObjectMenuState());
+        }
+    }
+
     private async void OnConversationCardMenuOpening(object? sender, CancelEventArgs e)
     {
         if (sender is not ContextMenu { PlacementTarget: Control { DataContext: ConversationCard card } } menu
@@ -1538,6 +1546,7 @@ public partial class MailShellView : UserControl
             ConversationNewestFirst = browse.ConversationNewestFirst,
             AnyUnread = unread,
             AnyFlagged = flagged,
+            OutboxItemFailed = SelectedOutboxItem() is { State: OutboxItemState.Failed },
         };
     }
 
@@ -3833,6 +3842,9 @@ public partial class MailShellView : UserControl
         OutboxToText.IsVisible = item.ToAddresses.Count > 0;
         OutboxStateText.Text = item.State.ToString();
         OutboxErrorText.Text = item.ErrorMessage ?? string.Empty;
+        OutboxErrorText.IsVisible = !string.IsNullOrEmpty(item.ErrorMessage);
+        OutboxTimelineText.Text = MailShellFormatting.OutboxTimeline(item);
+        OutboxBodyBox.Text = item.BodyText;
     }
 
     private void SetPaneVisible(bool read = false, bool compose = false, bool outbox = false)

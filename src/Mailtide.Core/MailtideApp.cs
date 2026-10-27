@@ -1380,6 +1380,9 @@ public sealed partial class MailtideApp : IAsyncDisposable
                 {
                     item.State = OutboxItemState.Failed;
                     item.ErrorMessage = AuthenticationFailedMessage;
+                    item.AttemptsJson = OutboxAttemptLog.Append(
+                        item.AttemptsJson,
+                        new OutboxAttemptInfo(now, OutboxAttemptKind.Failed, AuthenticationFailedMessage));
                     item.UpdatedAt = now;
                 }
 
@@ -1457,6 +1460,9 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
                     item.State = OutboxItemState.Sending;
                     item.ErrorMessage = null;
+                    item.AttemptsJson = OutboxAttemptLog.Append(
+                        item.AttemptsJson,
+                        new OutboxAttemptInfo(DateTimeOffset.UtcNow, OutboxAttemptKind.Attempted, null));
                     item.UpdatedAt = DateTimeOffset.UtcNow;
                     await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
@@ -1617,6 +1623,9 @@ public sealed partial class MailtideApp : IAsyncDisposable
 
             item.State = OutboxItemState.Queued;
             item.ErrorMessage = null;
+            item.AttemptsJson = OutboxAttemptLog.Append(
+                item.AttemptsJson,
+                new OutboxAttemptInfo(DateTimeOffset.UtcNow, OutboxAttemptKind.Requeued, null));
             item.UpdatedAt = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -1971,6 +1980,8 @@ public sealed partial class MailtideApp : IAsyncDisposable
             record.UpdatedAt)
         {
             ToAddresses = PackedStringList.Decode(record.ToAddresses),
+            BodyText = record.BodyText,
+            Attempts = OutboxAttemptLog.Decode(record.AttemptsJson),
         };
 
     private void RaiseInboxArrivals(IReadOnlyList<InboxArrival> arrivals)

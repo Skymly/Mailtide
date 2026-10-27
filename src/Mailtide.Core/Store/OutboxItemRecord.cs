@@ -26,5 +26,7 @@ internal sealed class OutboxItemRecord
 
     public string? ErrorMessage { get; set; }
 
+    public string AttemptsJson { get; set; } = "[]";
+
     public DateTimeOffset UpdatedAt { get; set; }
 }
