@@ -598,16 +598,27 @@
           <Border Name="BlankReading" IsVisible="False" />
 
           <DockPanel Name="OutboxSurface" IsVisible="False">
-            <TextBlock Name="OutboxSubjectText"
-                       DockPanel.Dock="Top"
-                       FontSize="18"
-                       FontWeight="SemiBold"
-                       TextWrapping="Wrap" />
-            <TextBlock Name="OutboxToText"
-                       DockPanel.Dock="Top"
-                       Opacity="0.7"
-                       Margin="0,8,0,0"
-                       TextWrapping="Wrap" />
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+              <Button Name="OutboxMoreButton"
+                      DockPanel.Dock="Right"
+                      Content="..."
+                      Padding="10,4"
+                      VerticalAlignment="Top">
+                <Button.Flyout>
+                  <MenuFlyout Opening="OnOutboxMenuOpening" />
+                </Button.Flyout>
+              </Button>
+              <StackPanel>
+                <TextBlock Name="OutboxSubjectText"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap" />
+                <TextBlock Name="OutboxToText"
+                           Opacity="0.7"
+                           Margin="0,8,0,0"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </DockPanel>
             <TextBlock Name="OutboxStateText"
                        DockPanel.Dock="Top"
                        Opacity="0.7"
@@ -617,6 +628,20 @@
                        Opacity="0.7"
                        TextWrapping="Wrap"
                        Margin="0,8,0,0" />
+            <TextBlock Name="OutboxTimelineText"
+                       DockPanel.Dock="Top"
+                       Opacity="0.7"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+            <ScrollViewer>
+              <TextBox Name="OutboxBodyBox"
+                       IsReadOnly="True"
+                       AcceptsReturn="True"
+                       TextWrapping="Wrap"
+                       BorderThickness="0"
+                       Margin="0,12,0,0" />
+            </ScrollViewer>
           </DockPanel>
 
           <DockPanel Name="ComposeSurface" IsVisible="False"

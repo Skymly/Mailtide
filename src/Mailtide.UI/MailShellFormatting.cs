@@ -1363,6 +1363,31 @@ public static class MailShellFormatting
     public static string Recipients(string prefix, IReadOnlyList<string> addresses) =>
         addresses.Count == 0 ? string.Empty : prefix + string.Join(", ", addresses);
 
+    public static string OutboxTimeline(OutboxItemInfo item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (item.Attempts.Count == 0)
+        {
+            return "Queued " + DateLabel(item.UpdatedAt);
+        }
+
+        return string.Join("\n", item.Attempts.Select(OutboxTimelineLine));
+    }
+
+    private static string OutboxTimelineLine(OutboxAttemptInfo attempt)
+    {
+        var label = attempt.Kind switch
+        {
+            OutboxAttemptKind.Queued => "Queued",
+            OutboxAttemptKind.Attempted => "Send attempt",
+            OutboxAttemptKind.Failed => "Failed",
+            OutboxAttemptKind.Requeued => "Re-queued",
+            _ => attempt.Kind.ToString(),
+        };
+        var line = label + " " + DateLabel(attempt.At);
+        return attempt.Error is { Length: > 0 } error ? line + " — " + error : line;
+    }
+
     public static bool OutboxItemMatches(OutboxItemInfo item, string? query)
     {
         ArgumentNullException.ThrowIfNull(item);

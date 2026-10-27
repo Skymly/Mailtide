@@ -1,3 +1,4 @@
+using Mailtide.Core.Outbox;
 using Mailtide.Core.Store;
 using Microsoft.EntityFrameworkCore;
 
@@ -353,6 +354,9 @@ public sealed partial class MailtideApp
             ReferencesJson = draft.ReferencesJson,
             State = OutboxItemState.Queued,
             ErrorMessage = null,
+            AttemptsJson = OutboxAttemptLog.Append(
+                null,
+                new OutboxAttemptInfo(now, OutboxAttemptKind.Queued, null)),
             UpdatedAt = now,
         });
         var draftAttachments = await _db.DraftAttachments

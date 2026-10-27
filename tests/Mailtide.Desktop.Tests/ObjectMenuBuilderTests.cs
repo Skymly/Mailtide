@@ -41,7 +41,8 @@ public sealed class ObjectMenuBuilderTests
         bool newestFirst = true,
         bool unread = false,
         bool flagged = false,
-        bool attachments = false) =>
+        bool attachments = false,
+        bool outboxFailed = false) =>
         new()
         {
             ShowingOutbox = outbox,
@@ -55,6 +56,7 @@ public sealed class ObjectMenuBuilderTests
             AnyUnread = unread,
             AnyFlagged = flagged,
             MessageHasAttachments = attachments,
+            OutboxItemFailed = outboxFailed,
         };
 
     [TestMethod]
@@ -114,11 +116,28 @@ public sealed class ObjectMenuBuilderTests
     public void Outbox_state_echoes_retry_discard_on_the_list_menu_only()
     {
         CollectionAssert.AreEqual(
-            new[] { "Mark Unread", "Flag", "Retry", "Discard" },
+            new[] { "Mark Unread", "Flag", "Discard" },
             Visible(ObjectMenuSurface.ThreadList, State(outbox: true)).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "Mark Unread", "Flag", "Retry", "Discard" },
+            Visible(ObjectMenuSurface.ThreadList, State(outbox: true, outboxFailed: true)).ToArray());
         CollectionAssert.AreEqual(
             new[] { "Mark Unread", "Flag" },
             Visible(ObjectMenuSurface.Reading, State(outbox: true)).ToArray());
+    }
+
+    [TestMethod]
+    public void Outbox_inspector_echoes_only_item_verbs_by_state()
+    {
+        CollectionAssert.AreEqual(
+            new[] { "Discard" },
+            Visible(ObjectMenuSurface.Outbox, State(outbox: true)).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "Retry", "Discard" },
+            Visible(ObjectMenuSurface.Outbox, State(outbox: true, outboxFailed: true)).ToArray());
+        CollectionAssert.AreEqual(
+            new string[0],
+            Visible(ObjectMenuSurface.Outbox, State(outboxFailed: true)).ToArray());
     }
 
     [TestMethod]

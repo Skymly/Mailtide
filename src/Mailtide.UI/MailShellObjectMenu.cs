@@ -4,6 +4,7 @@ public enum ObjectMenuSurface
 {
     ThreadList = 0,
     Reading = 1,
+    Outbox = 2,
 }
 
 public enum ObjectMenuVerb
@@ -65,6 +66,8 @@ public sealed record ObjectMenuState
     public bool AnyFlagged { get; init; }
 
     public bool MessageHasAttachments { get; init; }
+
+    public bool OutboxItemFailed { get; init; }
 }
 
 /// <summary>
@@ -76,6 +79,15 @@ public static class MailShellObjectMenu
     public static IReadOnlyList<ObjectMenuEntry> Build(ObjectMenuSurface surface, ObjectMenuState state)
     {
         ArgumentNullException.ThrowIfNull(state);
+        if (surface == ObjectMenuSurface.Outbox)
+        {
+            return
+            [
+                new(ObjectMenuVerb.RetryOutbox, "Retry", state.ShowingOutbox && state.OutboxItemFailed),
+                new(ObjectMenuVerb.DiscardOutbox, "Discard", state.ShowingOutbox),
+            ];
+        }
+
         var message = !state.ShowingOutbox;
         var entries = new List<ObjectMenuEntry>
         {
@@ -123,7 +135,11 @@ public static class MailShellObjectMenu
         entries.Add(new(ObjectMenuVerb.Restore, "Restore", state.TrashScope));
         if (surface == ObjectMenuSurface.ThreadList)
         {
-            entries.Add(new(ObjectMenuVerb.RetryOutbox, "Retry", state.ShowingOutbox));
+            entries.Add(
+                new(
+                    ObjectMenuVerb.RetryOutbox,
+                    "Retry",
+                    state.ShowingOutbox && state.OutboxItemFailed));
             entries.Add(new(ObjectMenuVerb.DiscardOutbox, "Discard", state.ShowingOutbox));
         }
 

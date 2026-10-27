@@ -53,6 +53,23 @@ public sealed class ReadingPaneChromeTests
         Assert.Contains("Header=\"Save All\"", strip, StringComparison.Ordinal);
     }
 
+    [TestMethod]
+    public void Outbox_surface_is_a_status_inspector_with_shared_overflow()
+    {
+        var axaml = ReadShellAxaml();
+        var surfaceStart = axaml.IndexOf("Name=\"OutboxSurface\"", StringComparison.Ordinal);
+        var surfaceEnd = axaml.IndexOf("Name=\"ComposeSurface\"", StringComparison.Ordinal);
+        Assert.IsTrue(surfaceStart >= 0 && surfaceEnd > surfaceStart);
+
+        var surface = axaml[surfaceStart..surfaceEnd];
+        Assert.Contains("Name=\"OutboxMoreButton\"", surface, StringComparison.Ordinal);
+        Assert.Contains("OnOutboxMenuOpening", surface, StringComparison.Ordinal);
+        Assert.Contains("Name=\"OutboxTimelineText\"", surface, StringComparison.Ordinal);
+        Assert.Contains("Name=\"OutboxBodyBox\"", surface, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"Retry\"", surface, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"Discard\"", surface, StringComparison.Ordinal);
+    }
+
     private static string ReadShellAxaml() => File.ReadAllText(
         Path.Combine(FindRepoRoot(), "src", "Mailtide.UI", "MailShellView.axaml"));
 

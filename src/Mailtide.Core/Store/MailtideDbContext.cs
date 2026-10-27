@@ -96,6 +96,7 @@ internal sealed class MailtideDbContext : DbContext
         outbox.Property(o => o.Subject).IsRequired();
         outbox.Property(o => o.BodyText).IsRequired();
         outbox.Property(o => o.State).HasConversion<string>();
+        outbox.Property(o => o.AttemptsJson).IsRequired();
         outbox.HasIndex(o => o.AccountId);
 
         var outboxAttachment = modelBuilder.Entity<OutboxAttachmentRecord>();

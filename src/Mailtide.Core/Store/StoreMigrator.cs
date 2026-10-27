@@ -8,7 +8,7 @@ namespace Mailtide.Core.Store;
 /// </summary>
 internal static class StoreMigrator
 {
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
 
     public static async Task ApplyAsync(MailtideDbContext db, CancellationToken cancellationToken)
     {
@@ -81,6 +81,12 @@ internal static class StoreMigrator
             {
                 await ApplyV7Async(db, cancellationToken).ConfigureAwait(false);
                 await SetVersionAsync(db, 7, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (version < 8)
+            {
+                await ApplyV8Async(db, cancellationToken).ConfigureAwait(false);
+                await SetVersionAsync(db, 8, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -360,6 +366,47 @@ internal static class StoreMigrator
                 "Attachments",
                 "ContentOmitted",
                 "INTEGER NOT NULL DEFAULT 0",
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task ApplyV8Async(MailtideDbContext db, CancellationToken cancellationToken)
+    {
+        await ExecuteAsync(
+                db,
+                """
+                CREATE TABLE IF NOT EXISTS "OutboxItems" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_OutboxItems" PRIMARY KEY,
+                    "AccountId" TEXT NOT NULL,
+                    "ToAddresses" TEXT NOT NULL,
+                    "CcAddresses" TEXT NOT NULL DEFAULT '[]',
+                    "BccAddresses" TEXT NOT NULL DEFAULT '[]',
+                    "Subject" TEXT NOT NULL,
+                    "BodyText" TEXT NOT NULL,
+                    "BodyHtml" TEXT NULL,
+                    "InReplyTo" TEXT NULL,
+                    "ReferencesJson" TEXT NOT NULL DEFAULT '[]',
+                    "State" TEXT NOT NULL,
+                    "ErrorMessage" TEXT NULL,
+                    "AttemptsJson" TEXT NOT NULL DEFAULT '[]',
+                    "UpdatedAt" TEXT NOT NULL
+                )
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await ExecuteAsync(
+                db,
+                """
+                CREATE INDEX IF NOT EXISTS "IX_OutboxItems_AccountId"
+                ON "OutboxItems" ("AccountId")
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await AddColumnIfMissingAsync(
+                db,
+                "OutboxItems",
+                "AttemptsJson",
+                "TEXT NOT NULL DEFAULT '[]'",
                 cancellationToken)
             .ConfigureAwait(false);
     }

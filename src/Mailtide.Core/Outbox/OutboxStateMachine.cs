@@ -33,6 +33,9 @@ internal sealed class OutboxStateMachine
 
         item.State = OutboxItemState.Queued;
         item.ErrorMessage = null;
+        item.AttemptsJson = OutboxAttemptLog.Append(
+            item.AttemptsJson,
+            new OutboxAttemptInfo(DateTimeOffset.UtcNow, OutboxAttemptKind.Requeued, null));
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -56,6 +59,9 @@ internal sealed class OutboxStateMachine
 
         item.State = OutboxItemState.Failed;
         item.ErrorMessage = errorMessage;
+        item.AttemptsJson = OutboxAttemptLog.Append(
+            item.AttemptsJson,
+            new OutboxAttemptInfo(DateTimeOffset.UtcNow, OutboxAttemptKind.Failed, errorMessage));
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -84,6 +90,9 @@ internal sealed class OutboxStateMachine
 
         item.State = OutboxItemState.Failed;
         item.ErrorMessage = errorMessage;
+        item.AttemptsJson = OutboxAttemptLog.Append(
+            item.AttemptsJson,
+            new OutboxAttemptInfo(DateTimeOffset.UtcNow, OutboxAttemptKind.Failed, errorMessage));
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
