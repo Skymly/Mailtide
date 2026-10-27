@@ -1595,71 +1595,6 @@ public partial class MailShellView : UserControl
             return;
         }
 
-        if (FindInMessageBar?.IsVisible == true
-            && e.Key == Key.Escape
-            && e.KeyModifiers == KeyModifiers.None)
-        {
-            e.Handled = true;
-            HideFindInMessageBar();
-            return;
-        }
-
-        if (!composeSurface
-            && e.Key == Key.Escape
-            && e.KeyModifiers == KeyModifiers.None
-            && e.Source is not MenuItem
-            && e.Source is not Button
-            && e.Source is not ToggleButton
-            && (e.Source is not TextBox
-                || e.Source == MessageBodyBox
-                || e.Source == QuotedBodyBox)
-            && (IsReadingFocused()
-                || (ReadSurface is { } reading && IsInside(reading, e.Source))
-                || (OutboxSurface is { } outbox && IsInside(outbox, e.Source))))
-        {
-            e.Handled = true;
-            OnFocusListClick();
-            return;
-        }
-
-        if (!composeSurface
-            && e.Key == Key.Escape
-            && e.KeyModifiers == KeyModifiers.None
-            && e.Source is not TextBox
-            && e.Source is not MenuItem
-            && ThreadsList is not null
-            && (ThreadsList.IsFocused || IsInside(ThreadsList, e.Source))
-            && _browse is not null
-            && !string.IsNullOrEmpty(_browse.SearchQuery))
-        {
-            e.Handled = true;
-            _ = ClearSearchAsync(focusList: true);
-            return;
-        }
-
-        if (!composeSurface
-            && e.KeyModifiers == KeyModifiers.None
-            && e.Key is Key.OemBackslash or Key.OemPipe
-            && (e.Source == MessageBodyBox || e.Source == QuotedBodyBox))
-        {
-            e.Handled = true;
-            OnToggleQuotedClick(sender, e);
-            return;
-        }
-
-        if (!composeSurface
-            && e.Key == Key.Enter
-            && e.KeyModifiers == KeyModifiers.Control
-            && (e.Source == MessageBodyBox || e.Source == QuotedBodyBox))
-        {
-            if (TryOpenPlainLinkAtCaret(e.Source as TextBox))
-            {
-                e.Handled = true;
-            }
-
-            return;
-        }
-
         if (composeSurface
             && e.Key == Key.V
             && e.KeyModifiers == KeyModifiers.Control
@@ -1667,70 +1602,6 @@ public partial class MailShellView : UserControl
         {
             e.Handled = true;
             OnComposePaste(e.Source);
-            return;
-        }
-
-        if (MailShellShortcuts.AccountShortcutIndex(
-                e.Key,
-                e.KeyModifiers,
-                e.Source is TextBox,
-                composeSurface) is { } accountIndex)
-        {
-            e.Handled = true;
-            if (accountIndex < 0)
-            {
-                OnGoToUnifiedInboxClick();
-            }
-            else
-            {
-                OnGoToAccountIndexClick(accountIndex);
-            }
-
-            return;
-        }
-
-        var listFocused = ThreadsList is not null
-            && (ThreadsList.IsFocused || IsInside(ThreadsList, e.Source));
-        var boundary = MailShellShortcuts.ListBoundaryShortcut(
-            e.Key,
-            e.KeyModifiers,
-            listFocused,
-            e.Source is TextBox,
-            composeSurface);
-        if (boundary != MailShellShortcut.None)
-        {
-            e.Handled = true;
-            switch (boundary)
-            {
-                case MailShellShortcut.FirstThread:
-                    OnFirstThreadClick(sender, e);
-                    break;
-                case MailShellShortcut.LastThread:
-                    OnLastThreadClick(sender, e);
-                    break;
-                case MailShellShortcut.NextThread:
-                    OnNextThreadClick(sender, e);
-                    break;
-                case MailShellShortcut.PreviousThread:
-                    OnPreviousThreadClick(sender, e);
-                    break;
-                case MailShellShortcut.PageThread:
-                    OnPageThreadClick(forward: true);
-                    break;
-                case MailShellShortcut.PageThreadUp:
-                    OnPageThreadClick(forward: false);
-                    break;
-                case MailShellShortcut.FocusReading:
-                    OpenDraftOrFocusReading();
-                    break;
-                case MailShellShortcut.ExpandConversation:
-                    OnExpandConversationClick(sender, e);
-                    break;
-                case MailShellShortcut.CollapseConversation:
-                    OnCollapseConversationClick(sender, e);
-                    break;
-            }
-
             return;
         }
 
@@ -1750,58 +1621,6 @@ public partial class MailShellView : UserControl
             return;
         }
 
-        if (shortcut is MailShellShortcut.PageReading
-            or MailShellShortcut.PageReadingUp
-            or MailShellShortcut.PageViewport
-            or MailShellShortcut.PageViewportUp)
-        {
-            var attachmentFocused = ThreadAttachmentsList is { IsVisible: true }
-                && (ThreadAttachmentsList.IsFocused || IsInside(ThreadAttachmentsList, e.Source));
-            if (IsNavFocused()
-                || e.Source is Button or ToggleButton or MenuItem
-                || MailShellFormatting.ShouldDeferPagingToAttachmentStrip(
-                    ThreadAttachmentsList?.IsVisible == true,
-                    attachmentFocused))
-            {
-                return;
-            }
-
-            var down = shortcut is MailShellShortcut.PageReading or MailShellShortcut.PageViewport;
-            if (TryPageReading(down))
-            {
-                e.Handled = true;
-                return;
-            }
-
-            var htmlFocused = MessageHtmlView is { IsVisible: true }
-                && (MessageHtmlView.IsFocused || IsInside(MessageHtmlView, e.Source));
-            if (MailShellFormatting.ShouldDeferPagingToHtml(
-                    MessageHtmlView?.IsVisible == true,
-                    htmlFocused,
-                    canPageOuter: false))
-            {
-                return;
-            }
-
-            if (shortcut is MailShellShortcut.PageReading or MailShellShortcut.PageReadingUp)
-            {
-                e.Handled = true;
-                if (down)
-                {
-                    OnNextUnreadClick(sender, e);
-                }
-                else
-                {
-                    OnPreviousUnreadClick(sender, e);
-                }
-
-                return;
-            }
-
-            e.Handled = true;
-            return;
-        }
-
         e.Handled = true;
         switch (shortcut)
         {
@@ -1814,23 +1633,14 @@ public partial class MailShellView : UserControl
             case MailShellShortcut.Forward:
                 OnForwardClick(sender, e);
                 return;
-            case MailShellShortcut.ForwardAsAttachment:
-                OnForwardAsAttachmentClick(sender, e);
-                return;
             case MailShellShortcut.MarkUnread:
                 OnMarkUnreadShortcut(sender, e);
-                return;
-            case MailShellShortcut.MarkRead:
-                OnMarkReadClick(sender, e);
                 return;
             case MailShellShortcut.Flag:
                 OnFlagClick(sender, e);
                 return;
             case MailShellShortcut.Delete:
                 OnDeleteClick(sender, e);
-                return;
-            case MailShellShortcut.PermanentlyDelete:
-                OnPermanentlyDeleteClick(sender, e);
                 return;
             case MailShellShortcut.FocusSearch:
                 if (DailyShell?.IsVisible != true || MessageSearchBox is null)
@@ -1851,152 +1661,17 @@ public partial class MailShellView : UserControl
             case MailShellShortcut.PreviousUnread:
                 OnPreviousUnreadClick(sender, e);
                 return;
-            case MailShellShortcut.NextFlagged:
-                OnNextFlaggedClick(sender, e);
-                return;
-            case MailShellShortcut.PreviousFlagged:
-                OnPreviousFlaggedClick(sender, e);
-                return;
-            case MailShellShortcut.NextThread:
-                OnNextThreadClick(sender, e);
-                return;
-            case MailShellShortcut.PreviousThread:
-                OnPreviousThreadClick(sender, e);
-                return;
-            case MailShellShortcut.FirstThread:
-                OnFirstThreadClick(sender, e);
-                return;
-            case MailShellShortcut.LastThread:
-                OnLastThreadClick(sender, e);
-                return;
-            case MailShellShortcut.NextInConversation:
-                OnNextInConversationClick(sender, e);
-                return;
-            case MailShellShortcut.PreviousInConversation:
-                OnPreviousInConversationClick(sender, e);
-                return;
-            case MailShellShortcut.FirstInConversation:
-                OnFirstInConversationClick(sender, e);
-                return;
-            case MailShellShortcut.LastInConversation:
-                OnLastInConversationClick(sender, e);
-                return;
             case MailShellShortcut.Sync:
                 OnSyncNowClick(sender, e);
                 return;
             case MailShellShortcut.Move:
                 OnMoveClick(sender, e);
                 return;
-            case MailShellShortcut.CopyToMailbox:
-                OnCopyClick(sender, e);
-                return;
-            case MailShellShortcut.Archive:
-                OnArchiveClick(sender, e);
-                return;
             case MailShellShortcut.Send:
                 OnSendDraftClick(sender, e);
                 return;
-            case MailShellShortcut.SaveDraft:
-                OnSaveDraftShortcutClick(sender, e);
-                return;
-            case MailShellShortcut.SaveMessage:
-                OnSaveMessageEmlClick(sender, e);
-                return;
-            case MailShellShortcut.Attach:
-                OnAttachDraftClick(sender, e);
-                return;
-            case MailShellShortcut.FocusCc:
-                OnFocusCcClick();
-                return;
-            case MailShellShortcut.FocusBcc:
-                OnFocusBccClick();
-                return;
-            case MailShellShortcut.FocusHtml:
-                OnFocusHtmlClick();
-                return;
             case MailShellShortcut.DiscardDraft:
                 OnDiscardDraftClick(sender, e);
-                return;
-            case MailShellShortcut.UndoTrash:
-                OnUndoTrashClick(sender, e);
-                return;
-            case MailShellShortcut.FindInMessage:
-                OnFindInMessageClick(sender, e);
-                return;
-            case MailShellShortcut.FindPreviousInMessage:
-                OnFindPreviousClick(sender, e);
-                return;
-            case MailShellShortcut.PageReading:
-                OnPageReadingClick(down: true);
-                return;
-            case MailShellShortcut.PageReadingUp:
-                OnPageReadingClick(down: false);
-                return;
-            case MailShellShortcut.PageViewport:
-                OnPageViewportClick(down: true);
-                return;
-            case MailShellShortcut.PageViewportUp:
-                OnPageViewportClick(down: false);
-                return;
-            case MailShellShortcut.PageThread:
-                OnPageThreadClick(forward: true);
-                return;
-            case MailShellShortcut.PageThreadUp:
-                OnPageThreadClick(forward: false);
-                return;
-            case MailShellShortcut.NextMailbox:
-                OnNextMailboxClick();
-                return;
-            case MailShellShortcut.PreviousMailbox:
-                OnPreviousMailboxClick();
-                return;
-            case MailShellShortcut.FocusNextPane:
-                CyclePane(1);
-                return;
-            case MailShellShortcut.FocusPreviousPane:
-                CyclePane(-1);
-                return;
-            case MailShellShortcut.FocusReading:
-                OpenDraftOrFocusReading();
-                return;
-            case MailShellShortcut.FocusList:
-                OnFocusListClick();
-                return;
-            case MailShellShortcut.ExpandConversation:
-                OnExpandConversationClick(sender, e);
-                return;
-            case MailShellShortcut.CollapseConversation:
-                OnCollapseConversationClick(sender, e);
-                return;
-            case MailShellShortcut.ToggleQuoted:
-                OnToggleQuotedClick(sender, e);
-                return;
-            case MailShellShortcut.GoToMailbox:
-                OnGoToMailboxClick(sender, e);
-                return;
-            case MailShellShortcut.GoToInbox:
-                OnGoToInboxClick(sender, e);
-                return;
-            case MailShellShortcut.GoToOutbox:
-                OnGoToOutboxClick(sender, e);
-                return;
-            case MailShellShortcut.GoToSent:
-                OnGoToSentClick(sender, e);
-                return;
-            case MailShellShortcut.GoToDrafts:
-                OnGoToDraftsClick(sender, e);
-                return;
-            case MailShellShortcut.GoToTrash:
-                OnGoToTrashClick(sender, e);
-                return;
-            case MailShellShortcut.GoToJunk:
-                OnGoToJunkClick(sender, e);
-                return;
-            case MailShellShortcut.NewMailbox:
-                OnNewMailboxClick(sender, e);
-                return;
-            case MailShellShortcut.RenameMailbox:
-                OnRenameMailboxClick(sender, e);
                 return;
         }
     }
@@ -2053,86 +1728,6 @@ public partial class MailShellView : UserControl
         }
 
         ReadingScroll?.Focus();
-    }
-
-    private void OnFocusListClick()
-    {
-        if (ComposeSurface?.IsVisible == true)
-        {
-            return;
-        }
-
-        ThreadsList?.Focus();
-    }
-
-    private bool IsReadingFocused()
-    {
-        if (ReadSurface?.IsVisible != true)
-        {
-            return false;
-        }
-
-        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
-        return ReadSurface.IsFocused || IsInside(ReadSurface, focused);
-    }
-
-    private void CyclePane(int delta)
-    {
-        var panes = new List<Control>();
-        if (NavTree is { IsVisible: true })
-        {
-            panes.Add(NavTree);
-        }
-
-        if (ThreadsList is { IsVisible: true })
-        {
-            panes.Add(ThreadsList);
-        }
-
-        if (ComposeSurface?.IsVisible == true)
-        {
-            if (ComposeBodyBox is { IsVisible: true })
-            {
-                panes.Add(ComposeBodyBox);
-            }
-            else if (ComposeToBox is { IsVisible: true })
-            {
-                panes.Add(ComposeToBox);
-            }
-        }
-        else
-        {
-            if (ReadSurface?.IsVisible == true && ThreadAttachmentsList is { IsVisible: true })
-            {
-                panes.Add(ThreadAttachmentsList);
-            }
-
-            if (FindInMessageBar?.IsVisible == true && FindInMessageBox is { IsVisible: true })
-            {
-                panes.Add(FindInMessageBox);
-            }
-            else if (MessageBodyBox is { IsVisible: true })
-            {
-                panes.Add(MessageBodyBox);
-            }
-            else if (MessageHtmlView is { IsVisible: true })
-            {
-                panes.Add(MessageHtmlView);
-            }
-        }
-
-        if (panes.Count == 0)
-        {
-            return;
-        }
-
-        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
-        var current = panes.FindIndex(pane => pane.IsFocused || IsInside(pane, focused));
-        var next = MailShellFormatting.NextFindIndex(panes.Count, current, delta >= 0);
-        if (next >= 0)
-        {
-            panes[next].Focus();
-        }
     }
 
     private void OnListTypeaheadTick(object? sender, EventArgs e)
@@ -2971,24 +2566,6 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
-    private async void OnMarkReadClick(object? sender, RoutedEventArgs e)
-    {
-        if (IsNavFocused())
-        {
-            OnMarkMailboxReadClick(sender, e);
-            return;
-        }
-
-        var browse = RequireBrowse();
-        if (browse.SelectedMessageId is null && browse.SelectedThreadId is null)
-        {
-            return;
-        }
-
-        await browse.MarkSelectedReadAsync().ConfigureAwait(true);
-        BindLists();
-    }
-
     private async void OnThreadAttachmentClipPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not Control { DataContext: ThreadRow { HasAttachments: true } row })
@@ -3676,159 +3253,6 @@ public partial class MailShellView : UserControl
         SetStatus("Copied.");
     }
 
-    private async void OnGoToMailboxClick(object? sender, RoutedEventArgs e)
-    {
-        var browse = RequireBrowse();
-        if (browse.AllMailboxes.Count == 0)
-        {
-            return;
-        }
-
-        try
-        {
-            var names = browse.Accounts.ToDictionary(account => account.Id, account => account.DisplayName);
-            var manyAccounts = browse.Accounts.Count > 1;
-            var items = browse.AllMailboxes
-                .Select(mailbox => (
-                    mailbox.Id,
-                    MailShellFormatting.MailboxPickerLabel(
-                        mailbox,
-                        manyAccounts ? names.GetValueOrDefault(mailbox.AccountId) : null)))
-                .ToList();
-            var dialog = new MoveMailboxDialog(items, browse.SelectedMailboxId, "Go to Mailbox");
-            var chosen = await AvaloniaOverlayDialog.ShowAsync(this, dialog, dialog.Completion)
-                .ConfigureAwait(true);
-            if (chosen is not { } mailboxId)
-            {
-                return;
-            }
-
-            if (mailboxId == browse.SelectedMailboxId
-                && !browse.ShowingUnifiedInbox
-                && !browse.ShowingOutbox)
-            {
-                return;
-            }
-
-            await MaybeDiscardBlankDraftAsync().ConfigureAwait(true);
-            await browse.GoToMailboxAsync(mailboxId).ConfigureAwait(true);
-            ShowReadSurface();
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnGoToUnifiedInboxClick()
-    {
-        try
-        {
-            var browse = RequireBrowse();
-            if (browse.ShowingUnifiedInbox)
-            {
-                return;
-            }
-
-            await MaybeDiscardBlankDraftAsync().ConfigureAwait(true);
-            await browse.GoToUnifiedInboxAsync().ConfigureAwait(true);
-            ShowReadSurface();
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnGoToAccountIndexClick(int index)
-    {
-        try
-        {
-            var browse = RequireBrowse();
-            if (index < 0 || index >= browse.Accounts.Count)
-            {
-                return;
-            }
-
-            var account = browse.Accounts[index];
-            var inbox = browse.AllMailboxes.FirstOrDefault(item =>
-                item.AccountId == account.Id && item.Role == MailboxRole.Inbox);
-            if (inbox is not null
-                && browse.SelectedAccountId == account.Id
-                && browse.SelectedMailboxId == inbox.Id
-                && !browse.ShowingUnifiedInbox
-                && !browse.ShowingOutbox)
-            {
-                return;
-            }
-
-            await MaybeDiscardBlankDraftAsync().ConfigureAwait(true);
-            await browse.GoToAccountIndexAsync(index).ConfigureAwait(true);
-            ShowReadSurface();
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnGoToInboxClick(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var browse = RequireBrowse();
-            if (browse.ShowingUnifiedInbox || browse.IsOnAccountInbox())
-            {
-                return;
-            }
-
-            await MaybeDiscardBlankDraftAsync().ConfigureAwait(true);
-            await browse.GoToInboxAsync().ConfigureAwait(true);
-            ShowReadSurface();
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnGoToOutboxClick(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var browse = RequireBrowse();
-            if (browse.ShowingOutbox)
-            {
-                return;
-            }
-
-            await MaybeDiscardBlankDraftAsync().ConfigureAwait(true);
-            await browse.GoToAccountOutboxAsync().ConfigureAwait(true);
-            ShowReadSurface();
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnGoToSentClick(object? sender, RoutedEventArgs e) =>
-        await GoToMailboxRoleAsync(MailboxRole.Sent, "No Sent Mailbox.").ConfigureAwait(true);
-
-    private async void OnGoToDraftsClick(object? sender, RoutedEventArgs e) =>
-        await GoToMailboxRoleAsync(MailboxRole.Drafts, "No Drafts Mailbox.").ConfigureAwait(true);
-
-    private async void OnGoToTrashClick(object? sender, RoutedEventArgs e) =>
-        await GoToMailboxRoleAsync(MailboxRole.Trash, "No Trash Mailbox.").ConfigureAwait(true);
-
-    private async void OnGoToJunkClick(object? sender, RoutedEventArgs e) =>
-        await GoToMailboxRoleAsync(MailboxRole.Junk, "No Junk Mailbox.").ConfigureAwait(true);
-
     private async Task GoToMailboxRoleAsync(MailboxRole role, string missingStatus)
     {
         try
@@ -3849,23 +3273,6 @@ public partial class MailShellView : UserControl
             await browse.GoToMailboxRoleAsync(role).ConfigureAwait(true);
             ShowReadSurface();
             BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnUndoTrashClick(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var browse = RequireBrowse();
-            if (await browse.UndoLastTrashAsync().ConfigureAwait(true))
-            {
-                SetStatus(browse.LastRelocateUndoStatus ?? "Undone.");
-                BindLists();
-            }
         }
         catch (Exception ex)
         {
@@ -3910,43 +3317,6 @@ public partial class MailShellView : UserControl
                 await browse.MoveSelectedToTrashAsync().ConfigureAwait(true);
             }
 
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnPermanentlyDeleteClick(object? sender, RoutedEventArgs e)
-    {
-        if (IsNavFocused())
-        {
-            OnNavFocusedDeleteClick(sender, e);
-            return;
-        }
-
-        try
-        {
-            var browse = RequireBrowse();
-            if (browse.ShowingOutbox)
-            {
-                await DiscardSelectedOutboxAsync().ConfigureAwait(true);
-                return;
-            }
-
-            if (browse.SelectedMessageId is null && browse.SelectedThreadId is null)
-            {
-                return;
-            }
-
-            if (!await ConfirmPermanentDeleteAsync().ConfigureAwait(true))
-            {
-                return;
-            }
-
-            await browse.PermanentlyDeleteSelectedAsync().ConfigureAwait(true);
-            SetStatus("Permanently deleted.");
             BindLists();
         }
         catch (Exception ex)
@@ -4086,122 +3456,6 @@ public partial class MailShellView : UserControl
         BindLists();
     }
 
-    private async void OnNextInConversationClick(object? sender, RoutedEventArgs e) =>
-        await MoveAdjacentConversationAsync(RequireBrowse().SelectedMessageId, forward: true).ConfigureAwait(true);
-
-    private async void OnPreviousInConversationClick(object? sender, RoutedEventArgs e) =>
-        await MoveAdjacentConversationAsync(RequireBrowse().SelectedMessageId, forward: false).ConfigureAwait(true);
-
-    private async void OnFirstInConversationClick(object? sender, RoutedEventArgs e) =>
-        await MoveAdjacentConversationAsync(selectedMessageId: null, forward: true).ConfigureAwait(true);
-
-    private async void OnLastInConversationClick(object? sender, RoutedEventArgs e) =>
-        await MoveAdjacentConversationAsync(selectedMessageId: null, forward: false).ConfigureAwait(true);
-
-    private async Task MoveAdjacentConversationAsync(Guid? selectedMessageId, bool forward)
-    {
-        var browse = RequireBrowse();
-        var next = MailShellFormatting.AdjacentConversationCard(
-            browse.Conversation,
-            selectedMessageId,
-            forward);
-        if (next is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await browse.SelectMessageAsync(next.Message.Id).ConfigureAwait(true);
-            await browse.RefreshConversationAsync().ConfigureAwait(true);
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnNextThreadClick(object? sender, RoutedEventArgs e) =>
-        await MoveAdjacentThreadAsync(ThreadsList?.SelectedItem as ThreadRow, forward: true).ConfigureAwait(true);
-
-    private async void OnPreviousThreadClick(object? sender, RoutedEventArgs e) =>
-        await MoveAdjacentThreadAsync(ThreadsList?.SelectedItem as ThreadRow, forward: false).ConfigureAwait(true);
-
-    private async void OnFirstThreadClick(object? sender, RoutedEventArgs e) =>
-        await MoveAdjacentThreadAsync(current: null, forward: true).ConfigureAwait(true);
-
-    private async void OnLastThreadClick(object? sender, RoutedEventArgs e) =>
-        await MoveAdjacentThreadAsync(current: null, forward: false).ConfigureAwait(true);
-
-    private async Task MoveAdjacentThreadAsync(ThreadRow? current, bool forward)
-    {
-        if (ThreadsList?.ItemsSource is not IEnumerable<ThreadRow> source)
-        {
-            return;
-        }
-
-        var rows = source as IReadOnlyList<ThreadRow> ?? source.ToList();
-        var next = MailShellFormatting.AdjacentThreadRow(rows, current, forward);
-        if (next is null)
-        {
-            return;
-        }
-
-        await OpenListedThreadRowAsync(next).ConfigureAwait(true);
-    }
-
-    private async void OnPageThreadClick(bool forward)
-    {
-        if (ThreadsList?.ItemsSource is not IEnumerable<ThreadRow> source)
-        {
-            return;
-        }
-
-        var rows = source as IReadOnlyList<ThreadRow> ?? source.ToList();
-        var next = MailShellFormatting.PagedThreadRow(rows, ThreadsList.SelectedItem as ThreadRow, forward);
-        if (next is null)
-        {
-            return;
-        }
-
-        await OpenListedThreadRowAsync(next).ConfigureAwait(true);
-    }
-
-    private void OnPageViewportClick(bool down)
-    {
-        if (ComposeSurface?.IsVisible == true)
-        {
-            return;
-        }
-
-        TryPageReading(down);
-    }
-
-    private void OnNextMailboxClick() => MoveAdjacentNav(forward: true);
-
-    private void OnPreviousMailboxClick() => MoveAdjacentNav(forward: false);
-
-    private void MoveAdjacentNav(bool forward)
-    {
-        if (NavTree is null)
-        {
-            return;
-        }
-
-        var roots = (NavTree.ItemsSource as IEnumerable<ShellNavItem>)?.ToList() ?? [];
-        var next = MailShellFormatting.AdjacentNavItem(
-            MailShellFormatting.FlattenNav(roots),
-            NavTree.SelectedItem as ShellNavItem,
-            forward);
-        if (next is null)
-        {
-            return;
-        }
-
-        _ = RevealAndSelectNavAsync(next);
-    }
-
     private async Task RevealAndSelectNavAsync(ShellNavItem item)
     {
         if (NavTree is null)
@@ -4253,73 +3507,6 @@ public partial class MailShellView : UserControl
 
         ShowReadSurface();
         BindLists();
-    }
-
-    private async void OnNextFlaggedClick(object? sender, RoutedEventArgs e)
-    {
-        var browse = RequireBrowse();
-        await browse.SelectNextFlaggedAsync().ConfigureAwait(true);
-        if (browse.SelectedMessageId is not null)
-        {
-            await browse.RefreshConversationAsync().ConfigureAwait(true);
-        }
-
-        ShowReadSurface();
-        BindLists();
-    }
-
-    private async void OnPreviousFlaggedClick(object? sender, RoutedEventArgs e)
-    {
-        var browse = RequireBrowse();
-        await browse.SelectPreviousFlaggedAsync().ConfigureAwait(true);
-        if (browse.SelectedMessageId is not null)
-        {
-            await browse.RefreshConversationAsync().ConfigureAwait(true);
-        }
-
-        ShowReadSurface();
-        BindLists();
-    }
-
-    private void OnPageReadingClick(bool down)
-    {
-        if (ComposeSurface?.IsVisible == true)
-        {
-            return;
-        }
-
-        if (TryPageReading(down))
-        {
-            return;
-        }
-
-        if (down)
-        {
-            OnNextUnreadClick(this, new RoutedEventArgs());
-            return;
-        }
-
-        OnPreviousUnreadClick(this, new RoutedEventArgs());
-    }
-
-    private bool TryPageReading(bool down)
-    {
-        if (ReadingScroll is null || ReadSurface?.IsVisible != true)
-        {
-            return false;
-        }
-
-        var offset = ReadingScroll.Offset.Y;
-        var extent = ReadingScroll.Extent.Height;
-        var viewport = ReadingScroll.Viewport.Height;
-        if (!MailShellFormatting.CanPageScroll(offset, extent, viewport, down))
-        {
-            return false;
-        }
-
-        ReadingScroll.Offset = ReadingScroll.Offset.WithY(
-            MailShellFormatting.PageScrollOffset(offset, extent, viewport, down));
-        return true;
     }
 
     private async void OnExpandConversationClick(object? sender, RoutedEventArgs e)
@@ -4544,31 +3731,6 @@ public partial class MailShellView : UserControl
         }
     }
 
-    private async void OnSaveDraftShortcutClick(object? sender, RoutedEventArgs e)
-    {
-        if (ComposeSurface?.IsVisible != true)
-        {
-            return;
-        }
-
-        try
-        {
-            if (IsComposeBlank() && RequireCompose().SelectedDraftId is null)
-            {
-                SetStatus("Nothing to save.");
-                return;
-            }
-
-            await SaveComposeDraftAsync().ConfigureAwait(true);
-            RefreshComposeChrome();
-            SetStatus("Draft saved.");
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
     private async void OnSaveMessageEmlClick(object? sender, RoutedEventArgs e)
     {
         if (IsNavFocused())
@@ -4737,12 +3899,6 @@ public partial class MailShellView : UserControl
         await ShowCcBccAsync(focus: ComposeCcBox).ConfigureAwait(true);
     }
 
-    private async void OnFocusCcClick() =>
-        await ShowCcBccAsync(focus: ComposeCcBox).ConfigureAwait(true);
-
-    private async void OnFocusBccClick() =>
-        await ShowCcBccAsync(focus: ComposeBccBox).ConfigureAwait(true);
-
     private async Task ShowCcBccAsync(TextBox? focus)
     {
         SetCcBccVisible(true);
@@ -4760,12 +3916,6 @@ public partial class MailShellView : UserControl
     }
 
     private void OnToggleHtmlClick(object? sender, RoutedEventArgs e) => SetHtmlVisible(true);
-
-    private void OnFocusHtmlClick()
-    {
-        SetHtmlVisible(true);
-        ComposeHtmlBox?.Focus();
-    }
 
     private void SetHtmlVisible(bool visible)
     {

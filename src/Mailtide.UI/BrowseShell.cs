@@ -442,29 +442,6 @@ public sealed class BrowseShell
         await ReapplyChipFilterAsync(chipFilter, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task GoToMailboxAsync(Guid mailboxId, CancellationToken cancellationToken = default)
-    {
-        var mailbox = AllMailboxes.FirstOrDefault(item => item.Id == mailboxId)
-            ?? Mailboxes.FirstOrDefault(item => item.Id == mailboxId)
-            ?? throw new InvalidOperationException("Mailbox is not available.");
-        if (SelectedMailboxId == mailbox.Id
-            && !ShowingUnifiedInbox
-            && !ShowingOutbox
-            && SelectedAccountId == mailbox.AccountId)
-        {
-            return;
-        }
-
-        if (SelectedAccountId != mailbox.AccountId)
-        {
-            await SelectAccountAsync(mailbox.AccountId, cancellationToken).ConfigureAwait(false);
-        }
-
-        await SelectMailboxAsync(mailbox.Id, cancellationToken).ConfigureAwait(false);
-    }
-
-    public bool IsOnAccountInbox() => IsOnAccountRole(MailboxRole.Inbox);
-
     public bool IsOnAccountRole(MailboxRole role)
     {
         if (ShowingUnifiedInbox || ShowingOutbox || SelectedMailboxId is not { } mailboxId)
@@ -486,97 +463,6 @@ public sealed class BrowseShell
         return AllMailboxes.FirstOrDefault(item =>
                 item.AccountId == accountId && item.Role == role)
             ?? Mailboxes.FirstOrDefault(item => item.Role == role);
-    }
-
-    public async Task GoToAccountIndexAsync(int index, CancellationToken cancellationToken = default)
-    {
-        if (index < 0 || index >= Accounts.Count)
-        {
-            return;
-        }
-
-        var account = Accounts[index];
-        var inbox = AllMailboxes.FirstOrDefault(item =>
-                item.AccountId == account.Id && item.Role == MailboxRole.Inbox)
-            ?? (SelectedAccountId == account.Id
-                ? Mailboxes.FirstOrDefault(item => item.Role == MailboxRole.Inbox)
-                : null);
-        if (inbox is null)
-        {
-            return;
-        }
-
-        if (SelectedAccountId == account.Id
-            && SelectedMailboxId == inbox.Id
-            && !ShowingUnifiedInbox
-            && !ShowingOutbox)
-        {
-            return;
-        }
-
-        if (SelectedAccountId != account.Id)
-        {
-            await SelectAccountAsync(account.Id, cancellationToken).ConfigureAwait(false);
-        }
-
-        await SelectMailboxAsync(inbox.Id, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task GoToUnifiedInboxAsync(CancellationToken cancellationToken = default)
-    {
-        if (ShowingUnifiedInbox)
-        {
-            return;
-        }
-
-        await ShowUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task GoToInboxAsync(CancellationToken cancellationToken = default)
-    {
-        if (ShowingUnifiedInbox)
-        {
-            return;
-        }
-
-        var accountId = CurrentAccountId();
-        if (accountId is null)
-        {
-            await ShowUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        var inbox = AllMailboxes.FirstOrDefault(item =>
-                item.AccountId == accountId && item.Role == MailboxRole.Inbox)
-            ?? Mailboxes.FirstOrDefault(item => item.Role == MailboxRole.Inbox);
-        if (inbox is null)
-        {
-            await ShowUnifiedInboxAsync(cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (SelectedMailboxId == inbox.Id)
-        {
-            return;
-        }
-
-        if (SelectedAccountId != inbox.AccountId)
-        {
-            await SelectAccountAsync(inbox.AccountId, cancellationToken).ConfigureAwait(false);
-        }
-
-        await SelectMailboxAsync(inbox.Id, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task GoToAccountOutboxAsync(CancellationToken cancellationToken = default)
-    {
-        var accountId = CurrentAccountId();
-        if (accountId is null || (ShowingOutbox && SelectedAccountId == accountId))
-        {
-            return;
-        }
-
-        await ShowOutboxAsync(accountId.Value, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task GoToMailboxRoleAsync(
@@ -898,21 +784,10 @@ public sealed class BrowseShell
         await SelectUnreadInAdjacentMailboxAsync(forward: false, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task SelectNextFlaggedAsync(CancellationToken cancellationToken = default) =>
-        SelectAdjacentMatchingAsync(forward: true, FlaggedMatch, FlaggedThreadMatch, cancellationToken);
-
-    public Task SelectPreviousFlaggedAsync(CancellationToken cancellationToken = default) =>
-        SelectAdjacentMatchingAsync(forward: false, FlaggedMatch, FlaggedThreadMatch, cancellationToken);
-
     private static bool UnreadMatch(MessageInfo message) => !message.IsRead;
 
     private static bool UnreadThreadMatch(MessageThreadInfo thread) =>
         thread.Messages.Any(message => !message.IsRead);
-
-    private static bool FlaggedMatch(MessageInfo message) => message.IsFlagged;
-
-    private static bool FlaggedThreadMatch(MessageThreadInfo thread) =>
-        thread.Messages.Any(message => message.IsFlagged);
 
     private async Task<bool> SelectAdjacentMatchingAsync(
         bool forward,
@@ -1256,7 +1131,6 @@ public sealed class BrowseShell
 
         if (sourceMailboxId is { } source && source != destinationMailboxId)
         {
-            RememberRelocate(UndoRelocateKind.Move, items, source);
             await RememberRecentMoveAsync(destinationMailboxId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -1294,61 +1168,7 @@ public sealed class BrowseShell
                 .ConfigureAwait(false);
         }
 
-        RememberRelocate(UndoRelocateKind.Trash, items, sourceMailboxId: null);
         await ReloadAfterRelocateAsync(NeighborThreadId(), cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<bool> UndoLastTrashAsync(CancellationToken cancellationToken = default)
-    {
-        if (_undoItems.Count == 0 || _undoKind is not { } kind)
-        {
-            return false;
-        }
-
-        var items = _undoItems;
-        var sourceMailboxId = _undoSourceMailboxId;
-        _undoItems = [];
-        _undoKind = null;
-        _undoSourceMailboxId = null;
-        LastRelocateUndoStatus = kind switch
-        {
-            UndoRelocateKind.Trash => "Restored from Trash.",
-            UndoRelocateKind.Junk => "Restored from Junk.",
-            UndoRelocateKind.Move => "Move undone.",
-            _ => "Undone.",
-        };
-        foreach (var (accountId, messageId) in items)
-        {
-            switch (kind)
-            {
-                case UndoRelocateKind.Trash:
-                    await _app
-                        .RestoreFromTrashAsync(accountId, messageId, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-                case UndoRelocateKind.Junk:
-                    await _app
-                        .RestoreFromJunkAsync(accountId, messageId, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-                case UndoRelocateKind.Move:
-                    if (sourceMailboxId is not { } destination)
-                    {
-                        return false;
-                    }
-
-                    await _app
-                        .MoveMessageAsync(accountId, messageId, destination, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-            }
-        }
-
-        ClearMessageDetail();
-        await ReloadListingAsync(cancellationToken).ConfigureAwait(false);
-        await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
-        await RestoreNeighborAsync(items[0].MessageId, cancellationToken).ConfigureAwait(false);
-        return true;
     }
 
     public async Task RestoreSelectedFromTrashAsync(CancellationToken cancellationToken = default)
@@ -1390,14 +1210,12 @@ public sealed class BrowseShell
                 .ConfigureAwait(false);
         }
 
-        RememberRelocate(UndoRelocateKind.Junk, items, sourceMailboxId: null);
         await ReloadAfterRelocateAsync(NeighborThreadId(), cancellationToken).ConfigureAwait(false);
     }
 
     public async Task MoveSelectedToArchiveAsync(CancellationToken cancellationToken = default)
     {
         var items = CaptureRelocateSelection();
-        var sourceMailboxId = CaptureSourceMailboxId();
         foreach (var (accountId, messageId) in items)
         {
             await _app
@@ -1405,7 +1223,6 @@ public sealed class BrowseShell
                 .ConfigureAwait(false);
         }
 
-        RememberRelocate(UndoRelocateKind.Move, items, sourceMailboxId);
         await ReloadAfterRelocateAsync(NeighborThreadId(), cancellationToken).ConfigureAwait(false);
     }
 
@@ -1441,10 +1258,8 @@ public sealed class BrowseShell
     public async Task PermanentlyDeleteSelectedAsync(CancellationToken cancellationToken = default)
     {
         var thread = CurrentThread();
-        IReadOnlyList<(Guid AccountId, Guid MessageId)> deleted;
         if (thread is not null)
         {
-            deleted = thread.Messages.Select(item => (item.AccountId, item.Id)).ToList();
             foreach (var item in thread.Messages)
             {
                 await _app
@@ -1461,21 +1276,9 @@ public sealed class BrowseShell
 
             var message = RequireLoadedMessage(messageId);
 
-            deleted = [(message.AccountId, messageId)];
             await _app
                 .PermanentlyDeleteMessageAsync(message.AccountId, messageId, cancellationToken)
                 .ConfigureAwait(false);
-        }
-
-        if (_undoItems.Count > 0)
-        {
-            var gone = deleted.ToHashSet();
-            _undoItems = _undoItems.Where(item => !gone.Contains(item)).ToList();
-            if (_undoItems.Count == 0)
-            {
-                _undoKind = null;
-                _undoSourceMailboxId = null;
-            }
         }
 
         await ReloadAfterRelocateAsync(NeighborThreadId(), cancellationToken).ConfigureAwait(false);
@@ -2162,14 +1965,6 @@ public sealed class BrowseShell
 
     private HashSet<Guid>? _searchHitIds;
 
-    private IReadOnlyList<(Guid AccountId, Guid MessageId)> _undoItems = [];
-
-    private UndoRelocateKind? _undoKind;
-
-    private Guid? _undoSourceMailboxId;
-
-    public string? LastRelocateUndoStatus { get; private set; }
-
     private List<Guid> _recentMoveMailboxIds = [];
 
     private bool _recentMovesLoaded;
@@ -2328,17 +2123,6 @@ public sealed class BrowseShell
     private Guid? CaptureSourceMailboxId() =>
         CurrentThread()?.Latest.MailboxId
         ?? FindLoadedMessage(SelectedMessageId)?.MailboxId;
-
-    private void RememberRelocate(
-        UndoRelocateKind kind,
-        IReadOnlyList<(Guid AccountId, Guid MessageId)> items,
-        Guid? sourceMailboxId)
-    {
-        _undoItems = items;
-        _undoKind = kind;
-        _undoSourceMailboxId = sourceMailboxId;
-        LastRelocateUndoStatus = null;
-    }
 
     private async Task EnsureRecentMovesAsync(CancellationToken cancellationToken)
     {
@@ -2933,13 +2717,6 @@ public sealed class BrowseShell
 }
 
 public sealed record AccountStatusRow(AccountInfo Account, AccountStatus Status);
-
-internal enum UndoRelocateKind
-{
-    Trash = 0,
-    Junk = 1,
-    Move = 2,
-}
 
 public enum AuthenticationFailureAction
 {
