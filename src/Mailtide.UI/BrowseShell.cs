@@ -1322,35 +1322,6 @@ public sealed class BrowseShell
         await LoadAccountsAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task OpenFirstThreadAttachmentAsync(
-        Guid latestMessageId,
-        CancellationToken cancellationToken = default)
-    {
-        AttachmentOpenError = null;
-        var thread = Threads.FirstOrDefault(item => item.Latest.Id == latestMessageId)
-            ?? Threads.FirstOrDefault(item => item.Messages.Any(message => message.Id == latestMessageId));
-        var messages = thread?.Messages
-            ?? Messages.Where(item => item.Id == latestMessageId).ToList();
-        foreach (var message in messages.OrderByDescending(item => item.ReceivedAt).ThenByDescending(item => item.Id))
-        {
-            var attachments = await _app
-                .ListAttachmentsAsync(message.AccountId, message.Id, cancellationToken)
-                .ConfigureAwait(false);
-            if (attachments.Count == 0)
-            {
-                continue;
-            }
-
-            ThreadAttachments = attachments;
-            Attachments = attachments;
-            await OpenAttachmentAsync(attachments[0].Id, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        AttachmentOpenError = "Attachment is not available.";
-    }
-
-
     private const string OmittedAttachmentMessage =
         "This attachment was omitted because it is over the size limit.";
 

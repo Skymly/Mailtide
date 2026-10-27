@@ -15,6 +15,7 @@ public enum ObjectMenuVerb
     EditAsNew,
     SaveAsEml,
     ShowOriginal,
+    OpenAttachment,
     CopySubject,
     CopyAddress,
     SearchFromSender,
@@ -62,6 +63,8 @@ public sealed record ObjectMenuState
     public bool AnyUnread { get; init; }
 
     public bool AnyFlagged { get; init; }
+
+    public bool MessageHasAttachments { get; init; }
 }
 
 /// <summary>
@@ -83,6 +86,7 @@ public static class MailShellObjectMenu
             new(ObjectMenuVerb.EditAsNew, "Edit as New", message),
             new(ObjectMenuVerb.SaveAsEml, "Save as .eml", message),
             new(ObjectMenuVerb.ShowOriginal, "Show original", message),
+            new(ObjectMenuVerb.OpenAttachment, "Open Attachment", message && state.MessageHasAttachments),
             new(ObjectMenuVerb.CopySubject, "Copy subject", message),
             new(ObjectMenuVerb.CopyAddress, "Copy address", message),
             new(ObjectMenuVerb.SearchFromSender, "Search from sender", message),

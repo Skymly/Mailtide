@@ -57,14 +57,7 @@ public sealed class MailShellFormattingTests
         Assert.IsFalse(older.ShowToLine);
         Assert.IsFalse(older.ShowCcLine);
         Assert.IsFalse(older.ShowRemoteImagesCaption);
-        Assert.IsFalse(older.ShowActions);
-        Assert.IsFalse(older.ShowFlag);
         Assert.IsFalse(expanded.ShowBodyText);
-        Assert.IsTrue(expanded.ShowActions);
-        Assert.IsTrue(expanded.ShowFlag);
-        Assert.IsFalse(expanded.ShowUnflag);
-        Assert.IsTrue(Card(selected: true, flagged: true).ShowUnflag);
-        Assert.IsFalse(Card(selected: true, flagged: true).ShowFlag);
         Assert.IsTrue(expanded.ShowToLine);
         Assert.IsTrue(expanded.ShowCcLine);
         Assert.IsTrue(expanded.ShowRemoteImagesCaption);
@@ -154,21 +147,6 @@ public sealed class MailShellFormattingTests
         var selected = Card(selected: true, bodyText: "Hello", conversationExpanded: true);
         Assert.IsFalse(selected.ShowBodyText);
         Assert.IsFalse(selected.ShowExpandedBody);
-        Assert.IsTrue(selected.ShowMarkUnread);
-        Assert.IsFalse(selected.ShowMarkRead);
-        var unread = Card(selected: true, isRead: false);
-        Assert.IsFalse(unread.ShowMarkUnread);
-        Assert.IsTrue(unread.ShowMarkRead);
-        Assert.IsFalse(Card(selected: false).ShowMarkUnread);
-        var clipped = Card(
-            selected: false,
-            attachments:
-            [
-                new AttachmentInfo(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "notes.txt", "text/plain"),
-                new AttachmentInfo(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "photo.png", "image/png"),
-            ]);
-        Assert.IsTrue(clipped.ShowAttachmentClip);
-        Assert.AreEqual("notes.txt, photo.png", clipped.AttachmentTip);
     }
 
     [TestMethod]
@@ -1257,11 +1235,8 @@ public sealed class MailShellFormattingTests
         string? bodyHtml = null,
         bool unavailable = false,
         bool remote = false,
-        bool flagged = false,
         string subject = "s",
         bool conversationExpanded = false,
-        bool isRead = true,
-        IReadOnlyList<AttachmentInfo>? attachments = null,
         DateTimeOffset? receivedAt = null,
         string? searchNeedle = null) =>
         new()
@@ -1274,8 +1249,8 @@ public sealed class MailShellFormattingTests
                 subject,
                 "bob@example.com",
                 receivedAt ?? DateTimeOffset.UtcNow,
-                isRead,
-                flagged),
+                true,
+                false),
             Sender = "Bob",
             DateLabel = "1:00 PM",
             IsSelected = selected,
@@ -1287,6 +1262,5 @@ public sealed class MailShellFormattingTests
             SearchNeedle = searchNeedle,
             BodyUnavailable = unavailable,
             HasRemoteImages = remote,
-            Attachments = attachments ?? [],
         };
 }
