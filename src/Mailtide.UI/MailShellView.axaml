@@ -668,22 +668,31 @@
                   </DataTemplate>
                 </ComboBox.ItemTemplate>
               </ComboBox>
-              <ComboBox Name="DraftsCombo"
-                        PlaceholderText="Local Drafts"
-                        HorizontalAlignment="Stretch"
-                        SelectionChanged="OnDraftSelectionChanged">
-                <ComboBox.ItemTemplate>
-                  <DataTemplate x:DataType="core:DraftInfo">
-                    <TextBlock Text="{Binding Subject, Converter={x:Static local:SubjectFallbackConverter.Instance}}" />
-                  </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
+              <DockPanel>
+                <Button Name="AttachDraftButton"
+                        DockPanel.Dock="Right"
+                        Content="Attach"
+                        Padding="8,4"
+                        Margin="8,0,0,0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        IsTabStop="False"
+                        Click="OnAttachDraftClick" />
+                <ComboBox Name="DraftsCombo"
+                          PlaceholderText="Local Drafts"
+                          HorizontalAlignment="Stretch"
+                          SelectionChanged="OnDraftSelectionChanged">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="core:DraftInfo">
+                      <TextBlock Text="{Binding Subject, Converter={x:Static local:SubjectFallbackConverter.Instance}}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </DockPanel>
             </DockPanel>
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
               <Button Name="SendDraftButton" Content="Send" Click="OnSendDraftClick" />
               <Button Name="DiscardDraftButton" Content="Discard" Click="OnDiscardDraftClick" />
-              <Button Name="AttachDraftButton" Content="Attach" Click="OnAttachDraftClick" />
-              <Button Name="RemoveDraftAttachmentButton" Content="Remove Attachment" Click="OnRemoveDraftAttachmentClick" />
             </StackPanel>
             <ScrollViewer>
               <StackPanel Spacing="6">
@@ -734,7 +743,15 @@
                 <ListBox Name="DraftAttachmentsList" MinHeight="40" MaxHeight="80">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="core:DraftAttachmentInfo">
-                      <TextBlock Text="{Binding FileName}" />
+                      <DockPanel>
+                        <Button DockPanel.Dock="Right"
+                                Content="Remove"
+                                Padding="8,4"
+                                IsTabStop="False"
+                                Click="OnRemoveDraftAttachmentClick" />
+                        <TextBlock Text="{Binding FileName}"
+                                   VerticalAlignment="Center" />
+                      </DockPanel>
                     </DataTemplate>
                   </ListBox.ItemTemplate>
                 </ListBox>
