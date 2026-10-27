@@ -12,44 +12,10 @@ public static class MailShellFormatting
 
     public const int MaxRecentSearches = 10;
 
-    public const int ThreadListPageSize = 10;
-
     public const double ThreadDragThreshold = 8;
 
     public static bool ShouldStartDrag(double deltaX, double deltaY, double threshold = ThreadDragThreshold) =>
         (deltaX * deltaX) + (deltaY * deltaY) >= threshold * threshold;
-
-    public static bool CanPageScroll(double offset, double extent, double viewport, bool down)
-    {
-        if (viewport <= 0)
-        {
-            return false;
-        }
-
-        var max = Math.Max(0, extent - viewport);
-        return down ? offset + 1 < max : offset > 1;
-    }
-
-    public static bool ShouldDeferPagingToHtml(bool htmlVisible, bool htmlFocused, bool canPageOuter) =>
-        htmlVisible && htmlFocused && !canPageOuter;
-
-    public static bool ShouldDeferPagingToAttachmentStrip(bool stripVisible, bool stripFocused) =>
-        stripVisible && stripFocused;
-
-    public static double PageScrollOffset(double offset, double extent, double viewport, bool down)
-    {
-        var max = Math.Max(0, extent - viewport);
-        var clamped = Math.Clamp(offset, 0, max);
-        if (viewport <= 0 || !CanPageScroll(clamped, extent, viewport, down))
-        {
-            return clamped;
-        }
-
-        var step = Math.Max(1, viewport * 0.9);
-        return down
-            ? Math.Min(max, clamped + step)
-            : Math.Max(0, clamped - step);
-    }
 
     public static int ComposeTabTarget(int fieldCount, int currentIndex, bool forward)
     {
@@ -60,114 +26,6 @@ public static class MailShellFormatting
 
         var next = currentIndex + (forward ? 1 : -1);
         return next < 0 || next >= fieldCount ? -1 : next;
-    }
-
-    public static ConversationCard? AdjacentConversationCard(
-        IReadOnlyList<ConversationCard> cards,
-        Guid? selectedMessageId,
-        bool forward)
-    {
-        ArgumentNullException.ThrowIfNull(cards);
-        if (cards.Count == 0)
-        {
-            return null;
-        }
-
-        var index = -1;
-        if (selectedMessageId is { } id)
-        {
-            for (var i = 0; i < cards.Count; i++)
-            {
-                if (cards[i].Message.Id == id)
-                {
-                    index = i;
-                    break;
-                }
-            }
-        }
-
-        if (index < 0)
-        {
-            return forward ? cards[0] : cards[^1];
-        }
-
-        var next = index + (forward ? 1 : -1);
-        return next < 0 || next >= cards.Count ? null : cards[next];
-    }
-
-    public static ThreadRow? AdjacentThreadRow(
-        IReadOnlyList<ThreadRow> rows,
-        ThreadRow? current,
-        bool forward)
-    {
-        ArgumentNullException.ThrowIfNull(rows);
-        var threads = rows.Where(row => row.ShowAsThread).ToList();
-        if (threads.Count == 0)
-        {
-            return null;
-        }
-
-        var index = -1;
-        if (current is not null)
-        {
-            for (var i = 0; i < threads.Count; i++)
-            {
-                if (threads[i].Id == current.Id)
-                {
-                    index = i;
-                    break;
-                }
-            }
-        }
-
-        if (index < 0)
-        {
-            return forward ? threads[0] : threads[^1];
-        }
-
-        var next = index + (forward ? 1 : -1);
-        return next < 0 || next >= threads.Count ? null : threads[next];
-    }
-
-    public static ThreadRow? PagedThreadRow(
-        IReadOnlyList<ThreadRow> rows,
-        ThreadRow? current,
-        bool forward,
-        int pageSize = ThreadListPageSize)
-    {
-        ArgumentNullException.ThrowIfNull(rows);
-        if (pageSize <= 0)
-        {
-            return AdjacentThreadRow(rows, current, forward);
-        }
-
-        var threads = rows.Where(row => row.ShowAsThread).ToList();
-        if (threads.Count == 0)
-        {
-            return null;
-        }
-
-        var index = -1;
-        if (current is not null)
-        {
-            for (var i = 0; i < threads.Count; i++)
-            {
-                if (threads[i].Id == current.Id)
-                {
-                    index = i;
-                    break;
-                }
-            }
-        }
-
-        if (index < 0)
-        {
-            return AdjacentThreadRow(rows, current: null, forward);
-        }
-
-        var next = index + (forward ? pageSize : -pageSize);
-        next = Math.Clamp(next, 0, threads.Count - 1);
-        return next == index ? null : threads[next];
     }
 
     public static ThreadRow? RowMatchingPrefix(
@@ -434,80 +292,6 @@ public static class MailShellFormatting
         }
 
         return false;
-    }
-
-    public static bool CanGoToNav(ShellNavItem item)
-    {
-        ArgumentNullException.ThrowIfNull(item);
-        return !item.IsFavoritePin
-            && item.Kind is ShellNavKind.UnifiedInbox or ShellNavKind.Mailbox or ShellNavKind.Outbox;
-    }
-
-    public static ShellNavItem? AdjacentNavItem(
-        IReadOnlyList<ShellNavItem> items,
-        ShellNavItem? current,
-        bool forward)
-    {
-        ArgumentNullException.ThrowIfNull(items);
-        if (items.Count == 0)
-        {
-            return null;
-        }
-
-        var index = -1;
-        if (current is not null)
-        {
-            for (var i = 0; i < items.Count; i++)
-            {
-                if (ReferenceEquals(items[i], current) || NavSame(items[i], current))
-                {
-                    index = i;
-                    break;
-                }
-            }
-        }
-
-        if (index < 0)
-        {
-            return FirstGoToNav(items, forward);
-        }
-
-        var step = forward ? 1 : -1;
-        for (var i = index + step; i >= 0 && i < items.Count; i += step)
-        {
-            if (CanGoToNav(items[i]))
-            {
-                return items[i];
-            }
-        }
-
-        return null;
-    }
-
-    private static ShellNavItem? FirstGoToNav(IReadOnlyList<ShellNavItem> items, bool forward)
-    {
-        if (forward)
-        {
-            for (var i = 0; i < items.Count; i++)
-            {
-                if (CanGoToNav(items[i]))
-                {
-                    return items[i];
-                }
-            }
-        }
-        else
-        {
-            for (var i = items.Count - 1; i >= 0; i--)
-            {
-                if (CanGoToNav(items[i]))
-                {
-                    return items[i];
-                }
-            }
-        }
-
-        return null;
     }
 
     public static bool HasOwnUnread(ShellNavItem item, IReadOnlyDictionary<Guid, int> unreadByMailbox)
