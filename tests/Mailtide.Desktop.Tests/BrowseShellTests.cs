@@ -1890,10 +1890,7 @@ public sealed class BrowseShellTests
 
         Assert.HasCount(2, shell.Conversation);
         Assert.IsEmpty(shell.Conversation[0].Attachments);
-        Assert.IsTrue(shell.Conversation[0].ShowAttachmentClip is false);
         Assert.AreEqual("invoice.pdf", shell.Conversation[1].Attachments.Single().FileName);
-        Assert.IsTrue(shell.Conversation[1].ShowAttachmentChips);
-        Assert.IsFalse(shell.Conversation[1].ShowAttachmentClip);
         Assert.AreEqual("invoice.pdf", shell.ThreadAttachments.Single().FileName);
     }
 
@@ -1990,59 +1987,6 @@ public sealed class BrowseShellTests
         Assert.AreEqual("report.pdf", Path.GetFileName(path));
         CollectionAssert.AreEqual(payload, await File.ReadAllBytesAsync(path));
         Assert.IsNull(shell.AttachmentOpenError);
-    }
-
-    [TestMethod]
-    public async Task BrowseShell_OpenFirstThreadAttachment_opens_the_latest_file()
-    {
-        using var fixture = new DesktopAppFixture();
-        var payload = "clip-payload"u8.ToArray();
-        fixture.Imap.SeedMailboxes(new RemoteMailbox("INBOX", "INBOX", MailboxRole.Inbox));
-        fixture.Imap.SeedMessages(
-            "INBOX",
-            new RemoteMessage(
-                RemoteId: "m-clip",
-                Subject: "Has file",
-                FromAddress: "bob@example.com",
-                ReceivedAt: new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero),
-                IsRead: true,
-                BodyText: "see file")
-            {
-                Attachments =
-                [
-                    new RemoteAttachment(
-                        FileName: "notes.txt",
-                        ContentType: "text/plain",
-                        Content: payload),
-                ],
-            });
-        await using var app = await fixture.OpenAppAsync();
-        var account = await app.AddManualAccountAsync(ValidDraft("Personal", "alice@example.com"));
-        await app.SyncNowAsync(account.Id);
-        var inbox = (await app.ListMailboxesAsync(account.Id)).Single();
-
-        var fakeOpen = new FakeOpenDownloadedAttachment();
-        lock (HostBootstrapGate)
-        {
-            var previous = HostBootstrap.OpenDownloadedAttachment;
-            HostBootstrap.OpenDownloadedAttachment = fakeOpen;
-            try
-            {
-                var shell = new BrowseShell(app);
-                shell.SelectAccountAsync(account.Id).GetAwaiter().GetResult();
-                shell.SelectMailboxAsync(inbox.Id).GetAwaiter().GetResult();
-                shell.OpenFirstThreadAttachmentAsync(shell.Threads[0].Latest.Id).GetAwaiter().GetResult();
-
-                Assert.IsNull(shell.AttachmentOpenError);
-                Assert.AreEqual("notes.txt", fakeOpen.LastFileName);
-                Assert.AreEqual("text/plain", fakeOpen.LastContentType);
-                CollectionAssert.AreEqual(payload, fakeOpen.LastContent);
-            }
-            finally
-            {
-                HostBootstrap.OpenDownloadedAttachment = previous;
-            }
-        }
     }
 
     [TestMethod]

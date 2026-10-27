@@ -40,7 +40,8 @@ public sealed class ObjectMenuBuilderTests
         bool expanded = false,
         bool newestFirst = true,
         bool unread = false,
-        bool flagged = false) =>
+        bool flagged = false,
+        bool attachments = false) =>
         new()
         {
             ShowingOutbox = outbox,
@@ -53,6 +54,7 @@ public sealed class ObjectMenuBuilderTests
             ConversationNewestFirst = newestFirst,
             AnyUnread = unread,
             AnyFlagged = flagged,
+            MessageHasAttachments = attachments,
         };
 
     [TestMethod]
@@ -117,6 +119,22 @@ public sealed class ObjectMenuBuilderTests
         CollectionAssert.AreEqual(
             new[] { "Mark Unread", "Flag" },
             Visible(ObjectMenuSurface.Reading, State(outbox: true)).ToArray());
+    }
+
+    [TestMethod]
+    public void Message_card_state_adds_open_attachment_after_show_original()
+    {
+        var withFile = Visible(ObjectMenuSurface.Reading, State(attachments: true));
+        Assert.IsTrue(withFile.Contains("Open Attachment"));
+        Assert.AreEqual(
+            "Open Attachment",
+            withFile[withFile.ToList().IndexOf("Show original") + 1]);
+
+        Assert.IsFalse(
+            Visible(ObjectMenuSurface.Reading, State()).Contains("Open Attachment"));
+        Assert.IsFalse(
+            Visible(ObjectMenuSurface.Reading, State(outbox: true, attachments: true))
+                .Contains("Open Attachment"));
     }
 
     [TestMethod]

@@ -51,6 +51,7 @@ public partial class MailShellView : UserControl
     private AttachmentInfo? _attachmentDragItem;
     private Guid? _readingScrollForThreadId;
     private Guid? _readingScrollForMessageId;
+    private bool _openingCardMenu;
 
     public MailShellView()
     {
@@ -1428,7 +1429,7 @@ public partial class MailShellView : UserControl
     {
         if (sender is ContextMenu menu)
         {
-            RebuildObjectMenu(menu.Items, ObjectMenuSurface.ThreadList);
+            RebuildObjectMenu(menu.Items, ObjectMenuSurface.ThreadList, CurrentObjectMenuState());
         }
     }
 
@@ -1436,14 +1437,62 @@ public partial class MailShellView : UserControl
     {
         if (sender is MenuFlyout flyout)
         {
-            RebuildObjectMenu(flyout.Items, ObjectMenuSurface.Reading);
+            RebuildObjectMenu(flyout.Items, ObjectMenuSurface.Reading, CurrentObjectMenuState());
         }
     }
 
-    private void RebuildObjectMenu(ItemCollection items, ObjectMenuSurface surface)
+    private async void OnConversationCardMenuOpening(object? sender, CancelEventArgs e)
+    {
+        if (sender is not ContextMenu { PlacementTarget: Control { DataContext: ConversationCard card } } menu
+            || _browse is not { } browse
+            || browse.ShowingOutbox)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        if (_openingCardMenu)
+        {
+            return;
+        }
+
+        if (card.Message.Id == browse.SelectedMessageId)
+        {
+            RebuildObjectMenu(
+                menu.Items,
+                ObjectMenuSurface.Reading,
+                CurrentObjectMenuState() with { MessageHasAttachments = card.Attachments.Count > 0 });
+            return;
+        }
+
+        e.Cancel = true;
+        try
+        {
+            _openingCardMenu = true;
+            await browse.SelectMessageAsync(card.Message.Id).ConfigureAwait(true);
+            await browse.RefreshConversationAsync().ConfigureAwait(true);
+            RebuildObjectMenu(
+                menu.Items,
+                ObjectMenuSurface.Reading,
+                CurrentObjectMenuState() with { MessageHasAttachments = card.Attachments.Count > 0 });
+            menu.Open(menu.PlacementTarget);
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message);
+            menu.Items.Clear();
+        }
+        finally
+        {
+            _openingCardMenu = false;
+        }
+    }
+
+    private void RebuildObjectMenu(ItemCollection items, ObjectMenuSurface surface, ObjectMenuState state)
     {
         items.Clear();
-        foreach (var entry in MailShellObjectMenu.Build(surface, CurrentObjectMenuState()))
+        foreach (var entry in MailShellObjectMenu.Build(surface, state))
         {
             var item = new MenuItem
             {
@@ -1501,6 +1550,7 @@ public partial class MailShellView : UserControl
         ObjectMenuVerb.EditAsNew => OnEditAsNewClick,
         ObjectMenuVerb.SaveAsEml => OnSaveMessageEmlClick,
         ObjectMenuVerb.ShowOriginal => OnShowOriginalClick,
+        ObjectMenuVerb.OpenAttachment => OnOpenCardAttachmentClick,
         ObjectMenuVerb.CopySubject => OnCopySubjectClick,
         ObjectMenuVerb.CopyAddress => OnCopyAddressClick,
         ObjectMenuVerb.SearchFromSender => OnSearchFromSenderClick,
@@ -2346,33 +2396,16 @@ public partial class MailShellView : UserControl
         }
     }
 
-    private async void OnConversationAttachmentClipTapped(object? sender, TappedEventArgs e)
+    private async void OnOpenCardAttachmentClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: ConversationCard { Attachments.Count: > 0 } card })
+        var attachment = (sender as Control)?.DataContext is ConversationCard card
+            ? card.Attachments.FirstOrDefault()
+            : RequireBrowse().Attachments.FirstOrDefault();
+        if (attachment is null)
         {
             return;
         }
 
-        e.Handled = true;
-        try
-        {
-            await RequireBrowse().OpenAttachmentAsync(card.Attachments[0].Id).ConfigureAwait(true);
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnConversationAttachmentTapped(object? sender, TappedEventArgs e)
-    {
-        if (sender is not Control { DataContext: AttachmentInfo attachment })
-        {
-            return;
-        }
-
-        e.Handled = true;
         try
         {
             await RequireBrowse().OpenAttachmentAsync(attachment.Id).ConfigureAwait(true);
@@ -2564,44 +2597,6 @@ public partial class MailShellView : UserControl
 
         await browse.MarkSelectedUnreadAsync().ConfigureAwait(true);
         BindLists();
-    }
-
-    private async void OnThreadAttachmentClipPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (sender is not Control { DataContext: ThreadRow { HasAttachments: true } row })
-        {
-            return;
-        }
-
-        e.Handled = true;
-        try
-        {
-            await RequireBrowse().OpenFirstThreadAttachmentAsync(row.Id).ConfigureAwait(true);
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
-    }
-
-    private async void OnThreadFlagPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (sender is not Control { DataContext: ThreadRow { CanFlag: true } row })
-        {
-            return;
-        }
-
-        e.Handled = true;
-        try
-        {
-            await RequireBrowse().ToggleFlagAsync(row.Id).ConfigureAwait(true);
-            BindLists();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message);
-        }
     }
 
     private async void OnFlagClick(object? sender, RoutedEventArgs e)
@@ -3658,8 +3653,24 @@ public partial class MailShellView : UserControl
         _attachmentDragItem = null;
     }
 
-    private async void OnThreadAttachmentDoubleTapped(object? sender, TappedEventArgs e) =>
-        await OpenSelectedThreadAttachmentAsync().ConfigureAwait(true);
+    private async void OnThreadAttachmentTapped(object? sender, TappedEventArgs e)
+    {
+        if (FindAncestorData<AttachmentInfo>(e.Source) is not { } attachment)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        try
+        {
+            await RequireBrowse().OpenAttachmentAsync(attachment.Id).ConfigureAwait(true);
+            BindLists();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message);
+        }
+    }
 
     private async void OnThreadAttachmentKeyDown(object? sender, KeyEventArgs e)
     {

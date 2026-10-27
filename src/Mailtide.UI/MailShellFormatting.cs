@@ -1934,23 +1934,6 @@ public sealed class ConversationCard
 
     public IReadOnlyList<AttachmentInfo> Attachments { get; init; } = [];
 
-    public bool ShowAttachmentChips => IsSelected && Attachments.Count > 0;
-
-    public bool ShowAttachmentClip => !IsSelected && Attachments.Count > 0;
-
-    public string AttachmentTip =>
-        string.Join(", ", Attachments.Select(attachment => attachment.ListLabel));
-
-    public bool ShowActions => IsSelected;
-
-    public bool ShowFlag => IsSelected && !Message.IsFlagged;
-
-    public bool ShowUnflag => IsSelected && Message.IsFlagged;
-
-    public bool ShowMarkUnread => IsSelected && Message.IsRead;
-
-    public bool ShowMarkRead => IsSelected && !Message.IsRead;
-
     public bool HasRemoteImages { get; init; }
 
     public bool BodyUnavailable { get; init; }
