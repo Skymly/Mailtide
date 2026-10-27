@@ -868,7 +868,7 @@ public partial class MailShellView : UserControl
     private async void OnRemoveDraftAttachmentClick(object? sender, RoutedEventArgs e)
     {
         var compose = RequireCompose();
-        if (DraftAttachmentsList.SelectedItem is not DraftAttachmentInfo attachment)
+        if (sender is not Button { DataContext: DraftAttachmentInfo attachment })
         {
             return;
         }
