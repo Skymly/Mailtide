@@ -1346,40 +1346,6 @@ public sealed class MailShellFormattingTests
         Assert.IsFalse(MailShellFormatting.IsCurrentListRow(searchRow, null, Guid.NewGuid()));
     }
 
-    [TestMethod]
-    public void ObjectMenuOutboxOverride_hides_message_verbs_in_Outbox()
-    {
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Retry", true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Discard", true));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Copy", true));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Archive", true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Archive", false));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Copy", false));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Reply", true));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Edit as New", true));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Save as .eml", true));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Copy headers", true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Copy headers", false));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Show original", true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Show original", false));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Copy Message-ID", true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Copy Message-ID", false));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Search from sender", true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Search from sender", false));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Search to recipient", true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Search to recipient", false));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuOutboxOverride("Reply", false));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuOutboxOverride("Retry", false));
-        Assert.IsNull(MailShellFormatting.ObjectMenuOutboxOverride("Mark Unread", true));
-        Assert.IsNull(MailShellFormatting.ObjectMenuOutboxOverride("Expand all", true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuConversationOverride("Expand all", true, false));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuConversationOverride("Expand all", false, false));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuConversationOverride("Expand all", true, true));
-        Assert.IsTrue(MailShellFormatting.ObjectMenuConversationOverride("Collapse all", true, true));
-        Assert.IsFalse(MailShellFormatting.ObjectMenuConversationOverride("Collapse all", true, false));
-        Assert.IsNull(MailShellFormatting.ObjectMenuConversationOverride("Reply", true, false));
-    }
-
     private static ThreadRow Thread(Guid accountId, Guid mailboxId)
     {
         var message = new MessageInfo(

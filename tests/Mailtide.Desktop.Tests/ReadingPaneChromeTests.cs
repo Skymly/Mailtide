@@ -16,7 +16,8 @@ public sealed class ReadingPaneChromeTests
 
         var readingMenu = axaml.IndexOf("Name=\"ReadingMoreButton\"", StringComparison.Ordinal);
         Assert.IsTrue(readingMenu > templateEnd);
-        Assert.Contains("Header=\"Reply\"", axaml[readingMenu..], StringComparison.Ordinal);
+        Assert.Contains("<MenuFlyout", axaml[readingMenu..], StringComparison.Ordinal);
+        Assert.DoesNotContain("Header=\"Reply\"", axaml, StringComparison.Ordinal);
     }
 
     private static string FindRepoRoot()

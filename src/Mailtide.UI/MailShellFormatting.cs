@@ -2044,38 +2044,6 @@ public static class MailShellFormatting
         }
     }
 
-    public static bool? ObjectMenuOutboxOverride(string? header, bool showingOutbox)
-    {
-        if (header is "Retry" or "Discard")
-        {
-            return showingOutbox;
-        }
-
-        if (header is "Reply" or "Reply All" or "Forward" or "Forward as Attachment" or "Edit as New" or "Save as .eml"
-            or "Copy subject" or "Copy address" or "Copy headers" or "Copy Message-ID" or "Show original" or "Search from sender" or "Search to recipient" or "Move" or "Copy" or "Archive"
-            or "Find in conversation" or "Delete")
-        {
-            return !showingOutbox;
-        }
-
-        return null;
-    }
-
-    public static bool? ObjectMenuConversationOverride(string? header, bool canExpand, bool expanded)
-    {
-        if (header is "Expand all")
-        {
-            return canExpand && !expanded;
-        }
-
-        if (header is "Collapse all")
-        {
-            return canExpand && expanded;
-        }
-
-        return null;
-    }
-
     public static NavFocusedDeleteAction NavFocusedDelete(Guid? mailboxId, MailboxRole? role)
     {
         if (mailboxId is null)
