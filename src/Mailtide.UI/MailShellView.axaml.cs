@@ -1428,9 +1428,7 @@ public partial class MailShellView : UserControl
     {
         if (sender is ContextMenu menu)
         {
-            ApplyObjectMenu(menu.Items);
-            RebuildMailboxTargetMenu(ThreadMoveItem, OnRecentMoveClick, OnMoveClick);
-            RebuildMailboxTargetMenu(ThreadCopyItem, OnRecentCopyClick, OnCopyClick);
+            RebuildObjectMenu(menu.Items, ObjectMenuSurface.ThreadList);
         }
     }
 
@@ -1438,11 +1436,95 @@ public partial class MailShellView : UserControl
     {
         if (sender is MenuFlyout flyout)
         {
-            ApplyObjectMenu(flyout.Items);
-            RebuildMailboxTargetMenu(ReadMoveItem, OnRecentMoveClick, OnMoveClick);
-            RebuildMailboxTargetMenu(ReadCopyItem, OnRecentCopyClick, OnCopyClick);
+            RebuildObjectMenu(flyout.Items, ObjectMenuSurface.Reading);
         }
     }
+
+    private void RebuildObjectMenu(ItemCollection items, ObjectMenuSurface surface)
+    {
+        items.Clear();
+        foreach (var entry in MailShellObjectMenu.Build(surface, CurrentObjectMenuState()))
+        {
+            var item = new MenuItem
+            {
+                Header = entry.Header,
+                IsVisible = entry.IsVisible,
+                Tag = entry.Verb,
+            };
+            item.Click += ObjectVerbHandler(entry.Verb);
+            items.Add(item);
+            switch (entry.Verb)
+            {
+                case ObjectMenuVerb.Move:
+                    RebuildMailboxTargetMenu(item, OnRecentMoveClick, OnMoveClick);
+                    break;
+                case ObjectMenuVerb.Copy:
+                    RebuildMailboxTargetMenu(item, OnRecentCopyClick, OnCopyClick);
+                    break;
+            }
+        }
+    }
+
+    private ObjectMenuState CurrentObjectMenuState()
+    {
+        var browse = _browse;
+        if (browse is null)
+        {
+            return new ObjectMenuState();
+        }
+
+        var unread = browse.Messages.Any(message => !message.IsRead)
+            || ThreadsList?.SelectedItem is ThreadRow { IsUnread: true };
+        var flagged = browse.Messages.Any(message => message.IsFlagged)
+            || ThreadsList?.SelectedItem is ThreadRow { IsFlagged: true };
+        return new ObjectMenuState
+        {
+            ShowingOutbox = browse.ShowingOutbox,
+            UnifiedInbox = browse.ShowingUnifiedInbox,
+            TrashScope = IsTrashScope(browse),
+            JunkScope = IsJunkScope(browse),
+            ArchiveScope = IsArchiveScope(browse),
+            CanExpandConversation = !browse.ShowingOutbox && browse.Conversation.Count > 1,
+            ConversationExpanded = browse.ConversationExpanded,
+            ConversationNewestFirst = browse.ConversationNewestFirst,
+            AnyUnread = unread,
+            AnyFlagged = flagged,
+        };
+    }
+
+    private EventHandler<RoutedEventArgs> ObjectVerbHandler(ObjectMenuVerb verb) => verb switch
+    {
+        ObjectMenuVerb.Reply => OnReplyClick,
+        ObjectMenuVerb.ReplyAll => OnReplyAllClick,
+        ObjectMenuVerb.Forward => OnForwardClick,
+        ObjectMenuVerb.ForwardAsAttachment => OnForwardAsAttachmentClick,
+        ObjectMenuVerb.EditAsNew => OnEditAsNewClick,
+        ObjectMenuVerb.SaveAsEml => OnSaveMessageEmlClick,
+        ObjectMenuVerb.ShowOriginal => OnShowOriginalClick,
+        ObjectMenuVerb.CopySubject => OnCopySubjectClick,
+        ObjectMenuVerb.CopyAddress => OnCopyAddressClick,
+        ObjectMenuVerb.SearchFromSender => OnSearchFromSenderClick,
+        ObjectMenuVerb.SearchToRecipient => OnSearchToRecipientClick,
+        ObjectMenuVerb.CopyHeaders => OnCopyHeadersClick,
+        ObjectMenuVerb.CopyMessageId => OnCopyMessageIdClick,
+        ObjectMenuVerb.ToggleRead => OnMarkUnreadClick,
+        ObjectMenuVerb.ToggleFlag => OnFlagClick,
+        ObjectMenuVerb.Move => OnMoveClick,
+        ObjectMenuVerb.Copy => OnCopyClick,
+        ObjectMenuVerb.RevealInMailbox => OnRevealInMailboxClick,
+        ObjectMenuVerb.FindInConversation => OnFindInMessageClick,
+        ObjectMenuVerb.ExpandConversation => OnExpandConversationClick,
+        ObjectMenuVerb.CollapseConversation => OnCollapseConversationClick,
+        ObjectMenuVerb.ConversationOrder => OnConversationOrderClick,
+        ObjectMenuVerb.Archive => OnArchiveClick,
+        ObjectMenuVerb.MoveToJunk => OnMoveToJunkClick,
+        ObjectMenuVerb.NotJunk => OnNotJunkClick,
+        ObjectMenuVerb.Delete => OnDeleteClick,
+        ObjectMenuVerb.Restore => OnRestoreClick,
+        ObjectMenuVerb.RetryOutbox => OnRetryOutboxClick,
+        ObjectMenuVerb.DiscardOutbox => OnDiscardOutboxClick,
+        _ => throw new ArgumentOutOfRangeException(nameof(verb)),
+    };
 
     private void RebuildMailboxTargetMenu(
         MenuItem? menuItem,
@@ -1497,28 +1579,6 @@ public partial class MailShellView : UserControl
         var choose = new MenuItem { Header = "Choose Mailbox..." };
         choose.Click += chooseClick;
         menuItem.Items.Add(choose);
-    }
-
-    private void ApplyObjectMenu(System.Collections.IEnumerable items)
-    {
-        var outbox = _browse?.ShowingOutbox == true;
-        var canExpand = _browse is { ShowingOutbox: false, Conversation.Count: > 1 };
-        var expanded = _browse?.ConversationExpanded == true;
-        foreach (var obj in items)
-        {
-            if (obj is not MenuItem item)
-            {
-                continue;
-            }
-
-            var header = item.Header?.ToString();
-            var visible = MailShellFormatting.ObjectMenuConversationOverride(header, canExpand, expanded)
-                ?? MailShellFormatting.ObjectMenuOutboxOverride(header, outbox);
-            if (visible is { } value)
-            {
-                item.IsVisible = value;
-            }
-        }
     }
 
     private void OnShellKeyDown(object? sender, KeyEventArgs e)
@@ -4979,82 +5039,6 @@ public partial class MailShellView : UserControl
             }
 
             ScrollSelectedConversationIntoView();
-
-            var restoreVisible = IsTrashScope(browse);
-            ThreadRestoreItem.IsVisible = restoreVisible;
-            ReadRestoreItem.IsVisible = restoreVisible;
-            var junkScope = IsJunkScope(browse);
-            var showMoveToJunk = !junkScope && !browse.ShowingOutbox;
-            ThreadJunkItem.IsVisible = showMoveToJunk;
-            ReadJunkItem.IsVisible = showMoveToJunk;
-            var showArchive = !IsArchiveScope(browse) && !browse.ShowingOutbox;
-            if (ThreadArchiveItem is not null)
-            {
-                ThreadArchiveItem.IsVisible = showArchive;
-            }
-
-            if (ReadArchiveItem is not null)
-            {
-                ReadArchiveItem.IsVisible = showArchive;
-            }
-            var revealVisible = browse.ShowingUnifiedInbox && !browse.ShowingOutbox;
-            if (ThreadRevealItem is not null)
-            {
-                ThreadRevealItem.IsVisible = revealVisible;
-            }
-
-            if (ReadRevealItem is not null)
-            {
-                ReadRevealItem.IsVisible = revealVisible;
-            }
-
-            var canExpandConversation = !browse.ShowingOutbox && browse.Conversation.Count > 1;
-            if (ExpandConversationItem is not null)
-            {
-                ExpandConversationItem.IsVisible = canExpandConversation && !browse.ConversationExpanded;
-            }
-
-            if (CollapseConversationItem is not null)
-            {
-                CollapseConversationItem.IsVisible = canExpandConversation && browse.ConversationExpanded;
-            }
-
-            if (ConversationOrderItem is not null)
-            {
-                ConversationOrderItem.IsVisible = canExpandConversation;
-                ConversationOrderItem.Header = browse.ConversationNewestFirst
-                    ? "Oldest on top"
-                    : "Newest on top";
-            }
-            ThreadNotJunkItem.IsVisible = junkScope;
-            ReadNotJunkItem.IsVisible = junkScope;
-            var flagged = browse.Messages.Any(message => message.IsFlagged)
-                || (ThreadsList.SelectedItem is ThreadRow selectedRow && selectedRow.IsFlagged);
-            var unread = browse.Messages.Any(message => !message.IsRead)
-                || (ThreadsList.SelectedItem is ThreadRow unreadRow && unreadRow.IsUnread);
-            var readHeader = unread ? "Mark Read" : "Mark Unread";
-            if (ThreadReadItem is not null)
-            {
-                ThreadReadItem.Header = readHeader;
-            }
-
-            if (ReadReadItem is not null)
-            {
-                ReadReadItem.Header = readHeader;
-            }
-
-            var flagHeader = flagged ? "Unflag" : "Flag";
-            if (ThreadFlagItem is not null)
-            {
-                ThreadFlagItem.Header = flagHeader;
-            }
-
-            if (ReadFlagItem is not null)
-            {
-                ReadFlagItem.Header = flagHeader;
-            }
-            OutboxRetryItem.IsVisible = browse.ShowingOutbox;
-            OutboxDiscardItem.IsVisible = browse.ShowingOutbox;
 
             if (browse.ShowingOutbox)
             {

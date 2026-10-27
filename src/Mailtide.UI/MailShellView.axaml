@@ -368,33 +368,7 @@
                      SelectionChanged="OnThreadSelectionChanged"
                      DoubleTapped="OnThreadListDoubleTapped">
               <ListBox.ContextMenu>
-                <ContextMenu Opening="OnThreadMenuOpening">
-                  <MenuItem Header="Reply" Click="OnReplyClick" />
-                  <MenuItem Header="Reply All" Click="OnReplyAllClick" />
-                  <MenuItem Header="Forward" Click="OnForwardClick" />
-                  <MenuItem Header="Forward as Attachment" Click="OnForwardAsAttachmentClick" />
-                  <MenuItem Header="Edit as New" Click="OnEditAsNewClick" />
-                  <MenuItem Header="Save as .eml" Click="OnSaveMessageEmlClick" />
-                  <MenuItem Header="Show original" Click="OnShowOriginalClick" />
-                  <MenuItem Header="Copy subject" Click="OnCopySubjectClick" />
-                  <MenuItem Header="Copy address" Click="OnCopyAddressClick" />
-                  <MenuItem Header="Search from sender" Click="OnSearchFromSenderClick" />
-                  <MenuItem Header="Search to recipient" Click="OnSearchToRecipientClick" />
-                  <MenuItem Header="Copy headers" Click="OnCopyHeadersClick" />
-                  <MenuItem Header="Copy Message-ID" Click="OnCopyMessageIdClick" />
-                  <MenuItem Name="ThreadReadItem" Header="Mark Unread" Click="OnMarkUnreadClick" />
-                  <MenuItem Name="ThreadFlagItem" Header="Flag" Click="OnFlagClick" />
-                  <MenuItem Name="ThreadMoveItem" Header="Move" Click="OnMoveClick" />
-                  <MenuItem Name="ThreadCopyItem" Header="Copy" Click="OnCopyClick" />
-                  <MenuItem Name="ThreadRevealItem" Header="Show in Mailbox" Click="OnRevealInMailboxClick" />
-                  <MenuItem Name="ThreadArchiveItem" Header="Archive" Click="OnArchiveClick" />
-                  <MenuItem Name="ThreadJunkItem" Header="Move to Junk" Click="OnMoveToJunkClick" />
-                  <MenuItem Name="ThreadNotJunkItem" Header="Not Junk" Click="OnNotJunkClick" />
-                  <MenuItem Header="Delete" Click="OnDeleteClick" />
-                  <MenuItem Name="ThreadRestoreItem" Header="Restore" Click="OnRestoreClick" />
-                  <MenuItem Name="OutboxRetryItem" Header="Retry" Click="OnRetryOutboxClick" />
-                  <MenuItem Name="OutboxDiscardItem" Header="Discard" Click="OnDiscardOutboxClick" />
-                </ContextMenu>
+                <ContextMenu Opening="OnThreadMenuOpening" />
               </ListBox.ContextMenu>
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="local:ThreadRow">
@@ -494,35 +468,7 @@
                       Padding="10,4"
                       VerticalAlignment="Top">
                 <Button.Flyout>
-                  <MenuFlyout Opening="OnReadingMenuOpening">
-                    <MenuItem Header="Reply" Click="OnReplyClick" />
-                    <MenuItem Header="Reply All" Click="OnReplyAllClick" />
-                    <MenuItem Header="Forward" Click="OnForwardClick" />
-                  <MenuItem Header="Forward as Attachment" Click="OnForwardAsAttachmentClick" />
-                    <MenuItem Header="Edit as New" Click="OnEditAsNewClick" />
-                    <MenuItem Header="Save as .eml" Click="OnSaveMessageEmlClick" />
-                    <MenuItem Header="Show original" Click="OnShowOriginalClick" />
-                    <MenuItem Header="Copy subject" Click="OnCopySubjectClick" />
-                    <MenuItem Header="Copy address" Click="OnCopyAddressClick" />
-                    <MenuItem Header="Search from sender" Click="OnSearchFromSenderClick" />
-                    <MenuItem Header="Search to recipient" Click="OnSearchToRecipientClick" />
-                    <MenuItem Header="Copy headers" Click="OnCopyHeadersClick" />
-                    <MenuItem Header="Copy Message-ID" Click="OnCopyMessageIdClick" />
-                    <MenuItem Name="ReadReadItem" Header="Mark Unread" Click="OnMarkUnreadClick" />
-                    <MenuItem Name="ReadFlagItem" Header="Flag" Click="OnFlagClick" />
-                    <MenuItem Name="ReadMoveItem" Header="Move" Click="OnMoveClick" />
-                    <MenuItem Name="ReadCopyItem" Header="Copy" Click="OnCopyClick" />
-                    <MenuItem Name="ReadRevealItem" Header="Show in Mailbox" Click="OnRevealInMailboxClick" />
-                    <MenuItem Header="Find in conversation" Click="OnFindInMessageClick" />
-                    <MenuItem Name="ExpandConversationItem" Header="Expand all" Click="OnExpandConversationClick" />
-                    <MenuItem Name="CollapseConversationItem" Header="Collapse all" Click="OnCollapseConversationClick" />
-                    <MenuItem Name="ConversationOrderItem" Header="Newest on top" Click="OnConversationOrderClick" />
-                    <MenuItem Name="ReadArchiveItem" Header="Archive" Click="OnArchiveClick" />
-                    <MenuItem Name="ReadJunkItem" Header="Move to Junk" Click="OnMoveToJunkClick" />
-                    <MenuItem Name="ReadNotJunkItem" Header="Not Junk" Click="OnNotJunkClick" />
-                    <MenuItem Header="Delete" Click="OnDeleteClick" />
-                    <MenuItem Name="ReadRestoreItem" Header="Restore" Click="OnRestoreClick" />
-                  </MenuFlyout>
+                  <MenuFlyout Opening="OnReadingMenuOpening" />
                 </Button.Flyout>
               </Button>
               <StackPanel>
