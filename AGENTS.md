@@ -1,23 +1,32 @@
-## Agent skills
+# Mailtide
 
-### Issue tracker
+Personal, multi-account, offline-first IMAP/SMTP email client for Windows, Linux, and Android built with .NET 10 and Avalonia 12 (`Mailtide.slnx`).
 
-Issues live in this repo's GitHub Issues (via `gh`). See `docs/agents/issue-tracker.md`.
+## Build & Verify
 
-### Triage labels
+```powershell
+# Default CI gate (restores, builds, and runs managed MSTest suites; no Android workload needed):
+.\build.ps1 Test        # Linux/macOS: ./build.sh Test
 
-Default five-role vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+# Android host compilation (requires `dotnet workload install android`):
+.\build.ps1 CompileAndroid
+```
 
-### Domain docs
+- SDK version is pinned in [`global.json`](global.json).
 
-Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+## Architecture & Invariants
 
-### Scratch
+- **Core + thin hosts** ([ADR-0001](docs/adr/0001-core-thin-hosts.md)): `src/Mailtide.Core/` is strictly UI-agnostic (store, sync, IMAP/SMTP, OAuth orchestration); `src/Mailtide.UI/` holds shared Avalonia UI; `Mailtide.Desktop/` and `Mailtide.Android/` are thin platform hosts.
+- **Storage & security**: Local offline storage uses EF Core + SQLite with versioned migrations ([ADR-0002](docs/adr/0002-ef-core-sqlite-store.md), [ADR-0004](docs/adr/0004-versioned-store-migrations.md)). Credentials must only use OS-backed secure storage (Windows DPAPI, Linux libsecret, Android Keystore — never plaintext fallback, [ADR-0003](docs/adr/0003-secure-storage-apis.md)).
+- **Domain vocabulary**: Follow [`CONTEXT.md`](CONTEXT.md) (`Account`, `Person`, `Message`, `Mailbox`, `Unified Inbox`, `Outbox`, `Credential`).
 
-Local agent trash can: `.scratch/` (gitignored). See `docs/agents/scratch.md`.
+## Docs & Agent Config
 
-### Build gate
+- Domain glossary: [`CONTEXT.md`](CONTEXT.md)
+- Maintainer docs: [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/adr/`](docs/adr/)
+- Issue routing & triage labels: [`docs/agents/`](docs/agents/)
 
-Default gate: `.\build.ps1 Test` (Linux: `./build.sh Test`). Restores, builds, and runs managed tests. Does not restore or build the Android host and does not need the Android workload.
+## Conventions
 
-Android host: `.\build.ps1 CompileAndroid` after `dotnet workload install android`. That is the CI `android` job; the default `Test` target is not that job.
+- Commit messages, issues, and PR text: **English**.
+- Releases are built and published on `v*` tags via `.github/workflows/release.yml`; do not commit, push, tag, or bump versions unless explicitly requested.

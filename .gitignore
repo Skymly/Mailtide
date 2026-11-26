@@ -438,3 +438,7 @@ packaging/tools/
 
 # Local agent scratch (patches, issue drafts, PR bodies)
 .scratch/
+
+# Local scratch directories
+.Local/
+.Temp/
