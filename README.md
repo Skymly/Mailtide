@@ -1,5 +1,7 @@
 # Mailtide
 
+**English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
+
 A personal, multi-account, offline-first email client for **Windows**, **Linux**, and **Android**.
 
 Built with **.NET 10** and **Avalonia 12** (Fluent theme). Core mail logic stays UI-agnostic; thin Desktop and Android hosts provide lifecycle, secure storage, and OAuth system-browser flows.
@@ -26,7 +28,7 @@ Build from source below when developing. Local `dotnet run` still needs OAuth en
 
 | Area | What ships |
 |------|------------|
-| Accounts | Google (OAuth), Microsoft consumer / Outlook.com (OAuth), QQ Mail (预设 + 授权码), manual IMAP/SMTP + password / app password |
+| Accounts | Google (OAuth), Microsoft consumer / Outlook.com (OAuth), QQ Mail (preset + auth code), manual IMAP/SMTP + password / app password |
 | Offline | Install-wide EF Core + SQLite store; attachment blobs on disk; read synced Messages without network |
 | Sync | In-process sync engine; per-Account parallel sync; drafts → Outbox → SMTP |
 | UI | Compact Fluent 3-pane daily shell (left Account/Mailbox tree, Thread list, reading/compose), shared by Desktop and Android at desktop/tablet width. Unified Inbox and per-Mailbox Threads, conversation reading pane, compose-in-pane with local Drafts, per-Account Outbox, HTML Message view, local search, move a Message or Mailbox reply thread, Mailbox create/rename/delete. Outlook-style Ctrl+ shortcuts. |
