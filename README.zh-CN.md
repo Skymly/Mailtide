@@ -7,6 +7,8 @@
 基于 **.NET 10** 与 **Avalonia 12**（Fluent 主题）构建。核心邮件逻辑保持 UI 无关；轻薄的 Desktop 与 Android 宿主提供生命周期管理、安全存储以及 OAuth 系统浏览器登录流程。
 
 [![CI](https://github.com/Skymly/Mailtide/actions/workflows/ci.yml/badge.svg)](https://github.com/Skymly/Mailtide/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Skymly/Mailtide?label=Release)](https://github.com/Skymly/Mailtide/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## 适用人群
 
@@ -18,11 +20,9 @@ v1 的 Android 版使用共享的桌面 / 平板宽度界面，手机 / 窄屏�
 
 ## 当前状态
 
-当前产品版本为 **0.21**：在 0.20 的 IMAP / 存储 / 搜索能力之上构建的紧凑型 Fluent 三栏日常界面（Outlook 风格导航栏 | 线程列表 | 阅读/撰写面板）。分发标签：**v0.2.0**。
+持续开发中——基于本地 IMAP/SMTP、SQLite 存储与本地搜索引擎构建的紧凑型 Fluent 三栏日常界面（Outlook 风格导航栏 | 线程列表 | 阅读/撰写面板）。
 
-当前目标：无。
-
-开发时请按下方说明从源码构建。除非 Release 打包中已注入公开客户端 ID，否则本地 `dotnet run` 仍需配置 OAuth 环境变量。
+可从 [GitHub Releases](https://github.com/Skymly/Mailtide/releases) 下载预构建安装包，或按下方说明从源码构建。除非 Release 打包中已注入公开客户端 ID，否则本地 `dotnet run` 使用 Google/Microsoft 账户时仍需配置 OAuth 环境变量。
 
 ## 功能特性
 
@@ -31,10 +31,21 @@ v1 的 Android 版使用共享的桌面 / 平板宽度界面，手机 / 窄屏�
 | 账户 | Google（OAuth）、Microsoft 个人账户 / Outlook.com（OAuth）、QQ 邮箱（预设 + 授权码）、手动 IMAP/SMTP + 密码 / 应用专用密码 |
 | 离线 | 全安装共享的 EF Core + SQLite 存储；附件正文落盘；断网状态下可阅读已同步的 Message |
 | 同步 | 进程内同步引擎；按 Account 并行同步；草稿 → Outbox → SMTP |
-| 界面 | 紧凑型 Fluent 三栏日常界面（左侧 Account/Mailbox 树、Thread 列表、阅读/撰写面板），由 Desktop 与 Android（桌面/平板宽度）共享。支持 Unified Inbox 与按 Mailbox 查看 Threads、会话阅读面板、面板内撰写与本地草稿、按 Account 区分的 Outbox、HTML 邮件视图、本地搜索、移动 Message 或回复线程、Mailbox 创建/重命名/删除。支持 Outlook 风格 `Ctrl+` 快捷键。 |
-| 搜索 | 在当前导航范围内执行本地搜索。公开操作符：`is:unread`、`is:read`、`is:flagged`、`is:starred`、`is:failed`、`has:attachment`（亦支持 `has:attach`、`has:attachments`）、`from:`、`to:`、`cc:`、`bcc:`、`subject:`、`filename:` / `file:`、`in:` / `label:`、`after:`、`before:`、`on:`、`older_than:`、`newer_than:`、`larger:` / `size:`、`smaller:`、`rfc822msgid:` / `msgid:`，以及全文关键词。`from:me`、`to:me`、`cc:me` 与 `bcc:me` 会匹配 Account 地址。`is:` 与 `in:` 支持 Mailbox 角色词（`inbox`、`sent`、`draft` / `drafts`、`trash` / `bin` / `deleted`、`junk` / `spam`、`archive`）以及 `in:anywhere` / `in:all` / `in:any`。前缀 `-` 表示取反。 |
+| 界面 | 紧凑型 Fluent 三栏日常界面（左侧 Account/Mailbox 树、Thread 列表、阅读/撰写面板），由 Desktop 与 Android（桌面/平板宽度）共享。支持 Unified Inbox、按 Mailbox 查看 Threads、会话阅读、面板内撰写与草稿、Outbox、HTML 邮件视图、移动/回复与 Mailbox 管理，以及 Outlook 风格 `Ctrl+` 快捷键。 |
+| 搜索 | 在当前导航范围内执行本地全文与操作符搜索（状态、附件、邮件头字段、日期、大小、Mailbox 角色与 `-` 取反）。 |
 | 安全 | 凭据仅通过操作系统安全存储（Windows DPAPI、Linux libsecret、Android Keystore）保存，无明文回退 |
-| 更新 | Desktop 检查 GitHub Releases（私有仓库可设置 `MAILTIDE_GITHUB_TOKEN`）；Android 通过安装 Releases 中的新版 APK 更新 |
+| 更新 | Desktop 检查 GitHub Releases；Android 通过安装 Releases 中的新版 APK 更新 |
+
+<details>
+<summary>支持的本地搜索操作符</summary>
+
+- **状态标记：** `is:unread`、`is:read`、`is:flagged`、`is:starred`、`is:failed`、`has:attachment`（亦支持 `has:attach`、`has:attachments`）
+- **邮件字段：** `from:`、`to:`、`cc:`、`bcc:`、`subject:`、`filename:` / `file:`、`in:` / `label:`、`rfc822msgid:` / `msgid:`（`from:me`、`to:me`、`cc:me`、`bcc:me` 匹配当前 Account 地址）
+- **日期与大小：** `after:`、`before:`、`on:`、`older_than:`、`newer_than:`、`larger:` / `size:`、`smaller:`
+- **Mailbox 范围：** `is:` 与 `in:` 支持角色词（`inbox`、`sent`、`draft` / `drafts`、`trash` / `bin` / `deleted`、`junk` / `spam`、`archive`）以及 `in:anywhere` / `in:all` / `in:any`
+- **取反：** 在任意操作符前加 `-`（支持与普通全文关键词混用）
+
+</details>
 
 领域词汇（Account、Person、Message、Mailbox、Unified Inbox、Outbox、Credential）定义于 [`CONTEXT.md`](CONTEXT.md)。
 
@@ -143,7 +154,7 @@ Desktop 与 Android 从环境变量读取**公开** OAuth 客户端 ID（应用�
 |------|------|
 | `MAILTIDE_GOOGLE_OAUTH_CLIENT_ID` | Google / Gmail OAuth |
 | `MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID` | Microsoft 个人账户（Outlook.com / Hotmail / Live）— 不含 Entra 工作/学校账户 |
-| `MAILTIDE_GITHUB_TOKEN` | 仅限 Desktop：可选 PAT，使私有仓库也能执行 GitHub Releases 更新检查。切勿提交此 Token。Android 无应用内更新器。 |
+| `MAILTIDE_GITHUB_TOKEN` | 仅限 Desktop：可选 PAT，用于以认证方式请求 GitHub Releases API（提高速率限制）。切勿提交此 Token。Android 无应用内更新器。 |
 
 请注册与宿主 OAuth 客户端相匹配的环回重定向（Desktop）或自定义 scheme / intent 重定向（Android）的公开 / 原生客户端。未设置这些变量时，添加 Google 与 Microsoft 账户会在授权阶段失败；QQ 邮箱与手动 IMAP/SMTP 仍可正常使用。
 

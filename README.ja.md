@@ -7,6 +7,8 @@
 **.NET 10** と **Avalonia 12**（Fluent テーマ）で構築されています。コアのメールロジックは UI に依存せず、薄い Desktop ホストおよび Android ホストがライフサイクル、セキュアストレージ、システムブラウザを使った OAuth フローを提供します。
 
 [![CI](https://github.com/Skymly/Mailtide/actions/workflows/ci.yml/badge.svg)](https://github.com/Skymly/Mailtide/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Skymly/Mailtide?label=Release)](https://github.com/Skymly/Mailtide/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## 対象ユーザー
 
@@ -18,11 +20,9 @@ v1 の Android 版は共有のデスクトップ／タブレット幅シェル�
 
 ## 現在のステータス
 
-現在の製品バージョンは **0.21** です。0.20 の IMAP・ストア・検索基盤の上に、コンパクトな Fluent 3 ペインの日常シェル（Outlook 風ナビゲーション | スレッド一覧 | 閲覧/作成ペイン）を備えています。配布タグ：**v0.2.0**。
+現在も継続開発中です。ローカルの IMAP/SMTP、SQLite ストア、検索エンジンの上に、コンパクトな Fluent 3 ペインの日常シェル（Outlook 風ナビゲーション | スレッド一覧 | 閲覧/作成ペイン）を構築しています。
 
-現在のターゲット：なし。
-
-開発時は下記のソースからのビルド手順を使用してください。Release パックに公開クライアント ID が焼き込まれていない限り、ローカルの `dotnet run` には OAuth 環境変数が必要です。
+[GitHub Releases](https://github.com/Skymly/Mailtide/releases) からビルド済みパッケージを入手するか、下記の手順でソースからビルドしてください。Release パックに公開クライアント ID が焼き込まれていない限り、Google / Microsoft アカウントを使うローカルの `dotnet run` には OAuth 環境変数が必要です。
 
 ## 機能
 
@@ -31,10 +31,21 @@ v1 の Android 版は共有のデスクトップ／タブレット幅シェル�
 | アカウント | Google（OAuth）、Microsoft 個人向け / Outlook.com（OAuth）、QQ Mail（プリセット + 認証コード）、手動 IMAP/SMTP + パスワード / アプリパスワード |
 | オフライン | インストール単位で共有する EF Core + SQLite ストア、添付ファイルのディスク保存、ネットワークなしでの同期済み Message 閲覧 |
 | 同期 | インプロセス同期エンジン、Account ごとの並列同期、下書き → Outbox → SMTP |
-| UI | Desktop と Android（デスクトップ／タブレット幅）で共有されるコンパクトな Fluent 3 ペインシェル（左の Account/Mailbox ツリー、Thread 一覧、閲覧/作成ペイン）。Unified Inbox と Mailbox 別 Threads、スレッド閲覧ペイン、ペイン内での作成とローカル下書き、Account 別 Outbox、HTML Message 表示、ローカル検索、Message 移動や返信スレッド操作、Mailbox 作成・名前変更・削除に対応。Outlook 風の `Ctrl+` ショートカットも利用可能。 |
-| 検索 | 現在のナビゲーション範囲内でのローカル検索。公開演算子：`is:unread`、`is:read`、`is:flagged`、`is:starred`、`is:failed`、`has:attachment`（`has:attach`、`has:attachments` も可）、`from:`、`to:`、`cc:`、`bcc:`、`subject:`、`filename:` / `file:`、`in:` / `label:`、`after:`、`before:`、`on:`、`older_than:`、`newer_than:`、`larger:` / `size:`、`smaller:`、`rfc822msgid:` / `msgid:`、および本文テキスト。`from:me`、`to:me`、`cc:me`、`bcc:me` は Account アドレスに一致します。`is:` と `in:` は Mailbox ロール語（`inbox`、`sent`、`draft` / `drafts`、`trash` / `bin` / `deleted`、`junk` / `spam`、`archive`）と `in:anywhere` / `in:all` / `in:any` を受け付けます。先頭の `-` で演算子を否定します。 |
+| UI | Desktop と Android（デスクトップ／タブレット幅）で共有されるコンパクトな Fluent 3 ペインシェル（左の Account/Mailbox ツリー、Thread 一覧、閲覧/作成ペイン）。Unified Inbox、Mailbox 別 Threads、スレッド閲覧、ペイン内作成と下書き、Outbox、HTML 表示、移動／返信や Mailbox 管理、Outlook 風の `Ctrl+` ショートカットに対応。 |
+| 検索 | 現在のナビゲーション範囲内でのローカル全文・演算子検索（ステータス、添付ファイル、ヘッダー項目、日付、サイズ、Mailbox ロール、`-` 否定に対応）。 |
 | セキュリティ | 認証情報は OS 標準のセキュアストレージ（Windows DPAPI、Linux libsecret、Android Keystore）のみに保存し、平文フォールバックはありません |
-| 更新 | Desktop は GitHub Releases を確認（プライベートリポジトリでは `MAILTIDE_GITHUB_TOKEN` を設定）；Android は Releases から新しい APK をインストールして更新 |
+| 更新 | Desktop は GitHub Releases を確認；Android は Releases から新しい APK をインストールして更新 |
+
+<details>
+<summary>対応しているローカル検索演算子</summary>
+
+- **フラグ:** `is:unread`、`is:read`、`is:flagged`、`is:starred`、`is:failed`、`has:attachment`（`has:attach`、`has:attachments` も可）
+- **ヘッダー・属性:** `from:`、`to:`、`cc:`、`bcc:`、`subject:`、`filename:` / `file:`、`in:` / `label:`、`rfc822msgid:` / `msgid:`（`from:me`、`to:me`、`cc:me`、`bcc:me` は Account アドレスに一致）
+- **日付・サイズ:** `after:`、`before:`、`on:`、`older_than:`、`newer_than:`、`larger:` / `size:`、`smaller:`
+- **Mailbox スコープ:** `is:` と `in:` はロール語（`inbox`、`sent`、`draft` / `drafts`、`trash` / `bin` / `deleted`、`junk` / `spam`、`archive`）および `in:anywhere` / `in:all` / `in:any` を受け付けます
+- **否定:** 演算子の先頭に `-` を付けて否定（通常の全文キーワードとの併用可）
+
+</details>
 
 ドメイン用語（Account、Person、Message、Mailbox、Unified Inbox、Outbox、Credential）は [`CONTEXT.md`](CONTEXT.md) で定義されています。
 
@@ -143,7 +154,7 @@ Desktop と Android は環境変数から**公開** OAuth クライアント ID 
 |------|------|
 | `MAILTIDE_GOOGLE_OAUTH_CLIENT_ID` | Google / Gmail OAuth |
 | `MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID` | Microsoft 個人向け（Outlook.com / Hotmail / Live）— Entra 職場/学校アカウントは対象外 |
-| `MAILTIDE_GITHUB_TOKEN` | Desktop 専用：プライベートリポジトリでも GitHub Releases の更新チェックを動作させるための任意 PAT。このトークンは絶対にコミットしないでください。Android にアプリ内アップデーターはありません。 |
+| `MAILTIDE_GITHUB_TOKEN` | Desktop 専用：認証付きで GitHub Releases API を参照するための任意 PAT（レート制限緩和）。このトークンは絶対にコミットしないでください。Android にアプリ内アップデーターはありません。 |
 
 ホスト側の OAuth クライアントに一致するループバック（Desktop）またはカスタムスキーム／インテント（Android）のリダイレクトを持つ公開／ネイティブクライアントを登録してください。これらの変数が未設定の場合、Google および Microsoft アカウントの追加フローは認可時に失敗しますが、QQ Mail と手動 IMAP/SMTP は引き続き動作します。
 

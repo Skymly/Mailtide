@@ -7,6 +7,8 @@ A personal, multi-account, offline-first email client for **Windows**, **Linux**
 Built with **.NET 10** and **Avalonia 12** (Fluent theme). Core mail logic stays UI-agnostic; thin Desktop and Android hosts provide lifecycle, secure storage, and OAuth system-browser flows.
 
 [![CI](https://github.com/Skymly/Mailtide/actions/workflows/ci.yml/badge.svg)](https://github.com/Skymly/Mailtide/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Skymly/Mailtide?label=Release)](https://github.com/Skymly/Mailtide/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Who it is for
 
@@ -18,11 +20,9 @@ v1 Android uses the shared desktop/tablet-width shell. Phone / narrow-width fold
 
 ## Status
 
-Current product is **0.21**: a compact Fluent 3-pane daily shell (Outlook-style nav | Thread list | reading/compose) on top of 0.20 IMAP/store/search. Distribution tag: **v0.2.0**.
+Active development — the compact Fluent 3-pane daily shell (Outlook-style nav | Thread list | reading/compose) runs on top of the local IMAP/SMTP, SQLite store, and search engine.
 
-Current target: none.
-
-Build from source below when developing. Local `dotnet run` still needs OAuth env vars unless a Release pack baked the public client IDs.
+Download prebuilt packages from [GitHub Releases](https://github.com/Skymly/Mailtide/releases) or build from source below. Local `dotnet run` needs OAuth env vars for Google/Microsoft accounts unless a Release pack baked the public client IDs.
 
 ## Capabilities
 
@@ -31,10 +31,21 @@ Build from source below when developing. Local `dotnet run` still needs OAuth en
 | Accounts | Google (OAuth), Microsoft consumer / Outlook.com (OAuth), QQ Mail (preset + auth code), manual IMAP/SMTP + password / app password |
 | Offline | Install-wide EF Core + SQLite store; attachment blobs on disk; read synced Messages without network |
 | Sync | In-process sync engine; per-Account parallel sync; drafts → Outbox → SMTP |
-| UI | Compact Fluent 3-pane daily shell (left Account/Mailbox tree, Thread list, reading/compose), shared by Desktop and Android at desktop/tablet width. Unified Inbox and per-Mailbox Threads, conversation reading pane, compose-in-pane with local Drafts, per-Account Outbox, HTML Message view, local search, move a Message or Mailbox reply thread, Mailbox create/rename/delete. Outlook-style Ctrl+ shortcuts. |
-| Search | Local search in the current nav scope. Public operators: `is:unread`, `is:read`, `is:flagged`, `is:starred`, `is:failed`, `has:attachment` (also `has:attach`, `has:attachments`), `from:`, `to:`, `cc:`, `bcc:`, `subject:`, `filename:` / `file:`, `in:` / `label:`, `after:`, `before:`, `on:`, `older_than:`, `newer_than:`, `larger:` / `size:`, `smaller:`, `rfc822msgid:` / `msgid:`, plus text. `from:me`, `to:me`, `cc:me`, and `bcc:me` match the Account address. `is:` and `in:` accept Mailbox role words (`inbox`, `sent`, `draft` / `drafts`, `trash` / `bin` / `deleted`, `junk` / `spam`, `archive`) and `in:anywhere` / `in:all` / `in:any`. A leading `-` negates an operator. |
+| UI | Compact Fluent 3-pane daily shell (left Account/Mailbox tree, Thread list, reading/compose), shared by Desktop and Android at desktop/tablet width. Unified Inbox, per-Mailbox Threads, conversation reading, inline compose with Drafts, Outbox, HTML view, move/reply, Mailbox management, and Ctrl+ shortcuts. |
+| Search | Local full-text and operator search within the current nav scope (status, attachment, header fields, dates, sizes, Mailbox roles, and `-` negation). |
 | Security | Credentials only via OS-backed secure storage (Windows DPAPI, Linux libsecret, Android Keystore) — no plaintext fallback |
-| Updates | Desktop checks GitHub Releases (private repo: set `MAILTIDE_GITHUB_TOKEN`); Android updates by installing a newer APK from Releases |
+| Updates | Desktop checks GitHub Releases; Android updates by installing a newer APK from Releases |
+
+<details>
+<summary>Supported local search operators</summary>
+
+- **Flags:** `is:unread`, `is:read`, `is:flagged`, `is:starred`, `is:failed`, `has:attachment` (`has:attach`, `has:attachments`)
+- **Fields:** `from:`, `to:`, `cc:`, `bcc:`, `subject:`, `filename:` / `file:`, `in:` / `label:`, `rfc822msgid:` / `msgid:` (`from:me`, `to:me`, `cc:me`, `bcc:me` match the Account address)
+- **Dates & sizes:** `after:`, `before:`, `on:`, `older_than:`, `newer_than:`, `larger:` / `size:`, `smaller:`
+- **Mailbox scopes:** `is:` and `in:` accept role names (`inbox`, `sent`, `draft` / `drafts`, `trash` / `bin` / `deleted`, `junk` / `spam`, `archive`) plus `in:anywhere` / `in:all` / `in:any`
+- **Negation:** prefix any operator with `-` (plus plain full-text terms)
+
+</details>
 
 Domain vocabulary (Account, Person, Message, Mailbox, Unified Inbox, Outbox, Credential) is defined in [`CONTEXT.md`](CONTEXT.md).
 
@@ -142,7 +153,7 @@ Desktop and Android read **public** OAuth client IDs from the environment (no cl
 |----------|----------|
 | `MAILTIDE_GOOGLE_OAUTH_CLIENT_ID` | Google / Gmail OAuth |
 | `MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID` | Microsoft consumer (Outlook.com / Hotmail / Live) — not Entra work/school |
-| `MAILTIDE_GITHUB_TOKEN` | Desktop-only: optional PAT so the GitHub Releases update check works on a private repo. Never commit this token. Android has no in-app updater. |
+| `MAILTIDE_GITHUB_TOKEN` | Desktop-only: optional PAT for authenticated GitHub Releases API checks (raises rate limits). Never commit this token. Android has no in-app updater. |
 
 Register a public / native client with a loopback (Desktop) or custom-scheme / intent (Android) redirect that matches the Host OAuth client. Without these variables, Google and Microsoft Account add flows fail at authorize time; QQ Mail and manual IMAP/SMTP still work.
 

@@ -7,6 +7,8 @@
 採用 **.NET 10** 與 **Avalonia 12**（Fluent 佈景主題）建置。核心郵件邏輯維持與 UI 無關；輕薄的 Desktop 與 Android 主機提供生命週期管理、安全儲存與 OAuth 系統瀏覽器登入流程。
 
 [![CI](https://github.com/Skymly/Mailtide/actions/workflows/ci.yml/badge.svg)](https://github.com/Skymly/Mailtide/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Skymly/Mailtide?label=Release)](https://github.com/Skymly/Mailtide/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## 適用對象
 
@@ -18,11 +20,9 @@ v1 的 Android 版使用共用的桌面 / 平板寬度介面，手機 / 窄螢�
 
 ## 目前狀態
 
-目前產品為 **0.21**：在 0.20 的 IMAP / 儲存 / 搜尋能力之上打造的精簡 Fluent 三欄式日常介面（Outlook 風格導覽列 | 執行緒清單 | 閱讀/撰寫窗格）。分發標籤：**v0.2.0**。
+持續開發中——以本機 IMAP/SMTP、SQLite 儲存與本機搜尋引擎為基礎建置的精簡 Fluent 三欄式日常介面（Outlook 風格導覽列 | 執行緒清單 | 閱讀/撰寫窗格）。
 
-目前目標：無。
-
-開發時請依照下方說明從原始碼建置。除非 Release 封裝中已嵌入公開用戶端 ID，否則本機 `dotnet run` 仍需設定 OAuth 環境變數。
+可從 [GitHub Releases](https://github.com/Skymly/Mailtide/releases) 下載預建置安裝包，或依照下方說明從原始碼建置。除非 Release 封裝中已嵌入公開用戶端 ID，否則本機 `dotnet run` 使用 Google/Microsoft 帳戶時仍需設定 OAuth 環境變數。
 
 ## 功能與能力
 
@@ -31,10 +31,21 @@ v1 的 Android 版使用共用的桌面 / 平板寬度介面，手機 / 窄螢�
 | 帳戶 | Google（OAuth）、Microsoft 個人帳戶 / Outlook.com（OAuth）、QQ 郵箱（預設 + 授權碼）、手動 IMAP/SMTP + 密碼 / 應用程式密碼 |
 | 離線 | 跨應用程式共用的 EF Core + SQLite 儲存區；附件內容寫入磁碟；無網路時仍可閱讀已同步的 Message |
 | 同步 | 同處理序同步引擎；依 Account 平行同步；草稿 → Outbox → SMTP |
-| UI | 精簡 Fluent 三欄式日常介面（左側 Account/Mailbox 樹狀檢視、Thread 清單、閱讀/撰寫窗格），由 Desktop 與 Android（桌面/平板寬度）共用。支援 Unified Inbox 與依 Mailbox 檢視 Threads、對話閱讀窗格、窗格內撰寫與本機草稿、依 Account 區分的 Outbox、HTML 郵件檢視、本機搜尋、移動 Message 或回覆執行緒、Mailbox 建立/重新命名/刪除。支援 Outlook 風格 `Ctrl+` 快速鍵。 |
-| 搜尋 | 於目前導覽範圍內執行本機搜尋。公開運算子：`is:unread`、`is:read`、`is:flagged`、`is:starred`、`is:failed`、`has:attachment`（亦支援 `has:attach`、`has:attachments`）、`from:`、`to:`、`cc:`、`bcc:`、`subject:`、`filename:` / `file:`、`in:` / `label:`、`after:`、`before:`、`on:`、`older_than:`、`newer_than:`、`larger:` / `size:`、`smaller:`、`rfc822msgid:` / `msgid:`，加上關鍵字搜尋。`from:me`、`to:me`、`cc:me` 與 `bcc:me` 會比對 Account 位址。`is:` 與 `in:` 接受 Mailbox 角色字詞（`inbox`、`sent`、`draft` / `drafts`、`trash` / `bin` / `deleted`、`junk` / `spam`、`archive`）以及 `in:anywhere` / `in:all` / `in:any`。前導 `-` 可否定運算子。 |
+| UI | 精簡 Fluent 三欄式日常介面（左側 Account/Mailbox 樹狀檢視、Thread 清單、閱讀/撰寫窗格），由 Desktop 與 Android（桌面/平板寬度）共用。支援 Unified Inbox、依 Mailbox 檢視 Threads、對話閱讀、窗格內撰寫與草稿、Outbox、HTML 郵件檢視、移動/回覆與 Mailbox 管理，以及 Outlook 風格 `Ctrl+` 快速鍵。 |
+| 搜尋 | 於目前導覽範圍內執行本機全文與運算子搜尋（狀態、附件、郵件標頭欄位、日期、大小、Mailbox 角色與 `-` 否定）。 |
 | 安全 | 憑證僅透過作業系統層級安全儲存（Windows DPAPI、Linux libsecret、Android Keystore）保存，無明文備援 |
-| 更新 | Desktop 會檢查 GitHub Releases（私人儲存庫請設定 `MAILTIDE_GITHUB_TOKEN`）；Android 則透過安裝 Releases 中的新版 APK 更新 |
+| 更新 | Desktop 會檢查 GitHub Releases；Android 則透過安裝 Releases 中的新版 APK 更新 |
+
+<details>
+<summary>支援的本機搜尋運算子</summary>
+
+- **狀態旗標：** `is:unread`、`is:read`、`is:flagged`、`is:starred`、`is:failed`、`has:attachment`（亦支援 `has:attach`、`has:attachments`）
+- **郵件欄位：** `from:`、`to:`、`cc:`、`bcc:`、`subject:`、`filename:` / `file:`、`in:` / `label:`、`rfc822msgid:` / `msgid:`（`from:me`、`to:me`、`cc:me`、`bcc:me` 會比對 Account 位址）
+- **日期與大小：** `after:`、`before:`、`on:`、`older_than:`、`newer_than:`、`larger:` / `size:`、`smaller:`
+- **Mailbox 範圍：** `is:` 與 `in:` 接受角色字詞（`inbox`、`sent`、`draft` / `drafts`、`trash` / `bin` / `deleted`、`junk` / `spam`、`archive`）以及 `in:anywhere` / `in:all` / `in:any`
+- **否定：** 在任意運算子前加上 `-`（可搭配一般全文關鍵字）
+
+</details>
 
 領域詞彙（Account、Person、Message、Mailbox、Unified Inbox、Outbox、Credential）定義於 [`CONTEXT.md`](CONTEXT.md)。
 
@@ -143,7 +154,7 @@ Desktop 與 Android 會從環境變數讀取**公開** OAuth 用戶端 ID（應�
 |------|------|
 | `MAILTIDE_GOOGLE_OAUTH_CLIENT_ID` | Google / Gmail OAuth |
 | `MAILTIDE_MICROSOFT_OAUTH_CLIENT_ID` | Microsoft 個人帳戶（Outlook.com / Hotmail / Live）— 非 Entra 工作/學校帳戶 |
-| `MAILTIDE_GITHUB_TOKEN` | 僅限 Desktop：選用 PAT，讓私人儲存庫的 GitHub Releases 更新檢查可運作。切勿提交此 Token。Android 無應用程式內更新器。 |
+| `MAILTIDE_GITHUB_TOKEN` | 僅限 Desktop：選用 PAT，用於以驗證方式查詢 GitHub Releases API（提高速率限制）。切勿提交此 Token。Android 無應用程式內更新器。 |
 
 請註冊符合主機 OAuth 用戶端的迴圈重新導向（Desktop）或自訂 scheme / intent 重新導向（Android）之公開 / 原生用戶端。若未設定這些變數，新增 Google 與 Microsoft 帳戶流程會在授權時失敗；QQ 郵箱與手動 IMAP/SMTP 仍可正常運作。
 
